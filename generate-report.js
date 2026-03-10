@@ -506,7 +506,23 @@ export function generateReport(reportData, options = {}) {
             const snippetEsc = escapeHtml(rem.snippet || '');
             const rowId = `fix-row-${chapterId}-${url.replace(/[^a-z0-9]/gi, '')}-${idx}`;
             const occId = `occ-row-${chapterId}-${url.replace(/[^a-z0-9]/gi, '')}-${idx}`;
-            const occContent = r.selector ? `<div class="occurrence-item"><span class="selector">${escapeHtml(r.selector)}</span>${r.nodeHtml ? `<pre>${escapeHtml(r.nodeHtml)}</pre>` : ''}</div>` : '<p class="occurrence-item">No element details for this check.</p>';
+            let occContent;
+            if (r.occurrences && r.occurrences.length > 0) {
+              occContent = r.occurrences.map((occ) => {
+                const sel = occ.selector || occ.target;
+                const selectorEsc = escapeHtml(sel != null ? String(sel) : '');
+                const htmlSnippet = occ.html != null ? escapeHtml(occ.html) : '';
+                return `<div class="occurrence-item"><span class="selector">${selectorEsc}</span>${htmlSnippet ? `<pre>${htmlSnippet}</pre>` : ''}</div>`;
+              }).join('');
+            } else if (r.id === 'unique-ids' && r.message && r.message.includes('Duplicate IDs:')) {
+              const idsStr = r.message.replace(/^Duplicate IDs:\s*/, '').trim();
+              const ids = idsStr ? idsStr.split(/\s*,\s*/) : [];
+              occContent = ids.map((id) => `<div class="occurrence-item"><span class="selector">#${escapeHtml(id)}</span><p>Multiple elements share this id on the page.</p></div>`).join('') || '<p class="occurrence-item">No element details for this check.</p>';
+            } else if (r.selector) {
+              occContent = `<div class="occurrence-item"><span class="selector">${escapeHtml(r.selector)}</span>${r.nodeHtml ? `<pre>${escapeHtml(r.nodeHtml)}</pre>` : ''}</div>`;
+            } else {
+              occContent = '<p class="occurrence-item">No element details for this check.</p>';
+            }
             html += `<tr class="filterable" data-filter="${filterVal}" data-disability="${escapeHtml(disabilities)}">
               <td>${escapeHtml(r.rule)}</td>
               <td><span class="badge ${r.status}">${r.status}</span></td>

@@ -179,22 +179,39 @@ export async function runSemanticChecks(page) {
     });
   }
 
-  // Duplicate IDs
-  const duplicateIds = await page.evaluate(() => {
-    const ids = {};
+  // Duplicate IDs (with occurrence details for the report)
+  const duplicateIdData = await page.evaluate(() => {
+    const byId = {};
     document.querySelectorAll('[id]').forEach((el) => {
       const id = el.id;
-      ids[id] = (ids[id] || 0) + 1;
+      if (!byId[id]) byId[id] = [];
+      byId[id].push(el);
     });
-    return Object.entries(ids).filter(([, count]) => count > 1).map(([id]) => id);
+    const duplicateIds = Object.keys(byId).filter((id) => byId[id].length > 1);
+    const occurrences = [];
+    duplicateIds.forEach((id) => {
+      const elements = byId[id];
+      elements.forEach((el, idx) => {
+        let html = '';
+        try {
+          html = (el.outerHTML || '').substring(0, 500);
+        } catch (_) {}
+        occurrences.push({
+          selector: el.tagName.toLowerCase() + '#' + id + (elements.length > 1 ? ' (occurrence ' + (idx + 1) + ' of ' + elements.length + ')' : ''),
+          html: html,
+        });
+      });
+    });
+    return { duplicateIds, occurrences };
   });
-  if (duplicateIds.length > 0) {
+  if (duplicateIdData && duplicateIdData.duplicateIds.length > 0) {
     results.push({
       id: 'unique-ids',
       rule: 'IDs MUST be unique within the page',
       status: 'fail',
-      message: `Duplicate IDs: ${duplicateIds.join(', ')}`,
+      message: `Duplicate IDs: ${duplicateIdData.duplicateIds.join(', ')}`,
       chapter: chapterId,
+      occurrences: duplicateIdData.occurrences || [],
     });
   }
 
