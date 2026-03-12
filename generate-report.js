@@ -121,6 +121,30 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+/** Format occurrence as "tag#id.class1.class2" (element type, id if present, class(es) if present). */
+function formatOccurrenceDescriptor(occ) {
+  if (occ.tag != null) {
+    const tag = (occ.tag || 'element').toLowerCase();
+    const idPart = occ.id ? '#' + String(occ.id) : '';
+    const classPart = occ.className ? '.' + String(occ.className).trim().split(/\s+/).filter(Boolean).join('.') : '';
+    const label = occ.occurrenceLabel || '';
+    return tag + idPart + classPart + label;
+  }
+  if (occ.html) {
+    const html = String(occ.html);
+    const tagMatch = html.match(/<([a-z][a-z0-9]*)/i);
+    const tag = tagMatch ? tagMatch[1].toLowerCase() : 'element';
+    const idMatch = html.match(/\bid=["']([^"']*)["']/i);
+    const id = idMatch ? idMatch[1] : '';
+    const classMatch = html.match(/\bclass=["']([^"']*)["']/i);
+    const rawClass = classMatch ? classMatch[1] : '';
+    const classPart = rawClass ? '.' + rawClass.trim().split(/\s+/).filter(Boolean).join('.') : '';
+    return tag + (id ? '#' + id : '') + classPart;
+  }
+  const sel = occ.selector || (Array.isArray(occ.target) ? occ.target[0] : occ.target);
+  return sel != null ? String(sel) : '—';
+}
+
 export function generateReport(reportData, options = {}) {
   const outputDir = options.outputDir || DEFAULT_OUTPUT_DIR;
   const resultsFile = join(outputDir, 'accessibility-results.json');
@@ -509,17 +533,15 @@ export function generateReport(reportData, options = {}) {
             let occContent;
             if (r.occurrences && r.occurrences.length > 0) {
               occContent = r.occurrences.map((occ) => {
-                const sel = occ.selector || occ.target;
-                const selectorEsc = escapeHtml(sel != null ? String(sel) : '');
-                const htmlSnippet = occ.html != null ? escapeHtml(occ.html) : '';
-                return `<div class="occurrence-item"><span class="selector">${selectorEsc}</span>${htmlSnippet ? `<pre>${htmlSnippet}</pre>` : ''}</div>`;
+                const desc = formatOccurrenceDescriptor(occ);
+                return `<div class="occurrence-item"><span class="selector">${escapeHtml(desc)}</span></div>`;
               }).join('');
             } else if (r.id === 'unique-ids' && r.message && r.message.includes('Duplicate IDs:')) {
               const idsStr = r.message.replace(/^Duplicate IDs:\s*/, '').trim();
               const ids = idsStr ? idsStr.split(/\s*,\s*/) : [];
-              occContent = ids.map((id) => `<div class="occurrence-item"><span class="selector">#${escapeHtml(id)}</span><p>Multiple elements share this id on the page.</p></div>`).join('') || '<p class="occurrence-item">No element details for this check.</p>';
+              occContent = ids.map((id) => `<div class="occurrence-item"><span class="selector">#${escapeHtml(id)}</span></div>`).join('') || '<p class="occurrence-item">No element details for this check.</p>';
             } else if (r.selector) {
-              occContent = `<div class="occurrence-item"><span class="selector">${escapeHtml(r.selector)}</span>${r.nodeHtml ? `<pre>${escapeHtml(r.nodeHtml)}</pre>` : ''}</div>`;
+              occContent = `<div class="occurrence-item"><span class="selector">${escapeHtml(r.selector)}</span></div>`;
             } else {
               occContent = '<p class="occurrence-item">No element details for this check.</p>';
             }
@@ -552,11 +574,9 @@ export function generateReport(reportData, options = {}) {
           const fixId = `fix-axe-${chapterId}-${url.replace(/[^a-z0-9]/gi, '')}-${vIdx}`;
           const occId = `occ-axe-${chapterId}-${url.replace(/[^a-z0-9]/gi, '')}-${vIdx}`;
           const occurrencesHtml = (v.nodes && v.nodes.length > 0)
-            ? v.nodes.map((node, nIdx) => {
-                const sel = Array.isArray(node.target) ? node.target[0] : node.target;
-                const selectorEsc = escapeHtml(sel || `Element ${nIdx + 1}`);
-                const htmlSnippet = node.html != null ? escapeHtml(node.html) : '';
-                return `<div class="occurrence-item"><span class="selector">${selectorEsc}</span>${htmlSnippet ? `<pre>${htmlSnippet}</pre>` : ''}</div>`;
+            ? v.nodes.map((node) => {
+                const desc = formatOccurrenceDescriptor(node);
+                return `<div class="occurrence-item"><span class="selector">${escapeHtml(desc)}</span></div>`;
               }).join('')
             : '<p class="occurrence-item">No element details.</p>';
           html += `

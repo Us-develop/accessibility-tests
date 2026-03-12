@@ -179,7 +179,7 @@ export async function runSemanticChecks(page) {
     });
   }
 
-  // Duplicate IDs (with occurrence details for the report)
+  // Duplicate IDs (with occurrence details: tag, id, class only)
   const duplicateIdData = await page.evaluate(() => {
     const byId = {};
     document.querySelectorAll('[id]').forEach((el) => {
@@ -192,13 +192,13 @@ export async function runSemanticChecks(page) {
     duplicateIds.forEach((id) => {
       const elements = byId[id];
       elements.forEach((el, idx) => {
-        let html = '';
-        try {
-          html = (el.outerHTML || '').substring(0, 500);
-        } catch (_) {}
+        const tag = (el.tagName || '').toLowerCase();
+        const className = (typeof el.className === 'string' ? el.className : '').trim().split(/\s+/).filter(Boolean).join('.');
         occurrences.push({
-          selector: el.tagName.toLowerCase() + '#' + id + (elements.length > 1 ? ' (occurrence ' + (idx + 1) + ' of ' + elements.length + ')' : ''),
-          html: html,
+          tag: tag || 'element',
+          id: id || '',
+          className: className || '',
+          occurrenceLabel: elements.length > 1 ? ` (occurrence ${idx + 1} of ${elements.length})` : '',
         });
       });
     });
