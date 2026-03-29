@@ -55,6 +55,27 @@ function parseXml(buffer) {
   return [...new Set(urls)];
 }
 
+const STATEMENT_MAX = 2000;
+
+function clipStatement(s, max = STATEMENT_MAX) {
+  if (typeof s !== 'string') return '';
+  return s.trim().slice(0, max);
+}
+
+/** Fields from the run form; used only to pre-fill accessibility-statement.html */
+function parseStatementMeta(body) {
+  const rd = parseInt(String(body?.statement_response_days ?? '').trim(), 10);
+  return {
+    orgName: clipStatement(body?.statement_org_name ?? ''),
+    orgShortName: clipStatement(body?.statement_org_short ?? '', 200),
+    phone: clipStatement(body?.statement_phone ?? '', 120),
+    email: clipStatement(body?.statement_email ?? '', 200),
+    visitorAddress: clipStatement(body?.statement_visitor_address ?? ''),
+    postalAddress: clipStatement(body?.statement_postal_address ?? ''),
+    responseDays: Number.isFinite(rd) && rd > 0 && rd <= 365 ? rd : null,
+  };
+}
+
 const app = express();
 
 // CORS: allow requests from Combell or any frontend (set ALLOWED_ORIGIN to restrict)
@@ -105,6 +126,13 @@ app.post('/api/run', upload.single('file'), (req, res) => {
   const id = uuidv4().slice(0, 8);
   const reportDir = join(REPORTS_BASE, id);
   if (!existsSync(reportDir)) mkdirSync(reportDir, { recursive: true });
+
+  const statementMeta = parseStatementMeta(req.body || {});
+  try {
+    writeFileSync(join(reportDir, 'statement-meta.json'), JSON.stringify(statementMeta, null, 2), 'utf8');
+  } catch (err) {
+    console.error('statement-meta write failed:', err.message);
+  }
 
   runStatus.set(id, { status: 'running', urls: urls.length, error: null });
 

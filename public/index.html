@@ -864,6 +864,77 @@
       font-weight: 600;
       margin: 0 4px 4px 0;
     }
+    .statement-details {
+      margin-top: 28px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--bg);
+      overflow: hidden;
+    }
+    .statement-details summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 16px 18px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      user-select: none;
+    }
+    .statement-details summary::-webkit-details-marker { display: none; }
+    .statement-details summary::after {
+      content: '';
+      width: 10px;
+      height: 10px;
+      border-right: 2px solid var(--text-muted);
+      border-bottom: 2px solid var(--text-muted);
+      transform: rotate(45deg);
+      transition: transform .2s;
+      flex-shrink: 0;
+    }
+    .statement-details[open] summary::after {
+      transform: rotate(-135deg);
+      margin-top: 4px;
+    }
+    .statement-details .statement-inner {
+      padding: 0 18px 20px;
+      border-top: 1px solid var(--border);
+    }
+    .statement-note {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin: 14px 0 18px;
+    }
+    .statement-row {
+      margin-bottom: 14px;
+    }
+    .statement-row:last-child { margin-bottom: 0; }
+    .statement-row input[type="text"],
+    .statement-row input[type="email"],
+    .statement-row input[type="tel"],
+    .statement-row input[type="number"] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      background: var(--surface);
+      color: var(--text);
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .statement-row input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .statement-row label { margin-bottom: 6px; }
+    .statement-row .hint { margin-top: 4px; }
     .submit-wrap { margin-top: 28px; }
     .submit {
       display: inline-flex;
@@ -1068,6 +1139,42 @@
           </div>
           <p class="hint">CSV: URLs in any column. XML: &lt;loc&gt; or &lt;url&gt; (e.g. sitemap).</p>
 
+          <details class="statement-details">
+            <summary>Accessibility statement details (optional)</summary>
+            <div class="statement-inner">
+              <p class="statement-note">This information is only used to pre-fill the draft <strong>accessibility statement</strong> in your report (HTML). It is stored with this run on the server and is not sent to third parties or used for analytics.</p>
+              <div class="statement-row">
+                <label for="statement_org_name">Organization name</label>
+                <input type="text" id="statement_org_name" name="statement_org_name" autocomplete="organization" placeholder="e.g. About Us">
+              </div>
+              <div class="statement-row">
+                <label for="statement_org_short">Short name (used in sentences)</label>
+                <input type="text" id="statement_org_short" name="statement_org_short" placeholder="e.g. Us">
+                <p class="hint">Appears in “Measures to support accessibility” and “Assessment approach”.</p>
+              </div>
+              <div class="statement-row">
+                <label for="statement_phone">Phone</label>
+                <input type="tel" id="statement_phone" name="statement_phone" autocomplete="tel" placeholder="+32 …">
+              </div>
+              <div class="statement-row">
+                <label for="statement_email">E-mail</label>
+                <input type="email" id="statement_email" name="statement_email" autocomplete="email" placeholder="info@example.com">
+              </div>
+              <div class="statement-row">
+                <label for="statement_visitor_address">Visitor address</label>
+                <input type="text" id="statement_visitor_address" name="statement_visitor_address" autocomplete="street-address" placeholder="Street, City">
+              </div>
+              <div class="statement-row">
+                <label for="statement_postal_address">Postal address</label>
+                <input type="text" id="statement_postal_address" name="statement_postal_address" placeholder="Street, City">
+              </div>
+              <div class="statement-row">
+                <label for="statement_response_days">Response time (business days)</label>
+                <input type="number" id="statement_response_days" name="statement_response_days" min="1" max="365" value="3" placeholder="3">
+              </div>
+            </div>
+          </details>
+
           <div class="submit-wrap">
             <button type="submit" class="submit" id="submit">
               Run accessibility tests
@@ -1131,6 +1238,20 @@
       const fd = new FormData();
       fd.append('urls', document.getElementById('urls').value);
       if (fileInput.files[0]) fd.append('file', fileInput.files[0]);
+
+      const statementIds = [
+        'statement_org_name',
+        'statement_org_short',
+        'statement_phone',
+        'statement_email',
+        'statement_visitor_address',
+        'statement_postal_address',
+        'statement_response_days',
+      ];
+      statementIds.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) fd.append(id, el.value);
+      });
 
       try {
         const res = await fetch(APP_BASE + '/api/run', { method: 'POST', body: fd });

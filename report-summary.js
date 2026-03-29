@@ -212,7 +212,7 @@ export function buildChartsSectionHtml(payload, dataId = 'a11y-chart-data') {
     try { return JSON.parse(el.textContent); } catch (e) { return null; }
   }
   function colorScore(n) {
-    if (n >= 80) return '#2e7d32';
+    if (n >= 80) return '#2d9d78';
     if (n >= 50) return '#ed6c02';
     return '#c62828';
   }
@@ -260,7 +260,7 @@ export function buildChartsSectionHtml(payload, dataId = 'a11y-chart-data') {
           datasets: [{
             label: 'Count',
             data: [d.pass, d.warn, d.fail, d.totalAxeViolations],
-            backgroundColor: ['#2e7d32', '#ed6c02', '#c62828', '#6a1b9a']
+            backgroundColor: ['#2d9d78', '#ed6c02', '#c62828', '#5c4d7d']
           }]
         },
         options: {
