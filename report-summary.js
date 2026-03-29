@@ -49,8 +49,36 @@ export function computeChapterIssueData(reportData) {
   return { labels, customSeries, axeSeries, issueTotal, chapterKeys };
 }
 
-export function buildChartDataPayload(reportData, { pass, fail, warn, totalAxeViolations, scoreClamp }) {
+/**
+ * Top 3 disability categories most affected by open issues (excludes "Various" when possible).
+ */
+export function computeTopDisabilities(disabilityStats) {
+  const stats = disabilityStats || {};
+  const named = Object.entries(stats)
+    .filter(([k]) => k !== 'Various')
+    .sort((a, b) => b[1] - a[1]);
+  let top = named.filter(([, v]) => v > 0).slice(0, 3);
+  if (top.length < 3 && (stats.Various || 0) > 0) {
+    top = [...top, ['Various', stats.Various]].slice(0, 3);
+  }
+  if (top.length === 0) {
+    top = Object.entries(stats)
+      .sort((a, b) => b[1] - a[1])
+      .filter(([, v]) => v > 0)
+      .slice(0, 3);
+  }
+  return {
+    labels: top.map(([k]) => k),
+    counts: top.map(([, v]) => v),
+  };
+}
+
+export function buildChartDataPayload(
+  reportData,
+  { pass, fail, warn, totalAxeViolations, scoreClamp, disabilityStats }
+) {
   const ch = computeChapterIssueData(reportData);
+  const top = computeTopDisabilities(disabilityStats);
   return {
     scoreClamp,
     pass,
@@ -60,6 +88,8 @@ export function buildChartDataPayload(reportData, { pass, fail, warn, totalAxeVi
     chapterLabels: ch.labels,
     chapterCustom: ch.customSeries,
     chapterAxe: ch.axeSeries,
+    disabilityTopLabels: top.labels,
+    disabilityTopCounts: top.counts,
   };
 }
 
@@ -142,6 +172,7 @@ export function buildChartSectionStyles() {
     .chart-card .chart-wrap { position: relative; height: 220px; max-width: 100%; }
     .chart-card.chart-wide { grid-column: 1 / -1; }
     .chart-card.chart-wide .chart-wrap { height: 280px; }
+    .chart-card.chart-disabilities .chart-wrap { height: 200px; max-width: 420px; }
     .chart-data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 12px; }
     .chart-data-table th, .chart-data-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
     .chart-data-table caption { text-align: left; font-weight: 600; margin-bottom: 8px; }
@@ -168,6 +199,17 @@ export function buildChartsSectionHtml(payload, dataId = 'a11y-chart-data') {
     })
     .join('');
 
+  const disRows = (payload.disabilityTopLabels || [])
+    .map((label, i) => {
+      const c = (payload.disabilityTopCounts || [])[i];
+      return `<tr><td>${escapeHtml(label)}</td><td>${c != null ? c : '—'}</td></tr>`;
+    })
+    .join('');
+  const disCaption =
+    (payload.disabilityTopLabels || []).length > 0
+      ? 'Estimated relative impact by disability category (from checklist mapping and axe issues).'
+      : 'No disability-specific counts in this run.';
+
   return `
     <section class="chart-section" aria-labelledby="charts-heading">
       <h2 id="charts-heading">Overview charts</h2>
@@ -190,6 +232,17 @@ export function buildChartsSectionHtml(payload, dataId = 'a11y-chart-data') {
               <tr><td>Axe violations</td><td>${payload.totalAxeViolations}</td></tr>
             </tbody>
           </table>
+        </figure>
+        <figure class="chart-card chart-disabilities">
+          <h3>Top 3 disability groups affected</h3>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin:0 0 8px;">Where automated findings most often map to user groups (higher = more checklist/axe signals for that group).</p>
+          <div class="chart-wrap"><canvas id="a11y-chart-disabilities" role="img" aria-label="Bar chart of top three disability categories by impact count"></canvas></div>
+          <table class="chart-data-table">
+            <caption>Top disability groups</caption>
+            <thead><tr><th>Group</th><th>Count</th></tr></thead>
+            <tbody>${disRows || '<tr><td colspan="2">No data</td></tr>'}</tbody>
+          </table>
+          <p class="visually-hidden">${escapeHtml(disCaption)}</p>
         </figure>
         <figure class="chart-card chart-wide">
           <h3>Issues by checklist chapter</h3>
@@ -268,6 +321,38 @@ export function buildChartsSectionHtml(payload, dataId = 'a11y-chart-data') {
           maintainAspectRatio: false,
           plugins: { legend: { display: false } },
           scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+      });
+    }
+    var disEl = document.getElementById('a11y-chart-disabilities');
+    if (disEl && d.disabilityTopLabels && d.disabilityTopLabels.length && d.disabilityTopCounts && d.disabilityTopCounts.some(function(n) { return n > 0; })) {
+      new Chart(disEl, {
+        type: 'bar',
+        data: {
+          labels: d.disabilityTopLabels,
+          datasets: [{
+            label: 'Signals',
+            data: d.disabilityTopCounts,
+            backgroundColor: ['#2d9d78', '#248f6a', '#1b7a5c']
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: function(items) { return items[0] ? items[0].label : ''; },
+                label: function(ctx) { return 'Count: ' + ctx.raw; }
+              }
+            }
+          },
+          scales: {
+            x: { beginAtZero: true, ticks: { stepSize: 1 } },
+            y: { ticks: { autoSkip: false } }
+          }
         }
       });
     }

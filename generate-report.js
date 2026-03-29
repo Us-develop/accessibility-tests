@@ -259,14 +259,6 @@ export function generateReport(reportData, options = {}) {
   const score = total === 0 ? 100 : Math.round(((pass + totalAxePasses) / total) * 100);
   const scoreClamp = Math.max(0, Math.min(100, score));
 
-  const chartPayload = buildChartDataPayload(reportData, {
-    pass,
-    fail,
-    warn,
-    totalAxeViolations,
-    scoreClamp,
-  });
-
   const disabilityStats = {};
   ALL_DISABILITIES.forEach((d) => { disabilityStats[d] = 0; });
   (reportData.customResults || []).forEach((r) => {
@@ -278,6 +270,15 @@ export function generateReport(reportData, options = {}) {
   Object.values(reportData.axeResults || {}).forEach((data) => {
     const count = (data.violations?.length || 0) * Math.max(1, reportData.urls?.length || 1);
     disabilityStats['Various'] = (disabilityStats['Various'] || 0) + count;
+  });
+
+  const chartPayload = buildChartDataPayload(reportData, {
+    pass,
+    fail,
+    warn,
+    totalAxeViolations,
+    scoreClamp,
+    disabilityStats,
   });
 
   let html = `<!DOCTYPE html>
@@ -363,6 +364,12 @@ export function generateReport(reportData, options = {}) {
     section h2.has-visible { display: block; }
     .remediation { margin-top: 8px; font-size: 0.85rem; }
     .remediation pre { margin: 8px 0; padding: 10px; background: #1e1e1e; color: #d4d4d4; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
+    .issue-table tr.issue-row-main td { border-bottom: none; padding-bottom: 8px; vertical-align: top; }
+    .issue-table tr.issue-row-detail td { border-bottom: 1px solid var(--border); padding-top: 0; vertical-align: top; background: var(--bg); }
+    .issue-detail { padding: 0 0 4px; }
+    .issue-msg-label { margin: 0 0 4px; font-size: 0.8rem; color: var(--text-muted); }
+    .issue-msg-text { margin: 0 0 12px; font-size: 0.9rem; }
+    .issue-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .remediation-btns { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
     .remediation-btns button, .btn-show-fix, .btn-copy-fix, .btn-show-occurrences { padding: 6px 12px; font-size: 0.8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; }
     .remediation-btns button:hover { background: var(--bg); }
@@ -401,7 +408,7 @@ export function generateReport(reportData, options = {}) {
     .screenshot-wrap .screenshot-fig { margin: 0; }
     .screenshot-wrap .screenshot-fig img { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,.06); display: block; }
     .screenshot-wrap .screenshot-fig figcaption { font-size: 0.8rem; color: var(--text-muted); margin-top: 6px; }
-    @media print { .sticky-bar { position: static; } .filter-row, .disability-stats, .btn-pdf, .remediation-btns, .btn-show-occurrences, .summary-item.filter-btn { display: none !important; } .occurrences[hidden] { display: none !important; } }
+    @media print { .sticky-bar { position: static; } .filter-row, .disability-stats, .btn-pdf, .remediation-btns, .issue-actions, .summary-item.filter-btn { display: none !important; } .occurrences[hidden] { display: none !important; } }
     ${buildChartSectionStyles()}
   </style>
 </head>
@@ -543,7 +550,7 @@ export function generateReport(reportData, options = {}) {
             const ids = DISABILITY_MAP[r.id];
             return ids ? ids.join(', ') : '—';
           };
-          html += '<table><thead><tr><th>Rule</th><th>Status</th><th>Impact</th><th>Effort</th><th>Disability</th><th>Message</th><th>Fix</th></tr></thead><tbody>';
+          html += '<table class="issue-table"><thead><tr><th>Rule</th><th>Status</th><th>Impact</th><th>Effort</th><th>Disability</th></tr></thead><tbody>';
           custom.forEach((r, idx) => {
             const filterVal = r.status === 'pass' ? 'pass' : r.status === 'warn' ? 'warn' : 'fail';
             const disabilities = (DISABILITY_MAP[r.id] || ['Various']).join('|');
@@ -567,22 +574,29 @@ export function generateReport(reportData, options = {}) {
             } else {
               occContent = '<p class="occurrence-item">No element details for this check.</p>';
             }
-            html += `<tr class="filterable" data-filter="${filterVal}" data-disability="${escapeHtml(disabilities)}">
+            html += `<tr class="filterable issue-row-main" data-filter="${filterVal}" data-disability="${escapeHtml(disabilities)}">
               <td>${escapeHtml(r.rule)}</td>
               <td><span class="badge ${r.status}">${r.status}</span></td>
               <td><span class="badge impact-effort-badge">${rem.impact || '—'}</span></td>
               <td>${rem.effort || '—'}</td>
               <td>${escapeHtml(disabilityLabel(r))}</td>
-              <td>${escapeHtml(r.message)}</td>
-              <td>
-                <button type="button" class="btn-show-fix" data-target="${rowId}" aria-expanded="false">Show fix</button>
-                <button type="button" class="btn-copy-fix" data-snippet="${snippetEsc}" title="Copy fix">Copy fix</button>
-                <button type="button" class="btn-show-occurrences" data-target="${occId}" aria-expanded="false">Show occurrences</button>
-                <div id="${rowId}" class="remediation" hidden>
-                  ${wcagLinks ? `<div class="wcag-links">WCAG: ${wcagLinks}</div>` : ''}
-                  <pre>${snippetEsc}</pre>
+            </tr>
+            <tr class="filterable issue-row-detail" data-filter="${filterVal}" data-disability="${escapeHtml(disabilities)}">
+              <td colspan="5">
+                <div class="issue-detail">
+                  <p class="issue-msg-label"><strong>Message</strong></p>
+                  <p class="issue-msg-text">${escapeHtml(r.message)}</p>
+                  <div class="issue-actions">
+                    <button type="button" class="btn-show-fix" data-target="${rowId}" aria-expanded="false">Show fix</button>
+                    <button type="button" class="btn-copy-fix" data-snippet="${snippetEsc}" title="Copy fix">Copy fix</button>
+                    <button type="button" class="btn-show-occurrences" data-target="${occId}" aria-expanded="false">Show occurrences</button>
+                  </div>
+                  <div id="${rowId}" class="remediation" hidden>
+                    ${wcagLinks ? `<div class="wcag-links">WCAG: ${wcagLinks}</div>` : ''}
+                    <pre>${snippetEsc}</pre>
+                  </div>
+                  <div id="${occId}" class="occurrences" hidden>${occContent}</div>
                 </div>
-                <div id="${occId}" class="occurrences" hidden>${occContent}</div>
               </td>
             </tr>`;
           });

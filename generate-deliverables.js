@@ -101,6 +101,7 @@ export function generateClientPresentation(data, outputDir) {
     warn,
     totalAxeViolations,
     scoreClamp,
+    disabilityStats,
   });
   const date = new Date(reportData.generatedAt).toLocaleString();
   const issuesCount = fail + warn + totalAxeViolations;
