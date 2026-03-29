@@ -8,6 +8,12 @@
 import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { getRemediation, wcagScUrl } from './remediation-data.js';
+import {
+  buildExecutiveSummaryHtml,
+  buildChartDataPayload,
+  buildChartsSectionHtml,
+  buildChartSectionStyles,
+} from './report-summary.js';
 
 const STYLES = `
   :root { --pass: #2e7d32; --fail: #c62828; --warn: #ed6c02; --accent: #2d9d78; --bg: #f8f7f4; --surface: #fff; --text: #1a1a1a; --text-muted: #5c5c5c; --border: #e8e6e1; }
@@ -88,6 +94,13 @@ export function generateDeveloperAdvice(data, outputDir) {
 
 export function generateClientPresentation(data, outputDir) {
   const { reportData, fixOrderItems, disabilityStats, score, scoreClamp, pass, fail, warn, totalAxeViolations, total } = data;
+  const chartPayload = buildChartDataPayload(reportData, {
+    pass,
+    fail,
+    warn,
+    totalAxeViolations,
+    scoreClamp,
+  });
   const date = new Date(reportData.generatedAt).toLocaleString();
   const issuesCount = fail + warn + totalAxeViolations;
   const uniqueByRule = (items) => [...new Map(items.map((i) => [i.rule, i])).values()];
@@ -103,6 +116,7 @@ export function generateClientPresentation(data, outputDir) {
   <title>Accessibility summary – Client presentation</title>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>${STYLES}
+    ${buildChartSectionStyles()}
     .score-hero { text-align: center; padding: 32px; background: var(--bg); border-radius: 12px; margin: 24px 0; }
     .score-value { font-size: 4rem; font-weight: 700; }
     .score-value.good { color: var(--pass); }
@@ -122,6 +136,8 @@ export function generateClientPresentation(data, outputDir) {
     <h1>Accessibility summary</h1>
     <p class="meta">Generated ${date}</p>
 
+    ${buildExecutiveSummaryHtml(data)}
+
     <h2>Overall score</h2>
     <div class="score-hero">
       <div class="score-value ${scoreClamp >= 80 ? 'good' : scoreClamp >= 50 ? 'mid' : 'low'}">${scoreClamp}</div>
@@ -136,6 +152,8 @@ export function generateClientPresentation(data, outputDir) {
       <div class="stat-card"><span style="color:var(--fail)">${totalAxeViolations}</span><small>Axe violations</small></div>
       <div class="stat-card"><span>${total}</span><small>Total checks</small></div>
     </div>
+
+    ${buildChartsSectionHtml(chartPayload, 'a11y-chart-data-client')}
 
     <h2>Step-by-step remediation plan</h2>
     <p>We recommend addressing issues in three phases, starting with quick wins.</p>

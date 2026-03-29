@@ -13,6 +13,11 @@ import {
 } from './remediation-data.js';
 import { generateAllDeliverables } from './generate-deliverables.js';
 import { SEMANTIC_CHECKLIST_WCAG22 } from './checklists.js';
+import {
+  buildChartDataPayload,
+  buildChartsSectionHtml,
+  buildChartSectionStyles,
+} from './report-summary.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUTPUT_DIR = join(__dirname, 'reports');
@@ -253,6 +258,14 @@ export function generateReport(reportData, options = {}) {
   const score = total === 0 ? 100 : Math.round(((pass + totalAxePasses) / total) * 100);
   const scoreClamp = Math.max(0, Math.min(100, score));
 
+  const chartPayload = buildChartDataPayload(reportData, {
+    pass,
+    fail,
+    warn,
+    totalAxeViolations,
+    scoreClamp,
+  });
+
   const disabilityStats = {};
   ALL_DISABILITIES.forEach((d) => { disabilityStats[d] = 0; });
   (reportData.customResults || []).forEach((r) => {
@@ -394,6 +407,7 @@ export function generateReport(reportData, options = {}) {
     .screenshot-wrap .screenshot-fig img { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,.06); display: block; }
     .screenshot-wrap .screenshot-fig figcaption { font-size: 0.8rem; color: var(--text-muted); margin-top: 6px; }
     @media print { .sticky-bar { position: static; } .filter-row, .disability-stats, .btn-pdf, .remediation-btns, .btn-show-occurrences, .summary-item.filter-btn { display: none !important; } .occurrences[hidden] { display: none !important; } }
+    ${buildChartSectionStyles()}
   </style>
 </head>
 <body>
@@ -420,6 +434,8 @@ export function generateReport(reportData, options = {}) {
       <div class="score-label">out of 100</div>
       <p class="score-explanation" style="font-size:0.8rem; color:var(--text-muted); margin:8px 0 0;">Custom checks + Axe rules: passed / total (WCAG-oriented)</p>
     </div>
+
+    ${buildChartsSectionHtml(chartPayload, 'a11y-chart-data-main')}
 
     <div class="sticky-bar" id="sticky-bar">
       <div class="summary" role="group" aria-label="Filter results">

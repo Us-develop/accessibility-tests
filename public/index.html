@@ -870,8 +870,8 @@
       align-items: center;
       gap: 10px;
       padding: 14px 28px;
-      background: #e0e0e0;
-      color: #424242;
+      background: var(--accent);
+      color: #fff;
       border: none;
       border-radius: 12px;
       font-size: 1rem;
@@ -880,7 +880,7 @@
       cursor: pointer;
       transition: background .2s, transform .1s;
     }
-    .submit:hover { background: #d0d0d0; }
+    .submit:hover { background: var(--accent-hover); }
     .submit:active { transform: scale(0.98); }
     .submit:disabled {
       background: #bdbdbd;
@@ -1117,6 +1117,10 @@
         e.preventDefault();
         document.querySelector('.main h1').scrollIntoView({ behavior: 'smooth' });
       }
+    });
+
+    window.addEventListener('pageshow', function (ev) {
+      if (ev.persisted) submitBtn.disabled = false;
     });
 
     form.addEventListener('submit', async (e) => {
