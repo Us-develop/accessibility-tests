@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { Client } from 'basic-ftp';
+import { sendRunNotificationEmail, createSmtpTransport } from './server-email.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPORTS_BASE = join(__dirname, 'reports');
@@ -19,6 +20,61 @@ const PORT = process.env.PORT || 3456;
 
 // In-memory run status (running, done, error)
 const runStatus = new Map();
+/** Run IDs we already attempted to notify (success or skip) */
+const notificationAttempted = new Set();
+
+function clipEmail(s, max = 200) {
+  if (typeof s !== 'string') return '';
+  return s.trim().slice(0, max);
+}
+
+function parseNotifyFields(body) {
+  const raw = body?.notify_on_complete;
+  const notifyOnComplete =
+    raw === 'on' ||
+    raw === '1' ||
+    raw === 'true' ||
+    raw === true;
+  const notifyEmail = clipEmail(body?.notify_email || body?.statement_email || '');
+  return { notifyOnComplete, notifyEmail };
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function runStatePatch(id, patch) {
+  const prev = runStatus.get(id) || {};
+  runStatus.set(id, { ...prev, ...patch });
+  void maybeSendRunEmail(id);
+}
+
+async function maybeSendRunEmail(id) {
+  if (notificationAttempted.has(id)) return;
+  const cur = runStatus.get(id);
+  if (!cur?.notifyRequested || !cur.notifyEmail) return;
+  if (cur.status !== 'done' && cur.status !== 'error') return;
+  notificationAttempted.add(id);
+  const base = (process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+  const reportUrl = `${base}/report/${id}/`;
+  if (!createSmtpTransport()) {
+    console.warn(
+      `[run ${id}] Notification requested for ${cur.notifyEmail} but SMTP is not configured (set SMTP_HOST and related env vars).`
+    );
+    return;
+  }
+  try {
+    await sendRunNotificationEmail({
+      to: cur.notifyEmail,
+      reportId: id,
+      status: cur.status,
+      error: cur.error || null,
+      reportUrl,
+    });
+  } catch (err) {
+    console.error(`[run ${id}] Notification email failed:`, err.message);
+  }
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -123,6 +179,14 @@ app.post('/api/run', upload.single('file'), (req, res) => {
     urls = urls.slice(0, maxUrls);
   }
 
+  const { notifyOnComplete, notifyEmail } = parseNotifyFields(req.body || {});
+  if (notifyOnComplete && !isValidEmail(notifyEmail)) {
+    return res.status(400).json({
+      error:
+        'Enter a valid e-mail address to receive a notification when tests finish (or uncheck that option).',
+    });
+  }
+
   const id = uuidv4().slice(0, 8);
   const reportDir = join(REPORTS_BASE, id);
   if (!existsSync(reportDir)) mkdirSync(reportDir, { recursive: true });
@@ -134,7 +198,13 @@ app.post('/api/run', upload.single('file'), (req, res) => {
     console.error('statement-meta write failed:', err.message);
   }
 
-  runStatus.set(id, { status: 'running', urls: urls.length, error: null });
+  runStatus.set(id, {
+    status: 'running',
+    urls: urls.length,
+    error: null,
+    notifyRequested: !!(notifyOnComplete && notifyEmail),
+    notifyEmail: notifyOnComplete && notifyEmail ? notifyEmail : null,
+  });
 
   const urlsArg = urls.join('\n');
   const child = spawn(
@@ -155,13 +225,13 @@ app.post('/api/run', upload.single('file'), (req, res) => {
     const resultsPath = join(reportDir, 'accessibility-results.json');
 
     if (code === 0 && existsSync(reportPath)) {
-      runStatus.set(id, { status: 'done', urls: urls.length, error: null });
+      runStatePatch(id, { status: 'done', urls: urls.length, error: null });
       return;
     }
     if (code === 0 && !existsSync(reportPath)) {
       const pollForReport = (attempts = 0) => {
         if (existsSync(reportPath)) {
-          runStatus.set(id, { status: 'done', urls: urls.length, error: null });
+          runStatePatch(id, { status: 'done', urls: urls.length, error: null });
           return;
         }
         if (attempts < 5) {
@@ -172,16 +242,16 @@ app.post('/api/run', upload.single('file'), (req, res) => {
               const { generateReport } = await import('./generate-report.js');
               generateReport(null, { outputDir: reportDir });
               if (existsSync(reportPath)) {
-                runStatus.set(id, { status: 'done', urls: urls.length, error: null });
+                runStatePatch(id, { status: 'done', urls: urls.length, error: null });
               } else {
-                runStatus.set(id, { status: 'error', urls: urls.length, error: 'Report generation failed.' });
+                runStatePatch(id, { status: 'error', urls: urls.length, error: 'Report generation failed.' });
               }
             } catch (err) {
-              runStatus.set(id, { status: 'error', urls: urls.length, error: err.message });
+              runStatePatch(id, { status: 'error', urls: urls.length, error: err.message });
             }
           })();
         } else {
-          runStatus.set(id, {
+          runStatePatch(id, {
             status: 'error',
             urls: urls.length,
             error: 'Report file was not created.',
@@ -191,11 +261,11 @@ app.post('/api/run', upload.single('file'), (req, res) => {
       pollForReport();
       return;
     }
-    runStatus.set(id, { status: 'error', urls: urls.length, error: stderr || `Process exited with code ${code}` });
+    runStatePatch(id, { status: 'error', urls: urls.length, error: stderr || `Process exited with code ${code}` });
   });
 
   child.on('error', (err) => {
-    runStatus.set(id, { status: 'error', urls: urls.length, error: err.message });
+    runStatePatch(id, { status: 'error', urls: urls.length, error: err.message });
   });
 
   res.json({ id, urls: urls.length });
@@ -213,7 +283,11 @@ app.get('/api/status/:id', (req, res) => {
     return res.status(404).json({ error: 'Run not found' });
   }
 
-  res.json(status);
+  res.json({
+    status: status.status,
+    urls: status.urls,
+    error: status.error,
+  });
 });
 
 function isValidReportId(id) {

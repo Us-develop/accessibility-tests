@@ -935,6 +935,54 @@
     }
     .statement-row label { margin-bottom: 6px; }
     .statement-row .hint { margin-top: 4px; }
+    .notify-row {
+      margin-top: 24px;
+      padding: 18px 20px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .notify-row label:not(.checkbox-label) {
+      display: block;
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    .notify-row input[type="email"] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      background: var(--surface);
+      color: var(--text);
+      margin-bottom: 14px;
+    }
+    .notify-row input[type="email"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .checkbox-label {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-weight: 500;
+      font-size: 0.95rem;
+      cursor: pointer;
+      line-height: 1.4;
+    }
+    .checkbox-label input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      flex-shrink: 0;
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
+    .notify-row .hint { margin-top: 10px; margin-bottom: 0; }
     .submit-wrap { margin-top: 28px; }
     .submit {
       display: inline-flex;
@@ -1175,6 +1223,16 @@
             </div>
           </details>
 
+          <div class="notify-row">
+            <label for="notify_email">E-mail for notifications</label>
+            <input type="email" id="notify_email" name="notify_email" autocomplete="email" placeholder="you@example.com">
+            <label class="checkbox-label" for="notify_on_complete">
+              <input type="checkbox" name="notify_on_complete" value="1" id="notify_on_complete">
+              <span>Notify me when the tests are finished</span>
+            </label>
+            <p class="hint">If you use the same address in Accessibility statement details, you can leave this blank and we will use that e-mail.</p>
+          </div>
+
           <div class="submit-wrap">
             <button type="submit" class="submit" id="submit">
               Run accessibility tests
@@ -1252,6 +1310,21 @@
         var el = document.getElementById(id);
         if (el) fd.append(id, el.value);
       });
+
+      var notifyCb = document.getElementById('notify_on_complete');
+      var notifyEmailEl = document.getElementById('notify_email');
+      var notifyEmail = (notifyEmailEl && notifyEmailEl.value.trim()) || '';
+      var statementEmail = (document.getElementById('statement_email') && document.getElementById('statement_email').value.trim()) || '';
+      if (notifyCb && notifyCb.checked) {
+        if (!notifyEmail && !statementEmail) {
+          errorEl.textContent = 'Enter an e-mail for notifications, or add one under Accessibility statement details.';
+          errorEl.style.display = 'block';
+          submitBtn.disabled = false;
+          return;
+        }
+      }
+      if (notifyEmailEl) fd.append('notify_email', notifyEmailEl.value);
+      if (notifyCb && notifyCb.checked) fd.append('notify_on_complete', '1');
 
       try {
         const res = await fetch(APP_BASE + '/api/run', { method: 'POST', body: fd });
