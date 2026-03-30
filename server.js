@@ -8,7 +8,7 @@ import express from 'express';
 import multer from 'multer';
 import { spawn } from 'child_process';
 import { v4 as uuidv4 } from 'uuid';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { Client } from 'basic-ftp';
@@ -225,12 +225,18 @@ app.post('/api/run', upload.single('file'), (req, res) => {
     const resultsPath = join(reportDir, 'accessibility-results.json');
 
     if (code === 0 && existsSync(reportPath)) {
+      persistReportArtifactsToFtp(id).catch((err) => {
+        console.error(`[run ${id}] FTP persistence failed:`, err.message);
+      });
       runStatePatch(id, { status: 'done', urls: urls.length, error: null });
       return;
     }
     if (code === 0 && !existsSync(reportPath)) {
       const pollForReport = (attempts = 0) => {
         if (existsSync(reportPath)) {
+          persistReportArtifactsToFtp(id).catch((err) => {
+            console.error(`[run ${id}] FTP persistence failed:`, err.message);
+          });
           runStatePatch(id, { status: 'done', urls: urls.length, error: null });
           return;
         }
@@ -242,6 +248,9 @@ app.post('/api/run', upload.single('file'), (req, res) => {
               const { generateReport } = await import('./generate-report.js');
               generateReport(null, { outputDir: reportDir });
               if (existsSync(reportPath)) {
+                persistReportArtifactsToFtp(id).catch((err) => {
+                  console.error(`[run ${id}] FTP persistence failed:`, err.message);
+                });
                 runStatePatch(id, { status: 'done', urls: urls.length, error: null });
               } else {
                 runStatePatch(id, { status: 'error', urls: urls.length, error: 'Report generation failed.' });
@@ -348,6 +357,51 @@ async function ftpUpload(localPath, remotePath) {
   }
 }
 
+function listScreenshotFiles(reportDir) {
+  const shotsDir = join(reportDir, 'screenshots');
+  if (!existsSync(shotsDir)) return [];
+  try {
+    return readdirSync(shotsDir)
+      .filter((name) => {
+        const p = join(shotsDir, name);
+        try {
+          return statSync(p).isFile();
+        } catch {
+          return false;
+        }
+      })
+      .map((name) => ({ local: join(shotsDir, name), remote: `screenshots/${name}` }));
+  } catch {
+    return [];
+  }
+}
+
+async function persistReportArtifactsToFtp(id) {
+  if (!FTP_CONFIG) return;
+  const reportDir = join(REPORTS_BASE, id);
+  const baseFiles = [
+    'accessibility-report.html',
+    'accessibility-client.html',
+    'accessibility-developers.html',
+    'accessibility-statement.html',
+    'accessibility-results.json',
+    'accessibility-results-previous.json',
+    'statement-meta.json',
+    'manual-progress.json',
+  ];
+  const jobs = [];
+  baseFiles.forEach((name) => {
+    const local = join(reportDir, name);
+    if (existsSync(local)) jobs.push({ local, remote: `${id}/${name}` });
+  });
+  listScreenshotFiles(reportDir).forEach((f) => {
+    jobs.push({ local: f.local, remote: `${id}/${f.remote}` });
+  });
+  for (const j of jobs) {
+    await ftpUpload(j.local, j.remote);
+  }
+}
+
 app.get('/api/report/:id/manual-progress', async (req, res) => {
   const id = req.params.id;
   if (!isValidReportId(id)) return res.status(400).json({ error: 'Invalid report ID' });
@@ -393,7 +447,7 @@ function serveReportFile(id, filename) {
 
 const DELIVERABLE_FILES = ['accessibility-developers.html', 'accessibility-client.html', 'accessibility-statement.html'];
 
-app.get('/report/:id/screenshots/:file', (req, res) => {
+app.get('/report/:id/screenshots/:file', async (req, res) => {
   const { id, file } = req.params;
   const safeName = file.replace(/[^a-zA-Z0-9._-]/g, '');
   const filePath = join(REPORTS_BASE, id, 'screenshots', safeName);
@@ -401,13 +455,21 @@ app.get('/report/:id/screenshots/:file', (req, res) => {
     res.sendFile(filePath);
     return;
   }
+  await ftpDownload(`${id}/screenshots/${safeName}`);
+  if (existsSync(filePath)) {
+    res.sendFile(filePath);
+    return;
+  }
   res.status(404).send('Not found');
 });
 
-app.get('/report/:id/:file', (req, res) => {
+app.get('/report/:id/:file', async (req, res) => {
   const { id, file } = req.params;
   if (DELIVERABLE_FILES.includes(file)) {
-    const html = serveReportFile(id, file);
+    let html = serveReportFile(id, file);
+    if (!html) {
+      html = await ftpDownload(`${id}/${file}`);
+    }
     if (html) {
       res.setHeader('Content-Type', 'text/html');
       return res.send(html);
@@ -428,7 +490,7 @@ app.get('/report/:id/:file', (req, res) => {
   `);
 });
 
-app.get('/report/:id', (req, res) => {
+app.get('/report/:id', async (req, res) => {
   const id = req.params.id;
   const reportPath = join(REPORTS_BASE, id, 'accessibility-report.html');
 
@@ -440,6 +502,15 @@ app.get('/report/:id', (req, res) => {
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
     return;
+  }
+
+  const downloaded = await ftpDownload(`${id}/accessibility-report.html`);
+  if (downloaded) {
+    if (!req.path.endsWith('/')) {
+      return res.redirect(301, `/report/${id}/`);
+    }
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(downloaded);
   }
 
   const status = runStatus.get(id);
@@ -458,13 +529,18 @@ app.get('/report/:id', (req, res) => {
   `);
 });
 
-app.get('/report/:id/', (req, res) => {
+app.get('/report/:id/', async (req, res) => {
   const id = req.params.id;
   const reportPath = join(REPORTS_BASE, id, 'accessibility-report.html');
   if (existsSync(reportPath)) {
     const html = readFileSync(reportPath, 'utf8');
     res.setHeader('Content-Type', 'text/html');
     return res.send(html);
+  }
+  const downloaded = await ftpDownload(`${id}/accessibility-report.html`);
+  if (downloaded) {
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(downloaded);
   }
   res.redirect(`/report/${id}`);
 });

@@ -30,6 +30,11 @@ ${REPORT_DELIVERABLE_CSS}
   .badge.fail { background: #ffebee; color: var(--fail); }
   .badge.warn { background: #fff3e0; color: var(--warn); }
   .badge.impact { background: #e3f2fd; }
+  .ai-summary { margin: 22px 0 8px; padding: 18px 18px; border-radius: 12px; border: 1px solid var(--border); background: #f0f7f4; }
+  .ai-summary h2 { margin: 0 0 10px; font-size: 1.15rem; }
+  .ai-summary h3 { margin: 14px 0 6px; font-size: 1rem; }
+  .ai-summary p { margin: 0 0 10px; }
+  .ai-summary .muted { color: var(--text-muted); font-size: 0.9rem; }
 `;
 
 function escapeHtml(s) {
@@ -93,6 +98,103 @@ export function generateDeveloperAdvice(data, outputDir) {
   return path;
 }
 
+function buildAiClientSummaryHtml({
+  reportData,
+  chartPayload,
+  scoreClamp,
+  pass,
+  fail,
+  warn,
+  totalAxeViolations,
+  quickWins,
+  mediumEffort,
+  longTerm,
+}) {
+  const urlCount = (reportData.urls || []).length;
+  const topLabels = chartPayload?.disabilityTopLabels || [];
+  const topCounts = chartPayload?.disabilityTopCounts || [];
+  const top3 = topLabels
+    .slice(0, 3)
+    .map((l, i) => ({ label: l, count: topCounts[i] != null ? topCounts[i] : null }))
+    .filter((x) => x.label);
+
+  const guidance = {
+    Blindness:
+      'Navigation clarity matters most: strong headings/landmarks, predictable focus order, and link/form semantics help screen-reader users build a mental model quickly.',
+    'Low Vision':
+      'Contrast, scalable text, and focus visibility are critical. If content is too light/low-contrast or doesn’t reflow cleanly, reading and operating controls becomes slow and error-prone.',
+    Colorblindness:
+      'Color cannot be the only signal. The report pattern suggests you should confirm that state, instructions, and errors are still understandable without relying on color alone.',
+    'Deafness and Hard-of-Hearing':
+      'Provide captions and clear transcripts so information that would normally be heard is available visually, with consistent synchronization.',
+    Deafblindness:
+      'Deafblind users need redundant, dependable channels. Captions/transcripts plus keyboard-accessible controls and clear labeling reduce the “missing context” problem.',
+    'Dexterity/Motor Disabilities':
+      'Keyboard support and precise interaction patterns are key: ensure all actions are reachable without traps, and interactive elements are easy to target.',
+    'Speech Disabilities':
+      'Avoid speech-only requirements. Where communication is needed, provide non-voice alternatives (labels, keyboard input, and clear instructions).',
+    'Cognitive Disabilities':
+      'Reduce cognitive load: consistent structure, straightforward instructions, and fewer surprise context changes help users stay oriented and complete tasks.',
+    'Reading Disabilities':
+      'Readable, well-structured content helps: descriptive headings, unambiguous link text, and error messages that explain what to do next.',
+    'Seizure Disorders':
+      'Minimize flashing and provide safe alternatives. Even if automated checks only partially cover this, manual review is important for animations and media.',
+  };
+
+  const scoreTone =
+    scoreClamp >= 80
+      ? 'This score suggests you are close to meeting many WCAG-oriented expectations, and targeted fixes can improve consistency for more users.'
+      : scoreClamp >= 50
+        ? 'This score indicates meaningful gaps. The fastest wins usually come from fixing navigation and form patterns first, then tightening media and dynamic behaviors.'
+        : 'This score suggests barriers likely remain across multiple user journeys. Start with the highest-impact quick wins so the largest disability groups benefit first.';
+
+  const topLine = top3.length
+    ? `Automated findings most often map to: ${top3
+        .map((x) => `${x.label}${x.count != null ? ` (${x.count})` : ''}`)
+        .join(', ')}.`
+    : 'No disability-specific impact signal was strong enough to rank in the top-3 for this run.';
+
+  const phaseOpinion = (() => {
+    const p1 = quickWins.length ? `Phase 1 (quick wins, ${quickWins.length} items) should be your first pass.` : 'Phase 1 has no quick wins in this run.';
+    const p2 = mediumEffort.length ? `Phase 2 (medium effort, ${mediumEffort.length} items) is where you fix the “makes tasks hard” issues.` : 'Phase 2 has no medium-effort items in this run.';
+    const p3 = longTerm.length ? `Phase 3 (long-term, ${longTerm.length} items) reduces deeper risk over time.` : 'Phase 3 has no long-term items in this run.';
+    return `${p1} ${p2} ${p3}`;
+  })();
+
+  const disabilityParagraphs = top3.length
+    ? top3
+        .map((x) => {
+          const text =
+            guidance[x.label] ||
+            'Your results suggest prioritizing semantics, keyboard access, and clear instructions so users can complete core tasks with less effort.';
+          return `<p><strong>${escapeHtml(x.label)}</strong>: ${escapeHtml(text)}</p>`;
+        })
+        .join('')
+    : `<p class="muted">To personalize this further, rerun with more URLs or focus on user journeys that matter most, then compare disability impact across runs.</p>`;
+
+  const currentSituation = `
+    <p class="muted">${escapeHtml(scoreTone)}</p>
+    <p>${escapeHtml(topLine)}</p>
+    <p>In this run, there were <strong>${fail}</strong> failures, <strong>${warn}</strong> warnings, and <strong>${totalAxeViolations}</strong> axe violations across <strong>${urlCount}</strong> page${urlCount === 1 ? '' : 's'}.</p>
+  `;
+
+  const rec = `
+    <h3>My recommendation</h3>
+    <p>${escapeHtml(phaseOpinion)}</p>
+    <p class="muted">Automation is a strong starting point, but manual checks (keyboard + screen reader + real user flows) are still required to validate real-world accessibility.</p>
+  `;
+
+  return `
+    <div class="ai-summary" role="region" aria-labelledby="ai-summary-heading">
+      <h2 id="ai-summary-heading">AI-generated client summary (disability-focused)</h2>
+      ${currentSituation}
+      ${top3.length ? '<h3>What this means for disabilities</h3>' : ''}
+      ${disabilityParagraphs}
+      ${rec}
+    </div>
+  `;
+}
+
 export function generateClientPresentation(data, outputDir) {
   const { reportData, fixOrderItems, disabilityStats, score, scoreClamp, pass, fail, warn, totalAxeViolations, total } = data;
   const chartPayload = buildChartDataPayload(reportData, {
@@ -140,6 +242,19 @@ export function generateClientPresentation(data, outputDir) {
     <p class="meta">Generated ${date}</p>
 
     ${buildExecutiveSummaryHtml(data)}
+
+    ${buildAiClientSummaryHtml({
+      reportData,
+      chartPayload,
+      scoreClamp,
+      pass,
+      fail,
+      warn,
+      totalAxeViolations,
+      quickWins,
+      mediumEffort,
+      longTerm,
+    })}
 
     <h2>Overall score</h2>
     <div class="score-hero">
