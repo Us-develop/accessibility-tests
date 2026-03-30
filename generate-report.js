@@ -530,16 +530,8 @@ export function generateReport(reportData, options = {}) {
     if (reportData.urls?.length > 0) {
       reportData.urls.forEach((url) => {
         html += `<div class="url-section"><h3>${escapeHtml(url)}</h3>`;
-        const screenshotData = reportData.screenshots && reportData.screenshots[url];
-        const showScreenshots = chapterId === Object.keys(CHECKLIST_CHAPTERS)[0] && screenshotData;
-        if (showScreenshots) {
-          const items = Array.isArray(screenshotData) ? screenshotData : [{ file: screenshotData, label: 'Screenshot' }];
-          html += '<div class="screenshot-wrap"><p class="screenshot-caption">Viewport screenshots (desktop) when issues were found:</p><div class="screenshot-grid">';
-          items.forEach((s) => {
-            html += `<figure class="screenshot-fig"><img src="./screenshots/${escapeHtml(s.file)}" alt="${escapeHtml(s.label || 'Screenshot')}" loading="lazy" /><figcaption>${escapeHtml(s.label || '')}</figcaption></figure>`;
-          });
-          html += '</div></div>';
-        }
+        const screenshotDataRaw = reportData.screenshots && reportData.screenshots[url];
+        const screenshotData = Array.isArray(screenshotDataRaw) ? screenshotDataRaw[0] : screenshotDataRaw;
 
         const custom = customByChapter[chapterId]?.filter((r) => r.url === url) || [];
         const axeData = reportData.axeResults?.[url];
@@ -591,6 +583,9 @@ export function generateReport(reportData, options = {}) {
                     <button type="button" class="btn-copy-fix" data-snippet="${snippetEsc}" title="Copy fix">Copy fix</button>
                     <button type="button" class="btn-show-occurrences" data-target="${occId}" aria-expanded="false">Show occurrences</button>
                   </div>
+                  ${(rem.impact || '').toLowerCase() === 'high' && screenshotData && screenshotData.file
+                    ? `<div class="screenshot-wrap"><p class="screenshot-caption">Screenshot for this high-priority issue:</p><div class="screenshot-grid"><figure class="screenshot-fig"><img src="./screenshots/${escapeHtml(screenshotData.file)}" alt="${escapeHtml(screenshotData.label || 'Issue screenshot')}" loading="lazy" /><figcaption>${escapeHtml(screenshotData.label || '')}</figcaption></figure></div></div>`
+                    : ''}
                   <div id="${rowId}" class="remediation" hidden>
                     ${wcagLinks ? `<div class="wcag-links">WCAG: ${wcagLinks}</div>` : ''}
                     <pre>${snippetEsc}</pre>

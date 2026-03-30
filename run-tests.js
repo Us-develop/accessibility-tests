@@ -65,6 +65,64 @@ function categorizeAxeViolation(violation) {
   return Array.from(chapters);
 }
 
+async function applyConsentForScreenshots(page, url) {
+  try {
+    const u = new URL(url);
+    const domain = u.hostname.replace(/^www\./, '');
+    // Common Cookiebot consent cookie payload (allows all categories).
+    const consentValue = encodeURIComponent(
+      JSON.stringify({
+        stamp: 'automated-a11y-run',
+        necessary: true,
+        preferences: true,
+        statistics: true,
+        marketing: true,
+        method: 'explicit',
+        ver: 1,
+        utc: new Date().toISOString(),
+        region: 'all',
+      })
+    );
+    await page.context().addCookies([
+      {
+        name: 'CookieConsent',
+        value: consentValue,
+        domain: `.${domain}`,
+        path: '/',
+        secure: true,
+        httpOnly: false,
+        sameSite: 'Lax',
+      },
+    ]);
+  } catch {
+    // Non-fatal: some hosts/URLs may not accept cookie injection.
+  }
+
+  // Fallback: try clicking common "accept all" selectors for consent managers.
+  const selectors = [
+    '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+    '#CybotCookiebotDialogBodyButtonAccept',
+    'button[data-cookiebanner="accept_button"]',
+    '[data-testid="uc-accept-all-button"]',
+    '#onetrust-accept-btn-handler',
+    'button[aria-label*="Accept"]',
+    'button:has-text("Accept all")',
+    'button:has-text("Allow all")',
+    'button:has-text("I agree")',
+  ];
+  for (const sel of selectors) {
+    try {
+      const btn = page.locator(sel).first();
+      if (await btn.isVisible({ timeout: 1000 })) {
+        await btn.click({ timeout: 1500 });
+        break;
+      }
+    } catch {
+      // Ignore and try next selector.
+    }
+  }
+}
+
 async function runAxeScan(page, url) {
   const builder = new AxeBuilder({ page });
   const results = await builder.analyze();
@@ -164,10 +222,7 @@ async function main() {
   };
 
   const SCREENSHOTS_DIR = join(OUTPUT_DIR, 'screenshots');
-  const VIEWPORTS = [
-    { width: 1366, height: 768, label: 'Laptop', suffix: 'laptop' },
-    { width: 1920, height: 1080, label: 'Desktop', suffix: 'desktop' },
-  ];
+  const SCREENSHOT_VIEWPORT = { width: 1366, height: 768, label: 'Desktop', suffix: 'desktop' };
 
   const browser = await chromium.launch({
     headless: true,
@@ -219,20 +274,20 @@ async function main() {
         if (hasIssues) {
           if (!existsSync(SCREENSHOTS_DIR)) mkdirSync(SCREENSHOTS_DIR, { recursive: true });
           const urlIndex = report.urls.length - 1;
-          const screenshotsForUrl = [];
-          for (const vp of VIEWPORTS) {
-            try {
-              await page.setViewportSize({ width: vp.width, height: vp.height });
-              const screenshotFile = `screenshot-${urlIndex}-${vp.suffix}.png`;
-              const screenshotPath = join(SCREENSHOTS_DIR, screenshotFile);
-              await page.screenshot({ path: screenshotPath, fullPage: false });
-              screenshotsForUrl.push({ file: screenshotFile, label: `${vp.label} (${vp.width}×${vp.height})` });
-            } catch (e) {
-              console.error(`  Screenshot ${vp.suffix} failed: ${e.message}`);
-            }
-          }
-          if (screenshotsForUrl.length > 0) {
-            report.screenshots[url] = screenshotsForUrl;
+          try {
+            await applyConsentForScreenshots(page, url);
+            await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+            await page.waitForLoadState('networkidle').catch(() => {});
+            await page.setViewportSize({ width: SCREENSHOT_VIEWPORT.width, height: SCREENSHOT_VIEWPORT.height });
+            const screenshotFile = `screenshot-${urlIndex}-${SCREENSHOT_VIEWPORT.suffix}.png`;
+            const screenshotPath = join(SCREENSHOTS_DIR, screenshotFile);
+            await page.screenshot({ path: screenshotPath, fullPage: false });
+            report.screenshots[url] = {
+              file: screenshotFile,
+              label: `${SCREENSHOT_VIEWPORT.label} (${SCREENSHOT_VIEWPORT.width}×${SCREENSHOT_VIEWPORT.height})`,
+            };
+          } catch (e) {
+            console.error(`  Screenshot failed: ${e.message}`);
           }
         }
       } catch (err) {
