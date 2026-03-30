@@ -1016,6 +1016,15 @@
       border-radius: 10px;
       font-size: 0.9rem;
     }
+    .warning {
+      margin-top: 16px;
+      padding: 14px 16px;
+      background: #fff8e1;
+      color: #7a5a00;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      border: 1px solid #f0d98c;
+    }
     @keyframes sidebar-bg-float {
       0%, 100% { background-position: 50% 50%; }
       33% { background-position: 65% 35%; }
@@ -1239,6 +1248,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </button>
           </div>
+          <div id="warning" class="warning" style="display:none;"></div>
           <div id="error" class="error" style="display:none;"></div>
         </form>
       </section>
@@ -1270,6 +1280,7 @@
     const fileInput = document.getElementById('file');
     const fileName = document.getElementById('file-name');
     const submitBtn = document.getElementById('submit');
+    const warningEl = document.getElementById('warning');
     const errorEl = document.getElementById('error');
 
     fileInput.addEventListener('change', () => {
@@ -1290,6 +1301,7 @@
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      warningEl.style.display = 'none';
       errorEl.style.display = 'none';
       submitBtn.disabled = true;
 
@@ -1342,6 +1354,14 @@
         }
         const q = new URLSearchParams({ id: data.id });
         if (data.urls) q.set('urls', data.urls);
+        if (data.truncated) {
+          q.set('truncated', '1');
+          if (data.requestedUrls != null) q.set('requested', String(data.requestedUrls));
+          if (data.processedUrls != null) q.set('processed', String(data.processedUrls));
+          if (data.maxUrls != null) q.set('maxUrls', String(data.maxUrls));
+          warningEl.textContent = `Only ${data.processedUrls} of ${data.requestedUrls} URL(s) will be tested in this run (MAX_URLS_PER_RUN=${data.maxUrls}).`;
+          warningEl.style.display = 'block';
+        }
         window.location.href = APP_BASE + '/loading.html?' + q;
       } catch (err) {
         errorEl.textContent = err.message;

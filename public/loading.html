@@ -113,6 +113,16 @@
       font-size: 0.9rem;
       text-align: left;
     }
+    .warning {
+      margin-top: 12px;
+      padding: 12px 14px;
+      background: #fff8e1;
+      color: #7a5a00;
+      border: 1px solid #f0d98c;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      text-align: left;
+    }
   </style>
 </head>
 <body>
@@ -129,6 +139,7 @@
         </div>
         <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
       </div>
+      <div id="warning" class="warning" style="display:none;"></div>
       <div id="error" class="error" style="display:none;"></div>
     </div>
   </div>
@@ -153,7 +164,17 @@
       const fillEl = document.getElementById('progress-fill');
       const pctEl = document.getElementById('pct-text');
       const remainingEl = document.getElementById('remaining-text');
+      const titleEl = document.getElementById('title');
+      const msgEl = document.getElementById('msg');
+      const warningEl = document.getElementById('warning');
       let urlCount = parseInt(params.get('urls'), 10) || 0;
+      const initialTruncated = params.get('truncated') === '1';
+      const initialRequested = parseInt(params.get('requested'), 10);
+      const initialProcessed = parseInt(params.get('processed'), 10);
+      const initialMaxUrls = parseInt(params.get('maxUrls'), 10);
+      let fallbackRedirects = 0;
+      let pollFailures = 0;
+      let pollingStopped = false;
 
       document.getElementById('banner').onerror = function() {
         this.style.display = 'none';
@@ -178,9 +199,32 @@
         remainingEl.textContent = formatRemaining(remaining);
       };
 
+      const showTruncatedWarning = (requested, processed, maxUrls) => {
+        const req = Number.isFinite(requested) ? requested : null;
+        const pro = Number.isFinite(processed) ? processed : null;
+        const max = Number.isFinite(maxUrls) ? maxUrls : null;
+        if (req != null && pro != null && req > pro) {
+          warningEl.textContent = max != null
+            ? `This run is testing ${pro} of ${req} submitted URL(s) because the server limit is set to ${max}.`
+            : `This run is testing ${pro} of ${req} submitted URL(s) due to the current server URL limit.`;
+          warningEl.style.display = 'block';
+        }
+      };
+
+      if (initialTruncated) {
+        showTruncatedWarning(initialRequested, initialProcessed, initialMaxUrls);
+      }
+
+      const tryReportFallback = () => {
+        if (fallbackRedirects >= 3) return;
+        fallbackRedirects += 1;
+        window.location.replace(APP_BASE + '/report/' + id + '/');
+      };
+
       const progressInterval = setInterval(updateProgress, 1000);
 
       const poll = async () => {
+        if (pollingStopped) return;
         try {
           updateProgress();
           const res = await fetch(APP_BASE + '/api/status/' + id);
@@ -199,8 +243,19 @@
           if (!data.status) {
             throw new Error('Run status is unavailable. Please reopen the report link or start a new run.');
           }
+          pollFailures = 0;
+          titleEl.textContent = 'Running Accessibility tests...';
+          msgEl.textContent = 'This may take a few minutes depending on the number of URL\'s';
 
-          if (data.urls != null) updateProgress(data.urls);
+          const count = data.processedUrls != null ? data.processedUrls : data.urls;
+          if (count != null) updateProgress(count);
+          if (data.truncated) {
+            showTruncatedWarning(
+              Number(data.requestedUrls),
+              Number(data.processedUrls != null ? data.processedUrls : data.urls),
+              Number(initialMaxUrls)
+            );
+          }
 
           if (data.status === 'done') {
             clearInterval(progressInterval);
@@ -212,22 +267,19 @@
             return;
           }
           if (data.status === 'error') {
-            clearInterval(progressInterval);
-            document.getElementById('progress-wrap').style.display = 'none';
-            document.getElementById('title').textContent = 'Test failed';
-            document.getElementById('msg').textContent = '';
-            const errEl = document.getElementById('error');
-            errEl.textContent = data.error || 'An error occurred.';
-            errEl.style.display = 'block';
+            titleEl.textContent = 'Still finalizing your report...';
+            msgEl.textContent = 'Trying direct report access.';
+            tryReportFallback();
+            setTimeout(poll, 2000);
             return;
           }
         } catch (e) {
-          clearInterval(progressInterval);
-          document.getElementById('progress-wrap').style.display = 'none';
-          document.getElementById('title').textContent = 'Connection error';
-          document.getElementById('error').textContent = e.message;
-          document.getElementById('error').style.display = 'block';
-          return;
+          pollFailures += 1;
+          titleEl.textContent = 'Still running...';
+          msgEl.textContent = 'Taking longer than usual. Reconnecting and checking your report.';
+          if (pollFailures >= 2) {
+            tryReportFallback();
+          }
         }
         setTimeout(poll, 2000);
       };

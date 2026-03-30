@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
  * Accessibility Test Runner
- * Usage: node run-tests.js [--report] [--urls "url1,url2,..."] [--output-id <id>]
+ * Usage:
+ *   node run-tests.js [--report] [--urls "url1,url2,..."] [--output-id <id>]
+ *   node run-tests.js [--report] [--urls="url1,url2,..."] [--output-id=<id>]
  * URLs can also be loaded from urls.config.js when --urls is not provided.
  */
 
@@ -32,6 +34,14 @@ function parseUrlsFromArgs() {
       .map((u) => u.trim())
       .filter((u) => u && u.startsWith('http'));
   }
+  const idx = process.argv.indexOf('--urls');
+  if (idx !== -1 && process.argv[idx + 1]) {
+    const value = String(process.argv[idx + 1]).trim();
+    return value
+      .split(/[\n,\s]+/)
+      .map((u) => u.trim())
+      .filter((u) => u && u.startsWith('http'));
+  }
   return null;
 }
 
@@ -41,6 +51,23 @@ function parseOutputId() {
   const idx = process.argv.indexOf('--output-id');
   if (idx !== -1 && process.argv[idx + 1]) return process.argv[idx + 1];
   return null;
+}
+
+function parseBooleanEnv(name, defaultValue) {
+  const raw = process.env[name];
+  if (raw === undefined) return defaultValue;
+  const value = String(raw).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(value)) return true;
+  if (['0', 'false', 'no', 'off'].includes(value)) return false;
+  return defaultValue;
+}
+
+function parseIntEnv(name, defaultValue, min, max) {
+  const raw = process.env[name];
+  if (raw === undefined) return defaultValue;
+  const n = parseInt(String(raw), 10);
+  if (!Number.isFinite(n)) return defaultValue;
+  return Math.min(Math.max(n, min), max);
 }
 
 async function getUrls() {
@@ -63,64 +90,6 @@ function categorizeAxeViolation(violation) {
   });
   if (chapters.size === 0) chapters.add('semantics');
   return Array.from(chapters);
-}
-
-async function applyConsentForScreenshots(page, url) {
-  try {
-    const u = new URL(url);
-    const domain = u.hostname.replace(/^www\./, '');
-    // Common Cookiebot consent cookie payload (allows all categories).
-    const consentValue = encodeURIComponent(
-      JSON.stringify({
-        stamp: 'automated-a11y-run',
-        necessary: true,
-        preferences: true,
-        statistics: true,
-        marketing: true,
-        method: 'explicit',
-        ver: 1,
-        utc: new Date().toISOString(),
-        region: 'all',
-      })
-    );
-    await page.context().addCookies([
-      {
-        name: 'CookieConsent',
-        value: consentValue,
-        domain: `.${domain}`,
-        path: '/',
-        secure: true,
-        httpOnly: false,
-        sameSite: 'Lax',
-      },
-    ]);
-  } catch {
-    // Non-fatal: some hosts/URLs may not accept cookie injection.
-  }
-
-  // Fallback: try clicking common "accept all" selectors for consent managers.
-  const selectors = [
-    '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
-    '#CybotCookiebotDialogBodyButtonAccept',
-    'button[data-cookiebanner="accept_button"]',
-    '[data-testid="uc-accept-all-button"]',
-    '#onetrust-accept-btn-handler',
-    'button[aria-label*="Accept"]',
-    'button:has-text("Accept all")',
-    'button:has-text("Allow all")',
-    'button:has-text("I agree")',
-  ];
-  for (const sel of selectors) {
-    try {
-      const btn = page.locator(sel).first();
-      if (await btn.isVisible({ timeout: 1000 })) {
-        await btn.click({ timeout: 1500 });
-        break;
-      }
-    } catch {
-      // Ignore and try next selector.
-    }
-  }
 }
 
 async function runAxeScan(page, url) {
@@ -194,10 +163,26 @@ async function runCustomChecks(page, url) {
   return allResults;
 }
 
+async function runWithConcurrency(items, concurrency, taskFn) {
+  let cursor = 0;
+  async function worker() {
+    while (true) {
+      const current = cursor;
+      cursor += 1;
+      if (current >= items.length) return;
+      await taskFn(items[current], current);
+    }
+  }
+  const workerCount = Math.min(concurrency, Math.max(items.length, 1));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+}
+
 async function main() {
   const urls = await getUrls();
   const outputId = parseOutputId();
   const generateReport = process.argv.includes('--report');
+  const urlConcurrency = parseIntEnv('URL_CONCURRENCY', 2, 1, 8);
+  const waitForNetworkIdle = parseBooleanEnv('WAIT_FOR_NETWORKIDLE', false);
 
   if (!urls || urls.length === 0) {
     console.error('No URLs. Use --urls="url1,url2" or configure urls.config.js');
@@ -211,6 +196,8 @@ async function main() {
 
   console.log('Starting accessibility tests...');
   console.log(`URLs to test: ${urls.length}`);
+  console.log(`URL concurrency: ${urlConcurrency}`);
+  console.log(`Wait for networkidle: ${waitForNetworkIdle ? 'enabled' : 'disabled'}`);
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -220,9 +207,6 @@ async function main() {
     summary: { pass: 0, fail: 0, warn: 0 },
     screenshots: {},
   };
-
-  const SCREENSHOTS_DIR = join(OUTPUT_DIR, 'screenshots');
-  const SCREENSHOT_VIEWPORT = { width: 1366, height: 768, label: 'Desktop', suffix: 'desktop' };
 
   const browser = await chromium.launch({
     headless: true,
@@ -243,21 +227,23 @@ async function main() {
   });
 
   try {
-    for (const url of urls) {
+    await runWithConcurrency(urls, urlConcurrency, async (url) => {
       console.log(`\nTesting: ${url}`);
       const context = await browser.newContext({
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        viewport: { width: SCREENSHOT_VIEWPORT.width, height: SCREENSHOT_VIEWPORT.height },
+        viewport: { width: 1366, height: 768 },
       });
       const page = await context.newPage();
 
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await page.waitForLoadState('networkidle').catch(() => {});
+        if (waitForNetworkIdle) {
+          await page.waitForLoadState('networkidle', { timeout: 7000 }).catch(() => {});
+        }
 
         const axeData = await runAxeScan(page, url);
         report.axeResults[url] = axeData;
-        report.urls.push(url);
+        if (!report.urls.includes(url)) report.urls.push(url);
 
         const customData = await runCustomChecks(page, url);
         report.customResults.push(...customData);
@@ -267,29 +253,6 @@ async function main() {
           else if (r.status === 'fail') report.summary.fail++;
           else report.summary.warn++;
         });
-
-        const hasIssues =
-          (axeData.violations && axeData.violations.length > 0) ||
-          customData.some((r) => r.status === 'fail' || r.status === 'warn');
-        if (hasIssues) {
-          if (!existsSync(SCREENSHOTS_DIR)) mkdirSync(SCREENSHOTS_DIR, { recursive: true });
-          const urlIndex = report.urls.length - 1;
-          try {
-            await applyConsentForScreenshots(page, url);
-            await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
-            await page.waitForLoadState('networkidle').catch(() => {});
-            await page.setViewportSize({ width: SCREENSHOT_VIEWPORT.width, height: SCREENSHOT_VIEWPORT.height });
-            const screenshotFile = `screenshot-${urlIndex}-${SCREENSHOT_VIEWPORT.suffix}.png`;
-            const screenshotPath = join(SCREENSHOTS_DIR, screenshotFile);
-            await page.screenshot({ path: screenshotPath, fullPage: false });
-            report.screenshots[url] = {
-              file: screenshotFile,
-              label: `${SCREENSHOT_VIEWPORT.label} (${SCREENSHOT_VIEWPORT.width}×${SCREENSHOT_VIEWPORT.height})`,
-            };
-          } catch (e) {
-            console.error(`  Screenshot failed: ${e.message}`);
-          }
-        }
       } catch (err) {
         console.error(`  Error: ${err.message}`);
         report.customResults.push({
@@ -304,7 +267,7 @@ async function main() {
         await page.close().catch(() => {});
         await context.close();
       }
-    }
+    });
   } finally {
     await browser.close();
   }

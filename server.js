@@ -169,6 +169,7 @@ app.post('/api/run', upload.single('file'), (req, res) => {
   }
 
   urls = [...new Set(urls)].filter((u) => u.startsWith('http'));
+  const requestedUrls = urls.length;
 
   if (urls.length === 0) {
     return res.status(400).json({ error: 'No valid URLs provided. Add URLs in the text area or upload a CSV/XML file.' });
@@ -178,6 +179,8 @@ app.post('/api/run', upload.single('file'), (req, res) => {
   if (maxUrls > 0 && urls.length > maxUrls) {
     urls = urls.slice(0, maxUrls);
   }
+  const processedUrls = urls.length;
+  const truncated = processedUrls < requestedUrls;
 
   const { notifyOnComplete, notifyEmail } = parseNotifyFields(req.body || {});
   if (notifyOnComplete && !isValidEmail(notifyEmail)) {
@@ -200,7 +203,10 @@ app.post('/api/run', upload.single('file'), (req, res) => {
 
   runStatus.set(id, {
     status: 'running',
-    urls: urls.length,
+    urls: processedUrls,
+    requestedUrls,
+    processedUrls,
+    truncated,
     error: null,
     notifyRequested: !!(notifyOnComplete && notifyEmail),
     notifyEmail: notifyOnComplete && notifyEmail ? notifyEmail : null,
@@ -228,7 +234,7 @@ app.post('/api/run', upload.single('file'), (req, res) => {
       persistReportArtifactsToFtp(id).catch((err) => {
         console.error(`[run ${id}] FTP persistence failed:`, err.message);
       });
-      runStatePatch(id, { status: 'done', urls: urls.length, error: null });
+      runStatePatch(id, { status: 'done', urls: processedUrls, processedUrls, requestedUrls, truncated, error: null });
       return;
     }
     if (code === 0 && !existsSync(reportPath)) {
@@ -237,7 +243,7 @@ app.post('/api/run', upload.single('file'), (req, res) => {
           persistReportArtifactsToFtp(id).catch((err) => {
             console.error(`[run ${id}] FTP persistence failed:`, err.message);
           });
-          runStatePatch(id, { status: 'done', urls: urls.length, error: null });
+          runStatePatch(id, { status: 'done', urls: processedUrls, processedUrls, requestedUrls, truncated, error: null });
           return;
         }
         if (attempts < 5) {
@@ -251,18 +257,21 @@ app.post('/api/run', upload.single('file'), (req, res) => {
                 persistReportArtifactsToFtp(id).catch((err) => {
                   console.error(`[run ${id}] FTP persistence failed:`, err.message);
                 });
-                runStatePatch(id, { status: 'done', urls: urls.length, error: null });
+                runStatePatch(id, { status: 'done', urls: processedUrls, processedUrls, requestedUrls, truncated, error: null });
               } else {
-                runStatePatch(id, { status: 'error', urls: urls.length, error: 'Report generation failed.' });
+                runStatePatch(id, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
               }
             } catch (err) {
-              runStatePatch(id, { status: 'error', urls: urls.length, error: err.message });
+              runStatePatch(id, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: err.message });
             }
           })();
         } else {
           runStatePatch(id, {
             status: 'error',
-            urls: urls.length,
+            urls: processedUrls,
+            processedUrls,
+            requestedUrls,
+            truncated,
             error: 'Report file was not created.',
           });
         }
@@ -270,14 +279,35 @@ app.post('/api/run', upload.single('file'), (req, res) => {
       pollForReport();
       return;
     }
-    runStatePatch(id, { status: 'error', urls: urls.length, error: stderr || `Process exited with code ${code}` });
+    runStatePatch(id, {
+      status: 'error',
+      urls: processedUrls,
+      processedUrls,
+      requestedUrls,
+      truncated,
+      error: stderr || `Process exited with code ${code}`,
+    });
   });
 
   child.on('error', (err) => {
-    runStatePatch(id, { status: 'error', urls: urls.length, error: err.message });
+    runStatePatch(id, {
+      status: 'error',
+      urls: processedUrls,
+      processedUrls,
+      requestedUrls,
+      truncated,
+      error: err.message,
+    });
   });
 
-  res.json({ id, urls: urls.length });
+  res.json({
+    id,
+    urls: processedUrls,
+    processedUrls,
+    requestedUrls,
+    truncated,
+    maxUrls: maxUrls > 0 ? maxUrls : null,
+  });
 });
 
 app.get('/api/status/:id', async (req, res) => {
@@ -299,6 +329,9 @@ app.get('/api/status/:id', async (req, res) => {
   res.json({
     status: status.status,
     urls: status.urls,
+    processedUrls: status.processedUrls ?? status.urls,
+    requestedUrls: status.requestedUrls ?? status.urls,
+    truncated: !!status.truncated,
     error: status.error,
   });
 });
