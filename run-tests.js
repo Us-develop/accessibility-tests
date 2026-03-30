@@ -247,7 +247,7 @@ async function main() {
       console.log(`\nTesting: ${url}`);
       const context = await browser.newContext({
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        viewport: { width: VIEWPORTS[0].width, height: VIEWPORTS[0].height },
+        viewport: { width: SCREENSHOT_VIEWPORT.width, height: SCREENSHOT_VIEWPORT.height },
       });
       const page = await context.newPage();
 
