@@ -193,6 +193,12 @@
             throw new Error(text || 'Invalid response');
           }
           const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || `Status request failed (${res.status})`);
+          }
+          if (!data.status) {
+            throw new Error('Run status is unavailable. Please reopen the report link or start a new run.');
+          }
 
           if (data.urls != null) updateProgress(data.urls);
 

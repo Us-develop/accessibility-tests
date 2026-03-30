@@ -280,13 +280,17 @@ app.post('/api/run', upload.single('file'), (req, res) => {
   res.json({ id, urls: urls.length });
 });
 
-app.get('/api/status/:id', (req, res) => {
+app.get('/api/status/:id', async (req, res) => {
   const id = req.params.id;
   const status = runStatus.get(id);
   const reportPath = join(REPORTS_BASE, id, 'accessibility-report.html');
 
   if (!status) {
     if (existsSync(reportPath)) {
+      return res.json({ status: 'done', urls: 0 });
+    }
+    const remoteReport = await ftpDownload(`${id}/accessibility-report.html`);
+    if (remoteReport) {
       return res.json({ status: 'done', urls: 0 });
     }
     return res.status(404).json({ error: 'Run not found' });
