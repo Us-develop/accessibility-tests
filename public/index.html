@@ -1353,6 +1353,7 @@
           throw new Error(data.error || 'Request failed');
         }
         const q = new URLSearchParams({ id: data.id });
+        if (data.reportId) q.set('reportId', String(data.reportId));
         if (data.urls) q.set('urls', data.urls);
         if (data.truncated) {
           q.set('truncated', '1');

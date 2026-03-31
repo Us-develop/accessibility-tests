@@ -7,7 +7,6 @@
 import express from 'express';
 import multer from 'multer';
 import { spawn } from 'child_process';
-import { v4 as uuidv4 } from 'uuid';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -202,6 +201,72 @@ function extractUrlsFromText(text) {
   return [...new Set(matches.map((u) => u.replace(/[.,;:!?)]+$/, '')))];
 }
 
+function normalizeDomainFromUrl(input) {
+  try {
+    const u = new URL(input);
+    return (u.hostname || '').toLowerCase().replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+function getSingleDomainKey(urls) {
+  const domains = [...new Set((urls || []).map((u) => normalizeDomainFromUrl(u)).filter(Boolean))];
+  if (domains.length !== 1) return null;
+  return domains[0];
+}
+
+function emptyReport() {
+  return {
+    generatedAt: new Date().toISOString(),
+    urls: [],
+    axeResults: {},
+    customResults: [],
+    summary: { pass: 0, fail: 0, warn: 0 },
+    screenshots: {},
+  };
+}
+
+function computeCustomSummary(customResults) {
+  const summary = { pass: 0, fail: 0, warn: 0 };
+  (customResults || []).forEach((r) => {
+    if (r.status === 'pass') summary.pass += 1;
+    else if (r.status === 'fail') summary.fail += 1;
+    else summary.warn += 1;
+  });
+  return summary;
+}
+
+function mergeReportData(existing, incoming) {
+  const prev = existing || emptyReport();
+  const next = incoming || emptyReport();
+  const incomingUrls = new Set(next.urls || []);
+
+  const merged = {
+    generatedAt: new Date().toISOString(),
+    urls: [...new Set([...(prev.urls || []), ...(next.urls || [])])],
+    axeResults: { ...(prev.axeResults || {}) },
+    customResults: [],
+    screenshots: { ...(prev.screenshots || {}) },
+    summary: { pass: 0, fail: 0, warn: 0 },
+  };
+
+  Object.entries(next.axeResults || {}).forEach(([url, data]) => {
+    merged.axeResults[url] = data;
+  });
+
+  const keptCustom = (prev.customResults || []).filter((r) => !incomingUrls.has(r.url));
+  const mergedCustom = [...keptCustom, ...(next.customResults || [])];
+  merged.customResults = mergedCustom;
+  merged.summary = computeCustomSummary(mergedCustom);
+
+  Object.entries(next.screenshots || {}).forEach(([url, value]) => {
+    merged.screenshots[url] = value;
+  });
+
+  return merged;
+}
+
 function parseCsv(buffer) {
   const text = buffer.toString('utf8');
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
@@ -304,7 +369,20 @@ app.post('/api/run', upload.single('file'), (req, res) => {
     });
   }
 
-  const id = uuidv4().slice(0, 8);
+  const domainKey = getSingleDomainKey(urls);
+  if (!domainKey) {
+    return res.status(400).json({
+      error: 'Please provide URLs from one domain per run. Mixed-domain runs are not supported.',
+    });
+  }
+
+  const id = domainKey;
+  if (runStatus.get(id)?.status === 'running') {
+    return res.status(409).json({
+      error: `A run for ${id} is already in progress. Please wait for it to finish.`,
+    });
+  }
+
   const reportDir = join(REPORTS_BASE, id);
   if (!existsSync(reportDir)) mkdirSync(reportDir, { recursive: true });
 
@@ -349,21 +427,29 @@ app.post('/api/run', upload.single('file'), (req, res) => {
     const resultsPath = join(reportDir, 'accessibility-results.json');
 
     if (code === 0 && existsSync(reportPath)) {
-      const resultJson = readJsonIfExists(resultsPath);
-      persistReportArtifactsToFtp(id).catch((err) => {
-        console.error(`[run ${id}] FTP persistence failed:`, err.message);
-      });
-      runStatePatch(id, { status: 'done', urls: processedUrls, processedUrls, requestedUrls, truncated, error: null, resultJson });
+      finalizeSuccessfulRun({ id, reportDir, processedUrls, requestedUrls, truncated })
+        .then((ok) => {
+          if (!ok) {
+            runStatePatch(id, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
+          }
+        })
+        .catch((err) => {
+          runStatePatch(id, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: err.message });
+        });
       return;
     }
     if (code === 0 && !existsSync(reportPath)) {
       const pollForReport = (attempts = 0) => {
         if (existsSync(reportPath)) {
-          const resultJson = readJsonIfExists(resultsPath);
-          persistReportArtifactsToFtp(id).catch((err) => {
-            console.error(`[run ${id}] FTP persistence failed:`, err.message);
-          });
-          runStatePatch(id, { status: 'done', urls: processedUrls, processedUrls, requestedUrls, truncated, error: null, resultJson });
+          finalizeSuccessfulRun({ id, reportDir, processedUrls, requestedUrls, truncated })
+            .then((ok) => {
+              if (!ok) {
+                runStatePatch(id, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
+              }
+            })
+            .catch((err) => {
+              runStatePatch(id, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: err.message });
+            });
           return;
         }
         if (attempts < 5) {
@@ -374,11 +460,10 @@ app.post('/api/run', upload.single('file'), (req, res) => {
               const { generateReport } = await import('./generate-report.js');
               generateReport(null, { outputDir: reportDir });
               if (existsSync(reportPath)) {
-                const resultJson = readJsonIfExists(resultsPath);
-                persistReportArtifactsToFtp(id).catch((err) => {
-                  console.error(`[run ${id}] FTP persistence failed:`, err.message);
-                });
-                runStatePatch(id, { status: 'done', urls: processedUrls, processedUrls, requestedUrls, truncated, error: null, resultJson });
+                const ok = await finalizeSuccessfulRun({ id, reportDir, processedUrls, requestedUrls, truncated });
+                if (!ok) {
+                  runStatePatch(id, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
+                }
               } else {
                 runStatePatch(id, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
               }
@@ -423,6 +508,8 @@ app.post('/api/run', upload.single('file'), (req, res) => {
 
   res.json({
     id,
+    reportId: id,
+    domain: id,
     urls: processedUrls,
     processedUrls,
     requestedUrls,
@@ -469,8 +556,20 @@ app.get('/api/status/:id', async (req, res) => {
 });
 
 function isValidReportId(id) {
-  return /^[a-zA-Z0-9-]+$/.test(id) && id.length <= 32;
+  return /^[a-zA-Z0-9.-]+$/.test(id) && id.length <= 120;
 }
+
+app.get('/api/health/db', async (req, res) => {
+  if (!dbPool) {
+    return res.json({ ok: true, db: 'disabled', message: 'DATABASE_URL not configured' });
+  }
+  try {
+    await dbPool.query('SELECT 1');
+    return res.json({ ok: true, db: 'up' });
+  } catch (err) {
+    return res.status(503).json({ ok: false, db: 'down', error: err.message });
+  }
+});
 
 const FTP_CONFIG = process.env.FTP_HOST && process.env.FTP_USER
   ? {
@@ -552,6 +651,43 @@ function readJsonIfExists(filePath) {
   } catch {
     return null;
   }
+}
+
+async function finalizeSuccessfulRun({
+  id,
+  reportDir,
+  processedUrls,
+  requestedUrls,
+  truncated,
+}) {
+  const resultsPath = join(reportDir, 'accessibility-results.json');
+  const reportPath = join(reportDir, 'accessibility-report.html');
+  let resultJson = readJsonIfExists(resultsPath);
+  if (resultJson && dbPool) {
+    try {
+      const previous = await dbGetRun(id);
+      resultJson = mergeReportData(previous?.resultJson || null, resultJson);
+      writeFileSync(resultsPath, JSON.stringify(resultJson, null, 2), 'utf8');
+    } catch (err) {
+      console.error(`[run ${id}] DB merge failed:`, err.message);
+    }
+  }
+  if (resultJson) {
+    try {
+      const { generateReport } = await import('./generate-report.js');
+      generateReport(resultJson, { outputDir: reportDir });
+    } catch (err) {
+      console.error(`[run ${id}] Report regeneration failed:`, err.message);
+    }
+  }
+  if (existsSync(reportPath)) {
+    persistReportArtifactsToFtp(id).catch((err) => {
+      console.error(`[run ${id}] FTP persistence failed:`, err.message);
+    });
+    runStatePatch(id, { status: 'done', urls: processedUrls, processedUrls, requestedUrls, truncated, error: null, resultJson });
+    return true;
+  }
+  return false;
 }
 
 async function persistReportArtifactsToFtp(id) {

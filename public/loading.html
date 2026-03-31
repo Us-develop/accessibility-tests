@@ -153,6 +153,7 @@
 
     const params = new URLSearchParams(window.location.search);
     const id = params.get('id');
+    const reportId = params.get('reportId') || id;
 
     if (!id) {
       document.getElementById('title').textContent = 'Missing run ID';
@@ -218,7 +219,7 @@
       const tryReportFallback = () => {
         if (fallbackRedirects >= 3) return;
         fallbackRedirects += 1;
-        window.location.replace(APP_BASE + '/report/' + id + '/');
+        window.location.replace(APP_BASE + '/report/' + reportId + '/');
       };
 
       const progressInterval = setInterval(updateProgress, 1000);
@@ -263,7 +264,7 @@
             pctEl.textContent = '100% completed';
             remainingEl.textContent = 'Done!';
             document.getElementById('msg').textContent = 'Loading report…';
-            window.location.replace(APP_BASE + '/report/' + id + '/');
+            window.location.replace(APP_BASE + '/report/' + reportId + '/');
             return;
           }
           if (data.status === 'error') {

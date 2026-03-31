@@ -38,6 +38,12 @@ Then open http://localhost:3456 (or the port shown). You can:
 
 Each report has a unique ID in the URL, e.g. `http://localhost:3456/report/a1b2c3d4`
 
+Current behavior:
+
+- Reports are keyed by **domain name** (for example: `https://example.com` -> `/report/example.com/`).
+- Each run must contain URLs from a **single domain**.
+- Re-running tests for the same domain updates/merges that domain report.
+
 ### Optional: persist runs in Postgres (Render)
 
 To store run status/results/manual checklist progress in Postgres:
@@ -53,6 +59,10 @@ When `DATABASE_URL` is set, the server automatically creates a `runs` table and 
 - manual checklist progress (`manual_progress_json`)
 
 If `DATABASE_URL` is not set, the app continues using local files/FTP fallback.
+
+Monitoring endpoint:
+
+- `GET /api/health/db` -> DB health (`up`, `down`, or `disabled`).
 
 ### Live / production deployment
 
