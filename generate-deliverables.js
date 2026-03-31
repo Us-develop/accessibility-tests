@@ -449,10 +449,10 @@ export function generateClientPresentation(data, outputDir) {
     .roadmap .item { display: grid; grid-template-columns: 38px 1fr; gap: 12px; padding: 16px 0; border-top: 1px solid var(--border); }
     .roadmap .item:first-child { border-top: none; padding-top: 4px; }
     .roadmap .idx { width: 32px; height: 32px; border-radius: 999px; background: #fff; border: 1px solid var(--border); display: grid; place-items: center; font-weight: 700; color: var(--text-muted); }
-    .roadmap h4 { margin: 0 0 6px; font-size: 1.15rem; line-height: 1.3; }
-    .roadmap p { margin: 0 0 9px; color: var(--text); font-size: 1rem; }
+    .roadmap h4 { margin: 0 0 6px; font-size: 1.08rem; line-height: 1.3; font-weight: 700; }
+    .roadmap p { margin: 0 0 9px; color: var(--text); font-size: 0.98rem; }
     .badge-line { display: flex; gap: 8px; flex-wrap: wrap; }
-    .badge-line .pill { padding: 4px 10px; border-radius: 999px; font-size: .9rem; font-weight: 600; background: #fff; border: 1px solid var(--border); }
+    .badge-line .pill { padding: 5px 12px; border-radius: 999px; font-size: .88rem; line-height: 1; font-weight: 600; background: #fff; border: 1px solid var(--border); min-height: 28px; display: inline-flex; align-items: center; }
     .pill.impact-high { color: #a73636; background: #ffebee; border-color: #ffd7db; }
     .pill.impact-medium { color: #8c5b00; background: #fff3e0; border-color: #ffe5bf; }
     .pill.impact-low { color: #2e7d32; background: #e8f5e9; border-color: #cfe9d0; }

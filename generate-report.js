@@ -609,10 +609,10 @@ export function generateReport(reportData, options = {}) {
     .suggested-fixes .fix-item { display: grid; grid-template-columns: 38px 1fr; gap: 12px; padding: 14px 0; border-top: 1px solid var(--border); }
     .suggested-fixes .fix-item:first-child { border-top: none; }
     .suggested-fixes .fix-idx { width: 32px; height: 32px; border-radius: 999px; background: #fff; border: 1px solid var(--border); display: grid; place-items: center; font-weight: 700; color: var(--text-muted); }
-    .suggested-fixes .fix-title { margin: 0 0 6px; font-size: 1.15rem; line-height: 1.3; color: var(--text); }
-    .suggested-fixes .fix-desc { margin: 0 0 8px; font-size: 1rem; color: var(--text); }
+    .suggested-fixes .fix-title { margin: 0 0 6px; font-size: 1.08rem; line-height: 1.3; color: var(--text); font-weight: 700; }
+    .suggested-fixes .fix-desc { margin: 0 0 8px; font-size: 0.98rem; color: var(--text); }
     .suggested-fixes .pill-row { display: flex; gap: 8px; flex-wrap: wrap; }
-    .suggested-fixes .pill { padding: 4px 10px; border-radius: 999px; font-size: .9rem; font-weight: 600; background: #fff; border: 1px solid var(--border); }
+    .suggested-fixes .pill { padding: 5px 12px; border-radius: 999px; font-size: .88rem; line-height: 1; font-weight: 600; background: #fff; border: 1px solid var(--border); min-height: 28px; display: inline-flex; align-items: center; }
     .suggested-fixes .pill.impact-high { color: #a73636; background: #ffebee; border-color: #ffd7db; }
     .suggested-fixes .pill.impact-medium { color: #8c5b00; background: #fff3e0; border-color: #ffe5bf; }
     .suggested-fixes .pill.impact-low { color: #2e7d32; background: #e8f5e9; border-color: #cfe9d0; }
@@ -675,9 +675,9 @@ export function generateReport(reportData, options = {}) {
         <div class="report-actions">
           <button type="button" class="btn-pdf" onclick="window.print()" aria-label="Download as PDF">Download PDF</button>
           <span style="font-size:0.85rem; color:var(--text-muted);">Deliverables:</span>
-          <a href="./accessibility-developers.html" style="font-size:0.9rem;">Developer guide</a>
-          <a href="./accessibility-client.html" style="font-size:0.9rem;">Client presentation</a>
-          <a href="./accessibility-statement.html" style="font-size:0.9rem;">Accessibility statement</a>
+          <a href="./accessibility-developers.html" data-deliverable="accessibility-developers.html" style="font-size:0.9rem;">Developer guide</a>
+          <a href="./accessibility-client.html" data-deliverable="accessibility-client.html" style="font-size:0.9rem;">Client presentation</a>
+          <a href="./accessibility-statement.html" data-deliverable="accessibility-statement.html" style="font-size:0.9rem;">Accessibility statement</a>
         </div>
       </div>
     </header>
@@ -1119,6 +1119,14 @@ export function generateReport(reportData, options = {}) {
   </div>
   <script>
     (function() {
+      var pathMatch = window.location.pathname.match(/^(.*\/report\/[^/]+)/);
+      if (pathMatch && pathMatch[1]) {
+        var base = pathMatch[1] + '/';
+        document.querySelectorAll('a[data-deliverable]').forEach(function(a) {
+          var file = a.getAttribute('data-deliverable');
+          if (file) a.setAttribute('href', base + file);
+        });
+      }
       document.querySelectorAll('.btn-show-fix').forEach(function(btn) {
         btn.addEventListener('click', function() {
           var target = document.getElementById(this.getAttribute('data-target'));

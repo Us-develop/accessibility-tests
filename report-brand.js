@@ -116,6 +116,20 @@ export const REPORT_DELIVERABLE_CSS = `
     color: var(--accent);
     margin: 6px 0 0;
   }
+  .deliverable-header .back-to-results {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    font-size: 0.88rem;
+    text-decoration: none;
+  }
+  .deliverable-header .back-to-results:hover {
+    background: var(--bg);
+  }
   .deliverable-footer { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 0.85rem; color: var(--text-muted); }
   .deliverable-footer .footer-brand { font-weight: 600; color: var(--accent); }
 `;
@@ -132,6 +146,7 @@ export function buildDeliverableHeaderHtml() {
       <div>
         <div class="brand-mark">Us</div>
         <p class="report-tagline">Co-creating digital impact</p>
+        <a class="back-to-results" href="./">Go back to results page</a>
       </div>
     </div>`;
 }
