@@ -573,10 +573,8 @@ export function generateReport(reportData, options = {}) {
     }
     .manual-section .todo-progress { font-size: 0.85rem; color: var(--text-muted); margin-top: 16px; }
     .filterable.hidden { display: none !important; }
-    .url-section:not(.has-visible) { display: none; }
-    .url-section.has-visible { display: block; }
-    section h2:not(.has-visible) { display: none; }
-    section h2.has-visible { display: block; }
+    .url-section { display: block; }
+    section h2 { display: block; }
     .remediation { margin-top: 8px; font-size: 0.85rem; }
     .remediation pre { margin: 8px 0; padding: 10px; background: #1e1e1e; color: #d4d4d4; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
     .issue-table tr.issue-row-main td { border-bottom: none; padding-bottom: 8px; vertical-align: top; }
@@ -1161,7 +1159,6 @@ export function generateReport(reportData, options = {}) {
       var buttons = document.querySelectorAll('.summary-item.filter-btn');
       var filterables = document.querySelectorAll('.filterable');
       var urlSections = document.querySelectorAll('.url-section');
-      var sectionHeadings = document.querySelectorAll('section h2');
 
       var currentFilter = 'all';
       var currentDisability = '';
@@ -1192,11 +1189,6 @@ export function generateReport(reportData, options = {}) {
         urlSections.forEach(function(section) {
           var visible = section.querySelectorAll('.filterable:not(.hidden)').length > 0;
           section.classList.toggle('has-visible', visible);
-        });
-        sectionHeadings.forEach(function(h2) {
-          var section = h2.closest('section');
-          var visible = section && section.querySelectorAll('.filterable:not(.hidden)').length > 0;
-          h2.classList.toggle('has-visible', visible);
         });
         document.querySelectorAll('.manual-section .todo-group').forEach(function(group) {
           var visible = group.querySelectorAll('.filterable:not(.hidden)').length > 0;

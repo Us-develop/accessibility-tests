@@ -18,6 +18,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPORTS_BASE = join(__dirname, 'reports');
 const PORT = process.env.PORT || 3456;
 const { Pool } = pg;
+const APP_PASSWORD = process.env.APP_PASSWORD || 'WCAG@Us';
+const AUTH_ENABLED = parseBooleanEnv('AUTH_ENABLED', true);
+const AUTH_COOKIE_NAME = 'wcag_access';
+const AUTH_COOKIE_SECURE = parseBooleanEnv('AUTH_COOKIE_SECURE', false);
 
 function parseBooleanEnv(name, defaultValue = false) {
   const raw = process.env[name];
@@ -325,6 +329,96 @@ app.use((req, res, next) => {
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+function parseCookies(req) {
+  const raw = req.headers.cookie || '';
+  const out = {};
+  raw.split(';').forEach((part) => {
+    const idx = part.indexOf('=');
+    if (idx === -1) return;
+    const k = part.slice(0, idx).trim();
+    const v = part.slice(idx + 1).trim();
+    if (!k) return;
+    out[k] = decodeURIComponent(v);
+  });
+  return out;
+}
+
+function loginPageHtml(nextPath = '/', errorMessage = '') {
+  const safeNext = String(nextPath || '/').replace(/"/g, '&quot;');
+  const safeError = errorMessage ? `<p style="color:#c62828; margin:0 0 10px;">${errorMessage}</p>` : '';
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+  <title>Protected accessibility reports</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; min-height:100vh; display:grid; place-items:center; background:#fafaf8; color:#1a1a1a; padding:20px; }
+    .card { width:min(460px, 100%); background:#fff; border:1px solid #e8e6e1; border-radius:12px; padding:22px; box-shadow:0 2px 16px rgba(0,0,0,.06); }
+    h1 { margin:0 0 8px; font-size:1.2rem; }
+    p { margin:0 0 14px; color:#5c5c5c; }
+    label { display:block; margin:0 0 6px; font-weight:600; }
+    input { width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #d9d7d2; border-radius:8px; font-size:1rem; }
+    button { margin-top:12px; width:100%; padding:10px 12px; border:0; border-radius:8px; background:#2d9d78; color:#fff; font-weight:600; cursor:pointer; }
+    button:hover { filter:brightness(1.03); }
+  </style>
+</head>
+<body>
+  <form class="card" method="post" action="/auth/login">
+    <h1>Protected area</h1>
+    <p>Enter the password to continue.</p>
+    ${safeError}
+    <input type="hidden" name="next" value="${safeNext}" />
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required autofocus />
+    <button type="submit">Continue</button>
+  </form>
+</body>
+</html>`;
+}
+
+app.use((req, res, next) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
+  next();
+});
+
+app.get('/robots.txt', (_req, res) => {
+  res.type('text/plain');
+  res.send('User-agent: *\nDisallow: /');
+});
+
+app.get('/auth/login', (req, res) => {
+  if (!AUTH_ENABLED) return res.redirect('/');
+  const nextPath = typeof req.query.next === 'string' && req.query.next.startsWith('/') ? req.query.next : '/';
+  return res.status(200).send(loginPageHtml(nextPath));
+});
+
+app.post('/auth/login', (req, res) => {
+  if (!AUTH_ENABLED) return res.redirect('/');
+  const nextPath = typeof req.body?.next === 'string' && req.body.next.startsWith('/') ? req.body.next : '/';
+  const password = String(req.body?.password || '');
+  if (password !== APP_PASSWORD) {
+    return res.status(401).send(loginPageHtml(nextPath, 'Incorrect password. Try again.'));
+  }
+  const securePart = AUTH_COOKIE_SECURE ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${AUTH_COOKIE_NAME}=1; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200${securePart}`);
+  return res.redirect(nextPath);
+});
+
+app.use((req, res, next) => {
+  if (!AUTH_ENABLED) return next();
+  if (req.path === '/robots.txt') return next();
+  if (req.path === '/auth/login') return next();
+  const cookies = parseCookies(req);
+  if (cookies[AUTH_COOKIE_NAME] === '1') return next();
+  if (req.path.startsWith('/api/')) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  return res.status(401).send(loginPageHtml(req.originalUrl || '/'));
+});
+
 app.use(express.static(join(__dirname, 'public')));
 
 app.post('/api/run', upload.single('file'), (req, res) => {
