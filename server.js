@@ -1083,8 +1083,10 @@ async function ensureDeliverableFromResults(id, filename) {
     }
   }
   try {
+    const reportData = readJsonIfExists(resultsPath);
+    if (!reportData) return false;
     const { generateReport } = await import('./generate-report.js');
-    generateReport(null, { outputDir: reportDir, verbose: true, throwOnDeliverableError: true });
+    generateReport(reportData, { outputDir: reportDir, verbose: true, throwOnDeliverableError: true, noExit: true });
     return existsSync(join(reportDir, filename));
   } catch (err) {
     console.error(`[run ${id}] Failed to regenerate deliverables:`, err.message);
@@ -1093,6 +1095,54 @@ async function ensureDeliverableFromResults(id, filename) {
 }
 
 const DELIVERABLE_FILES = ['accessibility-developers.html', 'accessibility-client.html', 'accessibility-statement.html'];
+
+app.get('/api/debug/deliverable/:id/:file', async (req, res) => {
+  const { id, file } = req.params;
+  if (!isValidReportId(id)) return res.status(400).json({ error: 'Invalid report ID' });
+  if (!DELIVERABLE_FILES.includes(file)) return res.status(400).json({ error: 'Unsupported deliverable file' });
+
+  const reportDir = join(REPORTS_BASE, id);
+  const reportHtmlPath = join(reportDir, 'accessibility-report.html');
+  const deliverablePath = join(reportDir, file);
+  const resultsPath = join(reportDir, 'accessibility-results.json');
+  const diagnostics = {
+    id,
+    file,
+    local: {
+      reportHtmlExists: existsSync(reportHtmlPath),
+      deliverableExists: existsSync(deliverablePath),
+      resultsExists: existsSync(resultsPath),
+    },
+    db: { hasRun: false, hasResultJson: false },
+    ftp: { reportHtml: false, deliverable: false, results: false },
+    actions: [],
+    finalExists: false,
+  };
+
+  try {
+    const dbRun = dbPool ? await dbGetRun(id) : null;
+    diagnostics.db.hasRun = !!dbRun;
+    diagnostics.db.hasResultJson = !!dbRun?.resultJson;
+  } catch (err) {
+    diagnostics.actions.push(`dbGetRun error: ${err.message}`);
+  }
+
+  try { diagnostics.ftp.reportHtml = !!(await ftpDownload(`${id}/accessibility-report.html`)); } catch (err) { diagnostics.actions.push(`ftp report error: ${err.message}`); }
+  try { diagnostics.ftp.deliverable = !!(await ftpDownload(`${id}/${file}`)); } catch (err) { diagnostics.actions.push(`ftp deliverable error: ${err.message}`); }
+  try { diagnostics.ftp.results = !!(await ftpDownload(`${id}/accessibility-results.json`)); } catch (err) { diagnostics.actions.push(`ftp results error: ${err.message}`); }
+
+  if (String(req.query.rebuild || '') === '1') {
+    try {
+      const rebuilt = await ensureDeliverableFromResults(id, file);
+      diagnostics.actions.push(`ensureDeliverableFromResults: ${rebuilt ? 'ok' : 'failed'}`);
+    } catch (err) {
+      diagnostics.actions.push(`ensureDeliverableFromResults error: ${err.message}`);
+    }
+  }
+
+  diagnostics.finalExists = existsSync(deliverablePath);
+  return res.json(diagnostics);
+});
 
 app.get('/report/:id/screenshots/:file', async (req, res) => {
   const { id, file } = req.params;

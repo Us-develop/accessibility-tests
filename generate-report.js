@@ -227,7 +227,9 @@ export function generateReport(reportData, options = {}) {
 
   if (!reportData) {
     if (!existsSync(resultsFile)) {
-      console.error('No results found. Run: node run-tests.js');
+      const err = new Error('No results found. Run: node run-tests.js');
+      if (options.throwOnDeliverableError || options.noExit) throw err;
+      console.error(err.message);
       process.exit(1);
     }
     reportData = JSON.parse(readFileSync(resultsFile, 'utf8'));
