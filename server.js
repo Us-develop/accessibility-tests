@@ -1070,7 +1070,18 @@ async function ensureReportFilesFromDb(id) {
 async function ensureDeliverableFromResults(id, filename) {
   const reportDir = join(REPORTS_BASE, id);
   const resultsPath = join(reportDir, 'accessibility-results.json');
-  if (!existsSync(resultsPath)) return false;
+  if (!existsSync(resultsPath)) {
+    if (!existsSync(reportDir)) mkdirSync(reportDir, { recursive: true });
+    const ftpResults = await ftpDownload(`${id}/accessibility-results.json`);
+    if (!ftpResults) {
+      const dbRun = dbPool ? await dbGetRun(id) : null;
+      if (dbRun && dbRun.resultJson) {
+        writeFileSync(resultsPath, JSON.stringify(dbRun.resultJson, null, 2), 'utf8');
+      } else {
+        return false;
+      }
+    }
+  }
   try {
     const { generateReport } = await import('./generate-report.js');
     generateReport(null, { outputDir: reportDir });

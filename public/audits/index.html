@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
-  <meta name="accessibility-app-base" content="">
+  <meta name="accessibility-app-base" content="https://accessibility-tests.onrender.com">
   <title>All domain audits</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; background:#fafaf8; color:#1a1a1a; padding:24px; }
@@ -64,6 +64,11 @@
         var url = APP_BASE + '/api/audits?password=' + encodeURIComponent(pwd);
         try {
           var res = await fetch(url);
+          var contentType = res.headers.get('content-type') || '';
+          if (!contentType.includes('application/json')) {
+            var txt = await res.text();
+            throw new Error(txt && txt.trim().startsWith('<') ? 'Auth/API endpoint returned HTML. Verify API base URL and password.' : (txt || 'Invalid API response'));
+          }
           var data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Failed to load audits');
           var audits = Array.isArray(data.audits) ? data.audits : [];
