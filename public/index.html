@@ -1350,7 +1350,7 @@
 
       try {
         const runUrl = APP_BASE + '/api/run?password=' + encodeURIComponent(appPassword);
-        const res = await fetch(runUrl, { method: 'POST', body: fd, headers: { 'X-App-Password': appPassword } });
+        const res = await fetch(runUrl, { method: 'POST', body: fd });
         const contentType = res.headers.get('content-type') || '';
         if (!contentType.includes('application/json')) {
           const text = await res.text();
