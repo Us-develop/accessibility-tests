@@ -513,7 +513,7 @@ export function generateClientPresentation(data, outputDir) {
     ${buildDeliverableHeaderHtml()}
     <p class="audit-kicker">Accessibility Audit Report</p>
     <h1 class="audit-domain">${escapeHtml(siteHost)}</h1>
-    <p class="audit-meta">Audited ${totalPages} page${totalPages === 1 ? '' : 's'} · ${auditDate} · WCAG 2.1</p>
+    <p class="audit-meta">Audited ${totalPages} page${totalPages === 1 ? '' : 's'} · ${auditedDate} · WCAG 2.1</p>
 
     <section class="kpi-grid" aria-label="Top metrics">
       <div class="kpi"><div class="label">Overall score</div><div class="value warn">${scoreClamp} / 100</div></div>

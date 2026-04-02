@@ -1067,7 +1067,7 @@ async function ensureReportFilesFromDb(id) {
   }
 }
 
-async function ensureDeliverableFromResults(id, filename) {
+async function ensureDeliverableFromResults(id, filename, debugInfo = null) {
   const reportDir = join(REPORTS_BASE, id);
   const resultsPath = join(reportDir, 'accessibility-results.json');
   if (!existsSync(resultsPath)) {
@@ -1078,17 +1078,22 @@ async function ensureDeliverableFromResults(id, filename) {
       if (dbRun && dbRun.resultJson) {
         writeFileSync(resultsPath, JSON.stringify(dbRun.resultJson, null, 2), 'utf8');
       } else {
+        if (debugInfo) debugInfo.error = 'results missing in local/ftp/db';
         return false;
       }
     }
   }
   try {
     const reportData = readJsonIfExists(resultsPath);
-    if (!reportData) return false;
+    if (!reportData) {
+      if (debugInfo) debugInfo.error = 'results json unreadable';
+      return false;
+    }
     const { generateReport } = await import('./generate-report.js');
     generateReport(reportData, { outputDir: reportDir, verbose: true, throwOnDeliverableError: true, noExit: true });
     return existsSync(join(reportDir, filename));
   } catch (err) {
+    if (debugInfo) debugInfo.error = err.message;
     console.error(`[run ${id}] Failed to regenerate deliverables:`, err.message);
     return false;
   }
@@ -1132,9 +1137,11 @@ app.get('/api/debug/deliverable/:id/:file', async (req, res) => {
   try { diagnostics.ftp.results = !!(await ftpDownload(`${id}/accessibility-results.json`)); } catch (err) { diagnostics.actions.push(`ftp results error: ${err.message}`); }
 
   if (String(req.query.rebuild || '') === '1') {
+    const regen = {};
     try {
-      const rebuilt = await ensureDeliverableFromResults(id, file);
+      const rebuilt = await ensureDeliverableFromResults(id, file, regen);
       diagnostics.actions.push(`ensureDeliverableFromResults: ${rebuilt ? 'ok' : 'failed'}`);
+      if (regen.error) diagnostics.actions.push(`regenError: ${regen.error}`);
     } catch (err) {
       diagnostics.actions.push(`ensureDeliverableFromResults error: ${err.message}`);
     }
