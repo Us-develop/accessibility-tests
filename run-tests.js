@@ -94,6 +94,12 @@ function categorizeAxeViolation(violation) {
 
 async function runAxeScan(page, url) {
   const builder = new AxeBuilder({ page });
+  const includeAxePasses = parseBooleanEnv('ENABLE_AXE_PASSES', false);
+  if (!includeAxePasses) {
+    builder.options({
+      resultTypes: ['violations', 'incomplete'],
+    });
+  }
   const results = await builder.analyze();
 
   const byChapter = {};
@@ -113,19 +119,21 @@ async function runAxeScan(page, url) {
       if (byChapter[ch]) byChapter[ch].incomplete.push(v);
     });
   });
-  (results.passes || []).forEach((v) => {
-    const chapters = categorizeAxeViolation(v);
-    chapters.forEach((ch) => {
-      if (byChapter[ch]) byChapter[ch].passes.push(v);
+  if (includeAxePasses) {
+    (results.passes || []).forEach((v) => {
+      const chapters = categorizeAxeViolation(v);
+      chapters.forEach((ch) => {
+        if (byChapter[ch]) byChapter[ch].passes.push(v);
+      });
     });
-  });
+  }
 
   return {
     url,
     timestamp: new Date().toISOString(),
     violations: results.violations,
     incomplete: results.incomplete,
-    passes: results.passes,
+    passes: includeAxePasses ? results.passes : [],
     byChapter,
   };
 }
@@ -181,9 +189,13 @@ async function main() {
   const urls = await getUrls();
   const outputId = parseOutputId();
   const generateReport = process.argv.includes('--report');
-  const urlConcurrency = parseIntEnv('URL_CONCURRENCY', 2, 1, 8);
+  const urlConcurrency = parseIntEnv('URL_CONCURRENCY', 1, 1, 8);
   const waitForNetworkIdle = parseBooleanEnv('WAIT_FOR_NETWORKIDLE', false);
   const enableContrastChecks = parseBooleanEnv('ENABLE_CONTRAST_CHECKS', true);
+  const blockMediaRequests = parseBooleanEnv('BLOCK_MEDIA_REQUESTS', true);
+  const pageGotoTimeoutMs = parseIntEnv('PAGE_GOTO_TIMEOUT_MS', 90000, 30000, 300000);
+  const autoDisableContrastOnLargeDom = parseBooleanEnv('AUTO_DISABLE_CONTRAST_ON_LARGE_DOM', true);
+  const largeDomThreshold = parseIntEnv('LARGE_DOM_THRESHOLD', 6000, 1000, 100000);
 
   if (!urls || urls.length === 0) {
     console.error('No URLs. Use --urls="url1,url2" or configure urls.config.js');
@@ -200,6 +212,9 @@ async function main() {
   console.log(`URL concurrency: ${urlConcurrency}`);
   console.log(`Wait for networkidle: ${waitForNetworkIdle ? 'enabled' : 'disabled'}`);
   console.log(`Contrast checks: ${enableContrastChecks ? 'enabled' : 'disabled'}`);
+  console.log(`Block media requests: ${blockMediaRequests ? 'enabled' : 'disabled'}`);
+  console.log(`Page goto timeout: ${pageGotoTimeoutMs}ms`);
+  console.log(`Auto-disable contrast on large DOM: ${autoDisableContrastOnLargeDom ? `enabled (>${largeDomThreshold} nodes)` : 'disabled'}`);
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -236,9 +251,18 @@ async function main() {
         viewport: { width: 1366, height: 768 },
       });
       const page = await context.newPage();
+      if (blockMediaRequests) {
+        await page.route('**/*', (route) => {
+          const type = route.request().resourceType();
+          if (type === 'media') {
+            return route.abort();
+          }
+          return route.continue();
+        });
+      }
 
       try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageGotoTimeoutMs });
         if (waitForNetworkIdle) {
           await page.waitForLoadState('networkidle', { timeout: 7000 }).catch(() => {});
         }
@@ -247,7 +271,18 @@ async function main() {
         report.axeResults[url] = axeData;
         if (!report.urls.includes(url)) report.urls.push(url);
 
-        const customData = await runCustomChecks(page, url, { enableContrastChecks });
+        let contrastChecksEnabledForPage = enableContrastChecks;
+        if (autoDisableContrastOnLargeDom && enableContrastChecks) {
+          const domNodeCount = await page.evaluate(() => document.querySelectorAll('*').length);
+          if (domNodeCount > largeDomThreshold) {
+            contrastChecksEnabledForPage = false;
+            console.warn(
+              `  Large DOM detected (${domNodeCount} nodes); disabling heavy contrast checks for this page to avoid timeouts/memory pressure.`
+            );
+          }
+        }
+
+        const customData = await runCustomChecks(page, url, { enableContrastChecks: contrastChecksEnabledForPage });
         report.customResults.push(...customData);
 
         customData.forEach((r) => {

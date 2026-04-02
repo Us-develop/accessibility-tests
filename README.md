@@ -84,9 +84,13 @@ The app **requires the Node server** to be running. Uploading only the `public/`
 
   **Render memory limits:** The test runner launches Chromium (Playwright), which uses a lot of RAM. On Render’s free tier the service may hit the instance memory limit and restart. To reduce memory use:
   - Set **`MAX_URLS_PER_RUN`** (e.g. `5` or `10`) in the Render environment. The server will run tests only for the first N URLs per run, which keeps each run shorter and lowers peak memory.
-  - Set **`URL_CONCURRENCY`** (recommended `1-2` on small instances, `2-4` on larger machines) to control how many URLs are scanned in parallel.
+  - Set **`URL_CONCURRENCY`** (recommended `1` on small instances, `2-4` on larger machines) to control how many URLs are scanned in parallel.
   - Keep **`WAIT_FOR_NETWORKIDLE=false`** (default) for faster runs on tracker-heavy sites. Set it to `true` only when you specifically need network-idle settling.
   - Set **`ENABLE_CONTRAST_CHECKS=false`** to skip custom text/non-text contrast checks for faster runs (axe contrast rules still run).
+  - Keep **`ENABLE_AXE_PASSES=false`** (default). Including axe `passes` can dramatically increase memory usage on large pages.
+  - Keep **`BLOCK_MEDIA_REQUESTS=true`** (default) to avoid loading heavy video/audio assets during checks.
+  - Keep **`AUTO_DISABLE_CONTRAST_ON_LARGE_DOM=true`** (default), which auto-skips heavy custom contrast checks when DOM size exceeds `LARGE_DOM_THRESHOLD` (default `6000` nodes).
+  - Increase **`PAGE_GOTO_TIMEOUT_MS`** (default `90000`) if very heavy pages still timeout before `domcontentloaded`.
   - Consider **upgrading the instance type** on Render if you need to test many URLs per run.
   - The runner already uses Chromium flags and explicit cleanup (page/context/browser close) to limit memory.
 
