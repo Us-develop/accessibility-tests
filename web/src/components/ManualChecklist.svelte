@@ -12,10 +12,11 @@
    *   runId: string,
    *   groups: ManualGroup[],
    *   initialChecked?: string[],
-   *   onProgress?: (info: { checked: string[], total: number, percent: number }) => void
+   *   onProgress?: (info: { checked: string[], total: number, percent: number }) => void,
+   *   readOnly?: boolean,
    * }}
    */
-  let { domain, runId, groups, initialChecked = [], onProgress } = $props();
+  let { domain, runId, groups, initialChecked = [], onProgress, readOnly = false } = $props();
 
   let checkedSet = $state(new Set(initialChecked));
   let saving = $state(false);
@@ -34,12 +35,13 @@
 
   function scheduleSave() {
     emitProgress();
+    if (readOnly) return;
     if (pendingSave) clearTimeout(pendingSave);
     pendingSave = setTimeout(saveNow, 500);
   }
 
   async function saveNow() {
-    if (!domain || !runId) return;
+    if (readOnly || !domain || !runId) return;
     saving = true;
     saveError = '';
     try {
@@ -70,6 +72,7 @@
   }
 
   function toggle(id) {
+    if (readOnly) return;
     const next = new Set(checkedSet);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -78,7 +81,7 @@
   }
 
   onMount(() => {
-    if (!domain || !runId) return;
+    if (readOnly || !domain || !runId) return;
     if (initialChecked.length > 0) return;
     fetch(`/api/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/manual-progress`, {
       credentials: 'same-origin',
@@ -106,7 +109,7 @@
       <h2 style="font-size: 28px; margin-top: 6px;">Manual &amp; assistive-tech checklist</h2>
       <p class="muted" style="max-width: 640px; font-size: 15px;">
         Automated tests can't catch everything. Walk through each item with a real assistive technology and tick when verified.
-        Progress is saved per audit run.
+        {readOnly ? 'Preview only — progress is not saved on a free snapshot.' : 'Progress is saved per audit run.'}
       </p>
     </div>
     <div class="manual-progress-card">
@@ -130,6 +133,7 @@
               <input
                 type="checkbox"
                 checked={isChecked}
+                disabled={readOnly}
                 onchange={() => toggle(item.id)}
               />
               <span class="manual-text">{item.text}</span>

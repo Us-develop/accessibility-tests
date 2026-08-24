@@ -62,6 +62,7 @@
    *   manualTotal: number,
    *   manualPercent: number,
    *   coveredScCount?: number,
+   *   locked?: boolean,
    * }}
    */
   let {
@@ -95,6 +96,7 @@
     manualTotal,
     manualPercent: manualPercentInitial = 0,
     coveredScCount = 0,
+    locked = false,
   } = $props();
 
   let tab = $state('overview');
@@ -123,6 +125,7 @@
     { key: 'compact', label: 'Compact' },
   ];
   const showDensitySwitcher = $derived(tab === 'overview' || tab === 'issues');
+  const contentLocked = $derived(locked && tab !== 'overview');
 
   const totalChecks = $derived(severityCounts.errors + severityCounts.warnings + severityCounts.passed + severityCounts.notice);
   const pctPassed = $derived(totalChecks > 0 ? Math.round((severityCounts.passed / totalChecks) * 100) : 0);
@@ -176,6 +179,7 @@
   }
 
   function selectIssue(item) {
+    if (locked) return;
     selected = item;
     showFixCode = false;
     copyState = 'idle';
@@ -267,21 +271,29 @@
           <span>{pagesScanned ?? urls.length} pages · {rulesChecked ?? rulesTable.length} rules · WCAG 2.2 AA</span>
         </div>
       </div>
-      <div style="display: flex; gap: 8px;">
-        <button class="btn btn-ghost btn-sm hero-btn" onclick={() => window.print()}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          Export PDF
-        </button>
-        <button class="btn btn-cream btn-sm" onclick={gotoSales}>Open sales report →</button>
-      </div>
+      {#if !locked}
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-ghost btn-sm hero-btn" onclick={() => window.print()}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Export PDF
+          </button>
+          <button class="btn btn-cream btn-sm" onclick={gotoSales}>Open sales report →</button>
+        </div>
+      {/if}
     </div>
   </div>
 
   <div class="container" style="padding: 32px 32px 80px;">
+    {#if locked}
+      <p class="locked-banner">
+        Free 1-page snapshot — Overview is open. Other tabs are a blurred preview.
+        <a class="link" href="#lead-form">Request WCAG services</a> to get the full readable report.
+      </p>
+    {/if}
     <!-- Tabs + density switcher (only on Overview/Issues) -->
     <div class="tabs-row">
       <div class="tabs" style="margin-bottom: 0; border: 0;">
@@ -289,6 +301,12 @@
           <button class="tab" class:active={tab === t.key} onclick={() => (tab = t.key)}>
             {t.label}
             {#if t.count != null}<span class="count">{t.count}</span>{/if}
+            {#if locked && t.key !== 'overview'}
+              <svg class="tab-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <rect x="5" y="11" width="14" height="10" rx="2" />
+                <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+              </svg>
+            {/if}
           </button>
         {/each}
       </div>
@@ -308,6 +326,8 @@
     <div class="hr"></div>
 
     <!-- Tab content -->
+    <div class="tab-panel" class:tab-panel--locked={contentLocked}>
+    <div class="tab-panel-inner" aria-hidden={contentLocked ? true : undefined} inert={contentLocked ? true : undefined}>
     <div class="fade-up" key={tab + variant}>
       {#if tab === 'overview'}
         <!-- BIG STATS -->
@@ -579,10 +599,25 @@
           groups={manualGroups}
           initialChecked={manualInitialChecked}
           onProgress={handleManualProgress}
+          readOnly={locked}
         />
       {/if}
     </div>
+    </div>
+    {#if contentLocked}
+      <div class="tab-panel-veil" role="region" aria-label="Unlock the full report">
+        <div class="tab-panel-veil-card">
+          <p style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">This tab is a preview</p>
+          <p class="muted" style="font-size: 14px; margin-bottom: 18px;">
+            Unlock the full issue list, fix guidance, and per-page breakdown.
+          </p>
+          <a class="btn btn-grad" href="#lead-form">Request WCAG services</a>
+        </div>
+      </div>
+    {/if}
+    </div>
 
+    {#if !locked}
     <!-- Footer CTAs -->
     <div class="footer-cta">
       <div>
@@ -593,9 +628,10 @@
       <button class="btn btn-cream" onclick={gotoStatement}>A11y statement</button>
       <button class="btn btn-grad" onclick={gotoDeveloper}>Developer next-steps</button>
     </div>
+    {/if}
   </div>
 
-  {#if selected}
+  {#if selected && !locked}
     {@const fixUrls = urlsForFix(selected)}
     {@const occTotal = selected.occurrencesTotal ?? fixUrls.length}
     {@const occPage = selected.occurrencesOnPage ?? 0}
@@ -1115,5 +1151,56 @@
     height: 1px;
     background: var(--border-subtle);
     margin: 8px 0 20px;
+  }
+  .locked-banner {
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    background: var(--us-sky);
+    color: var(--us-sky-text);
+    border-radius: var(--r-md);
+  }
+  .tab-lock {
+    margin-left: 2px;
+    opacity: 0.55;
+    flex-shrink: 0;
+  }
+  .tab-panel {
+    position: relative;
+  }
+  .tab-panel--locked {
+    min-height: 420px;
+    overflow: hidden;
+    border-radius: var(--r-md);
+  }
+  .tab-panel--locked .tab-panel-inner {
+    filter: blur(11px);
+    user-select: none;
+    pointer-events: none;
+  }
+  .tab-panel-veil {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    padding: 32px 16px;
+    background: linear-gradient(180deg, rgba(245, 244, 229, 0.12) 0%, rgba(245, 244, 229, 0.58) 100%);
+  }
+  .tab-panel-veil-card {
+    max-width: 440px;
+    text-align: center;
+    background: var(--us-cream);
+    padding: 28px 32px;
+    border-radius: var(--r-md);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  }
+  @media print {
+    .locked-banner,
+    .tab-panel-veil,
+    .tab-panel--locked {
+      display: none !important;
+    }
   }
 </style>

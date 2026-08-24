@@ -1,226 +1,145 @@
 ---
 import Layout from '../../layouts/Layout.astro';
 import AppHeader from '../../components/AppHeader.astro';
+import ResultsDashboard from '../../components/ResultsDashboard.svelte';
+import GuestLeadForm from '../../components/GuestLeadForm.svelte';
+import LoadingMonitor from '../../components/LoadingMonitor.svelte';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { buildAstroMainReportPayload } from '../../../../report-astro-payload.js';
+import { isValidReportId } from '../../../../server/fs-utils.js';
+import { runDir, isValidRunId } from '../../../../server/run-ids.js';
+import { dbPool, dbGetRunByGuestToken } from '../../../../server/db.js';
+import { isValidGuestToken, readGuestTokenRecord } from '../../../../server/guest.mjs';
+import { getSamplePrinciples, getSampleDisabilities, getSampleSprint } from '../../lib/sample-buckets';
+import { MANUAL_TODO_GROUPS } from '../../../../manual-checklist.js';
 
 export const prerender = false;
 
 const token = String(Astro.params.token || '');
+
+/** @type {string | null} */
+let loadError = null;
+let pending = false;
+/** @type {Record<string, unknown> | null} */
+let dashboardProps = null;
+let pageTitle = 'Your accessibility snapshot · Us';
+
+function lockFixItems(items) {
+  return (Array.isArray(items) ? items : []).map((item) => ({
+    ...item,
+    snippet: '',
+    fixCode: '',
+    fixCodeLanguage: undefined,
+  }));
+}
+
+if (!isValidGuestToken(token)) {
+  loadError = 'This snapshot link is invalid.';
+} else {
+  let binding = readGuestTokenRecord(token);
+  if (!binding && dbPool) {
+    try {
+      const row = await dbGetRunByGuestToken(token);
+      if (row) binding = { domain: row.domain, runId: row.runId, url: null };
+    } catch {
+      loadError = 'We could not look up this scan.';
+    }
+  }
+  if (!loadError && !binding) {
+    loadError = 'We could not find this scan.';
+  } else if (!loadError && binding) {
+    const domain = String(binding.domain || '');
+    const runId = String(binding.runId || '');
+    if (!isValidReportId(domain) || !isValidRunId(runId)) {
+      loadError = 'This snapshot link is invalid.';
+    } else {
+      const resultsPath = join(runDir(domain, runId), 'accessibility-results.json');
+      if (!existsSync(resultsPath)) {
+        pending = true;
+        pageTitle = 'Audit in progress · Us';
+      } else {
+        try {
+          const json = JSON.parse(readFileSync(resultsPath, 'utf8'));
+          const payload = buildAstroMainReportPayload(json);
+          const principles = getSamplePrinciples({
+            errors: payload.severityCounts.errors,
+            warnings: payload.severityCounts.warnings,
+            passed: payload.severityCounts.passed,
+          });
+          const disabilities = getSampleDisabilities(payload.disabilityStats || {});
+          const lockedFixes = lockFixItems(payload.fixOrderItems || []);
+          const sprint = getSampleSprint(lockedFixes, 8);
+          const trendDate = payload.auditedDate?.slice(0, 6) || 'now';
+          const manualTotal = MANUAL_TODO_GROUPS.reduce((s, g) => s + g.items.length, 0);
+          pageTitle = `Accessibility snapshot · ${payload.primaryHost}`;
+          dashboardProps = {
+            primaryHost: payload.primaryHost,
+            auditedDate: payload.auditedDate,
+            scoreClamp: payload.scoreClamp,
+            pass: payload.pass,
+            fail: payload.fail,
+            warn: payload.warn,
+            info: payload.info,
+            totalAxeViolations: payload.totalAxeViolations,
+            totalAxePasses: payload.totalAxePasses,
+            severityCounts: payload.severityCounts,
+            trend: [{ date: trendDate, score: payload.scoreClamp }],
+            pagesTable: payload.pagesTable,
+            rulesTable: payload.rulesTable,
+            fixOrderItems: lockedFixes,
+            principles,
+            disabilities,
+            urls: payload.urls,
+            reportData: {},
+            domain,
+            runId,
+            sprintPoints: sprint.points,
+            pagesScanned: payload.urls.length,
+            rulesChecked: payload.rulesTable.length,
+            previousScore: null,
+            manualGroups: MANUAL_TODO_GROUPS,
+            manualInitialChecked: [],
+            manualTotal,
+            manualPercent: 0,
+            coveredScCount: payload.coveredScCount ?? 0,
+            locked: true,
+          };
+        } catch {
+          loadError = 'Failed to read this snapshot.';
+        }
+      }
+    }
+  }
+}
 ---
 
-<Layout title="Your accessibility snapshot · Us" indexable={true} authMode="guest-ok">
+<Layout title={pageTitle} indexable={true} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Snapshot" />
     <main class="app-main">
-      <div class="container-narrow" style="padding: clamp(32px, 5vw, 56px) 0 clamp(48px, 8vw, 96px);">
-        <div id="teaser-loading" class="card" style="padding: 32px;">
-          <p class="muted">Loading your snapshot…</p>
-        </div>
-        <div id="teaser-error" class="card" hidden style="padding: 32px;">
-          <h1 style="font-size: 28px; margin-bottom: 8px;">Snapshot unavailable</h1>
-          <p class="muted" id="teaser-error-text">We could not load this scan.</p>
-          <p style="margin-top: 16px;"><a class="link" href="/">Try another URL</a></p>
-        </div>
-        <div id="teaser-body" hidden>
-          <span class="eyebrow"><span class="dot"></span>Free snapshot · 1 page</span>
-          <h1 style="font-size: clamp(36px, 4.6vw, 56px); margin: 14px 0 8px;">
-            Here’s what we found
-          </h1>
-          <p class="p-large muted" id="teaser-url" style="margin-bottom: 28px;"></p>
-
-          <div class="card" style="padding: 28px 32px; display: flex; gap: 32px; flex-wrap: wrap; align-items: center;">
-            <div id="teaser-donut"></div>
-            <div>
-              <p class="muted" style="font-size: 13px; margin-bottom: 6px;">Automated score</p>
-              <p id="teaser-counts" style="font-size: 18px; font-weight: 600;"></p>
-              <p class="muted" style="font-size: 13px; margin-top: 8px; max-width: 36ch;">
-                This is a 1-page automated check, not a full WCAG audit. Sign in for the complete report, or ask Us to remediate.
-              </p>
-            </div>
-          </div>
-
-          <h2 style="font-size: 22px; margin: 36px 0 14px;">Top issues</h2>
-          <ol id="teaser-issues" class="card" style="padding: 8px 28px; list-style: decimal;"></ol>
-
-          <div class="card" style="padding: 32px; margin-top: 36px;">
-            <h2 style="font-size: 24px; margin-bottom: 8px;">Get a full WCAG audit from Us</h2>
-            <p class="muted" style="margin-bottom: 22px;">
-              We’ll review the findings with you and quote remediation or an accessibility statement. No obligation.
-            </p>
-            <form id="lead-form">
-              <input type="hidden" name="token" id="lead-token" />
-              <div class="field" style="margin-bottom: 14px;">
-                <label class="field-label" for="lead-name">Name</label>
-                <input class="input" id="lead-name" name="name" type="text" autocomplete="name" required />
-              </div>
-              <div class="field" style="margin-bottom: 14px;">
-                <label class="field-label" for="lead-company">Company</label>
-                <input class="input" id="lead-company" name="company" type="text" autocomplete="organization" />
-              </div>
-              <div class="field" style="margin-bottom: 14px;">
-                <label class="field-label" for="lead-email">Email</label>
-                <input class="input" id="lead-email" name="email" type="email" autocomplete="email" required />
-              </div>
-              <div class="field" style="margin-bottom: 14px;">
-                <label class="field-label" for="lead-phone">Phone (optional)</label>
-                <input class="input" id="lead-phone" name="phone" type="tel" autocomplete="tel" />
-              </div>
-              <div class="field" style="margin-bottom: 18px;">
-                <label class="field-label" for="lead-message">Message</label>
-                <textarea class="textarea" id="lead-message" name="message" rows="4" maxlength="4000"></textarea>
-              </div>
-              <p id="lead-err" class="muted" style="color: var(--status-error); display: none; margin-bottom: 12px;"></p>
-              <p id="lead-ok" class="muted" style="color: var(--us-mint-text); display: none; margin-bottom: 12px;"></p>
-              <button type="submit" class="btn btn-grad btn-lg" id="lead-submit">Request WCAG services</button>
-            </form>
+      {loadError ? (
+        <div class="container-narrow" style="padding: clamp(32px, 5vw, 56px) 0 clamp(48px, 8vw, 96px);">
+          <div class="card" style="padding: 32px;">
+            <h1 style="font-size: 28px; margin-bottom: 8px;">Snapshot unavailable</h1>
+            <p class="muted">{loadError}</p>
+            <p style="margin-top: 16px;"><a class="link" href="/">Try another URL</a></p>
           </div>
         </div>
-      </div>
+      ) : pending ? (
+        <LoadingMonitor client:only="svelte" guestToken={token} />
+      ) : dashboardProps ? (
+        <>
+          <ResultsDashboard client:load {...dashboardProps} />
+          <div class="container" style="padding: 0 32px 80px;">
+            <GuestLeadForm client:load token={token} />
+          </div>
+        </>
+      ) : (
+        <div class="container-narrow" style="padding: clamp(32px, 5vw, 56px) 0;">
+          <p class="muted">Could not load this snapshot.</p>
+        </div>
+      )}
     </main>
   </div>
 </Layout>
-
-<script define:vars={{ token }}>
-
-  function wcUrl(path) {
-    return typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(path) : path;
-  }
-  function wcCreds() {
-    return typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
-  }
-
-  const loadingEl = document.getElementById('teaser-loading');
-  const errorEl = document.getElementById('teaser-error');
-  const bodyEl = document.getElementById('teaser-body');
-
-  function showError(msg) {
-    if (loadingEl) loadingEl.hidden = true;
-    if (bodyEl) bodyEl.hidden = true;
-    if (errorEl) errorEl.hidden = false;
-    const t = document.getElementById('teaser-error-text');
-    if (t) t.textContent = msg;
-  }
-
-  async function load() {
-    if (!token) {
-      showError('Missing scan token.');
-      return;
-    }
-    try {
-      const res = await fetch(wcUrl(`/api/guest/${encodeURIComponent(token)}/teaser`), {
-        credentials: wcCreds(),
-        cache: 'no-store',
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        showError(data.error || 'Could not load this snapshot.');
-        return;
-      }
-      if (loadingEl) loadingEl.hidden = true;
-      if (bodyEl) bodyEl.hidden = false;
-      const urlEl = document.getElementById('teaser-url');
-      if (urlEl) urlEl.textContent = data.url || data.domain || '';
-      const counts = document.getElementById('teaser-counts');
-      if (counts) {
-        const s = data.summary || {};
-        counts.textContent = `${s.fail || 0} fails · ${s.warn || 0} warnings · ${s.violations || 0} axe issues`;
-      }
-      const issues = document.getElementById('teaser-issues');
-      if (issues) {
-        issues.innerHTML = '';
-        const items = Array.isArray(data.topIssues) ? data.topIssues : [];
-        if (!items.length) {
-          const li = document.createElement('li');
-          li.style.padding = '16px 0';
-          li.textContent = 'No high-impact automated issues on this page. A manual audit can still find more.';
-          issues.appendChild(li);
-        } else {
-          items.forEach((item) => {
-            const li = document.createElement('li');
-            li.style.padding = '16px 0';
-            const wcag = (item.wcag || []).join(', ');
-            li.innerHTML = `<strong>${escapeHtml(item.title || 'Issue')}</strong>
-              <div class="muted" style="font-size:13px;margin-top:4px;">${escapeHtml(item.impact || '')}${wcag ? ` · WCAG ${escapeHtml(wcag)}` : ''}</div>`;
-            issues.appendChild(li);
-          });
-        }
-      }
-      const tokenInput = document.getElementById('lead-token');
-      if (tokenInput) tokenInput.value = token;
-      const donutHost = document.getElementById('teaser-donut');
-      if (donutHost) {
-        donutHost.dataset.score = String(data.score ?? 0);
-        donutHost.textContent = '';
-        const wrap = document.createElement('div');
-        wrap.style.cssText = 'width:130px;height:130px;display:grid;place-items:center;border-radius:50%;background:conic-gradient(var(--us-mint-text) calc(var(--p)*1%), var(--us-n-30) 0);';
-        wrap.style.setProperty('--p', String(Math.max(0, Math.min(100, Number(data.score) || 0))));
-        wrap.innerHTML = `<div style="width:96px;height:96px;border-radius:50%;background:var(--us-cream);display:grid;place-items:center;font-family:var(--font-display);font-size:32px;font-weight:700;">${Number(data.score) || 0}</div>`;
-        donutHost.appendChild(wrap);
-      }
-    } catch {
-      showError('Network error while loading the snapshot.');
-    }
-  }
-
-  function escapeHtml(s) {
-    return String(s || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  load();
-
-  document.getElementById('lead-form')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const err = document.getElementById('lead-err');
-    const ok = document.getElementById('lead-ok');
-    if (err) {
-      err.style.display = 'none';
-      err.textContent = '';
-    }
-    if (ok) {
-      ok.style.display = 'none';
-      ok.textContent = '';
-    }
-    const form = e.currentTarget;
-    const fd = new FormData(form);
-    const body = {
-      name: String(fd.get('name') || '').trim(),
-      company: String(fd.get('company') || '').trim(),
-      email: String(fd.get('email') || '').trim(),
-      phone: String(fd.get('phone') || '').trim(),
-      message: String(fd.get('message') || '').trim(),
-      token: String(fd.get('token') || '').trim(),
-    };
-    try {
-      const res = await fetch(wcUrl('/api/lead'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: wcCreds(),
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (err) {
-          err.textContent = data.error || 'Could not send your request.';
-          err.style.display = 'block';
-        }
-        return;
-      }
-      if (ok) {
-        ok.textContent = data.emailed
-          ? 'Thanks — we received your request and emailed our team.'
-          : 'Thanks — we received your request.';
-        ok.style.display = 'block';
-      }
-      form.reset();
-      const tokenInput = document.getElementById('lead-token');
-      if (tokenInput) tokenInput.value = token;
-    } catch {
-      if (err) {
-        err.textContent = 'Network error — try again in a moment.';
-        err.style.display = 'block';
-      }
-    }
-  });
-</script>
