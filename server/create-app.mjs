@@ -9,9 +9,9 @@ import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { sendRunNotificationEmail, createSmtpTransport, sendAccessRequestEmail } from '../server-email.js';
+import { sendRunNotificationEmail, createSmtpTransport, sendAccessRequestEmail, sendLeadEmail } from '../server-email.js';
 import { REPORTS_BASE } from './paths.js';
-import { dbPool, dbUpsertRun, dbGetRun, dbGetLatestRun } from './db.js';
+import { dbPool, dbUpsertRun, dbGetRun, dbGetLatestRun, dbGetRunByGuestToken, dbInsertLead, dbListLeads } from './db.js';
 import { mergeReportData } from './report-data.js';
 import { readJsonIfExists, isValidReportId } from './fs-utils.js';
 import { listAuditEntries, listRunsForDomain } from './audit-list.js';
@@ -25,6 +25,24 @@ import {
   domainDir as domainDirOf,
   latestRunIdOnDisk,
 } from './run-ids.js';
+import {
+  assertPublicHttpUrl,
+  checkGuestRateLimit,
+  clientIp,
+  guestIpHasRunningScan,
+  isValidGuestToken,
+  newGuestToken,
+  persistGuestToken,
+  publicConfig,
+  readGuestTokenRecord,
+  scanPoolFull,
+  trackGuestRunEnd,
+  trackGuestRunStart,
+  verifyTurnstileIfConfigured,
+  appendLeadFile,
+  readLeadFileRows,
+} from './guest.mjs';
+import { buildTeaserPayload } from './teaser-payload.mjs';
 
 const DELIVERABLE_FILES = [
   'accessibility-developers.html',
@@ -90,6 +108,30 @@ function parseNotifyFields(body) {
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isIndexablePath(pathname) {
+  if (pathname === '/' || pathname === '') return true;
+  if (pathname === '/teaser' || pathname.startsWith('/teaser/')) return true;
+  return false;
+}
+
+function isGuestOpenPath(req) {
+  const p = req.path;
+  if (req.method === 'GET') {
+    if (p === '/' || p === '/loading') return true;
+    if (p === '/teaser' || p.startsWith('/teaser/')) return true;
+    if (p === '/api/config') return true;
+    if (p.startsWith('/api/guest/')) return true;
+    if (p.startsWith('/assets/') || p.startsWith('/styles/') || p.startsWith('/_astro/')) return true;
+  }
+  if (req.method === 'POST' && (p === '/api/run' || p === '/api/lead')) return true;
+  return false;
+}
+
+function requestIsStaff(req) {
+  if (!AUTH_ENABLED) return true;
+  return req.access?.role === 'staff';
 }
 
 function getJiraConfig() {
@@ -662,13 +704,28 @@ function loginPageHtml(nextPath = '', errorMessage = '') {
 }
 
 app.use((req, res, next) => {
-  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
+  if (!isIndexablePath(req.path)) {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
+  }
   next();
 });
 
 app.get('/robots.txt', (_req, res) => {
   res.type('text/plain');
-  res.send('User-agent: *\nDisallow: /');
+  res.send(
+    [
+      'User-agent: *',
+      'Allow: /',
+      'Allow: /teaser/',
+      'Disallow: /api/',
+      'Disallow: /report/',
+      'Disallow: /audits',
+      'Disallow: /admin/',
+      'Disallow: /auth/',
+      'Disallow: /loading',
+      '',
+    ].join('\n')
+  );
 });
 
 app.get('/design-system.css', (_req, res) => {
@@ -762,10 +819,21 @@ app.get('/auth/jira/callback', async (req, res) => {
 });
 
 app.get('/api/auth/status', (req, res) => {
-  if (!AUTH_ENABLED) return res.json({ authEnabled: false, authenticated: true });
+  if (!AUTH_ENABLED) return res.json({ authEnabled: false, authenticated: true, role: 'staff' });
   const cookies = parseCookies(req);
   const authenticated = cookies[AUTH_COOKIE_NAME] === '1';
-  return res.json({ authEnabled: true, authenticated });
+  return res.json({
+    authEnabled: true,
+    authenticated,
+    role: authenticated ? 'staff' : 'guest',
+  });
+});
+
+app.get('/api/config', (_req, res) => {
+  res.json({
+    authEnabled: AUTH_ENABLED,
+    ...publicConfig(),
+  });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -806,11 +874,15 @@ app.post('/api/access-request', async (req, res) => {
 });
 
 app.use((req, res, next) => {
-  if (!AUTH_ENABLED) return next();
+  if (!AUTH_ENABLED) {
+    req.access = { role: 'staff' };
+    return next();
+  }
   if (req.path === '/robots.txt') return next();
   if (req.path === '/auth/login') return next();
   if (req.path === '/auth/logout') return next();
   if (req.path.startsWith('/auth/jira/')) return next();
+  if (req.path === '/api/config') return next();
   /** Public GETs: loading shell + static assets (styles/scripts while session cookie is set). */
   if (
     req.method === 'GET' &&
@@ -841,11 +913,20 @@ app.use((req, res, next) => {
       return res.redirect(target);
     }
   }
-  if (authed) return next();
+  if (authed) {
+    req.access = { role: 'staff' };
+    return next();
+  }
+
+  if (isGuestOpenPath(req)) {
+    req.access = { role: 'guest' };
+    return next();
+  }
 
   /** Main domain: serve glass login at `/` unless the Node host defers to an Astro shell (web/run-server.mjs). */
   if (req.method === 'GET' && req.path === '/') {
     if (parseBooleanEnv('DEFER_ROOT_LOGIN_TO_SHELL', false)) {
+      req.access = { role: 'guest' };
       return next();
     }
     return res.status(200).send(loginPageHtml('/'));
@@ -859,16 +940,37 @@ app.use((req, res, next) => {
 });
 
 app.post('/api/run', upload.single('file'), async (req, res) => {
+  const staff = requestIsStaff(req);
+  const ip = clientIp(req);
   let urls = [];
 
-  const urlText = req.body?.urls || '';
-  if (urlText.trim()) {
-    urls = extractUrlsFromText(urlText);
+  if (!staff) {
+    if (req.file) {
+      return res.status(400).json({ error: 'File uploads are available after you sign in.' });
+    }
+    try {
+      await verifyTurnstileIfConfigured(req.body?.turnstileToken || req.body?.['cf-turnstile-response'], ip);
+      const rawUrl = String(req.body?.url || req.body?.urls || '').trim();
+      const canonical = await assertPublicHttpUrl(rawUrl);
+      urls = [canonical];
+      checkGuestRateLimit(ip);
+      if (guestIpHasRunningScan(ip)) {
+        return res.status(409).json({ error: 'A free scan is already running from this network. Please wait for it to finish.' });
+      }
+    } catch (err) {
+      const status = Number(err?.status) || 400;
+      return res.status(status).json({ error: err.message || 'Could not start the scan.' });
+    }
+  } else {
+    const urlText = req.body?.urls || '';
+    if (urlText.trim()) {
+      urls = extractUrlsFromText(urlText);
+    }
   }
 
-  const maxUrls = process.env.MAX_URLS_PER_RUN ? parseInt(process.env.MAX_URLS_PER_RUN, 10) : 0;
+  const maxUrls = staff ? (process.env.MAX_URLS_PER_RUN ? parseInt(process.env.MAX_URLS_PER_RUN, 10) : 0) : 1;
 
-  if (req.file) {
+  if (staff && req.file) {
     const buf = req.file.buffer;
     const name = (req.file.originalname || '').toLowerCase();
     if (name.endsWith('.csv')) {
@@ -891,7 +993,11 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   const requestedUrls = urls.length;
 
   if (urls.length === 0) {
-    return res.status(400).json({ error: 'No valid URLs provided. Add URLs in the text area or upload a CSV/XML file.' });
+    return res.status(400).json({
+      error: staff
+        ? 'No valid URLs provided. Add URLs in the text area or upload a CSV/XML file.'
+        : 'Enter one public http(s) URL to scan.',
+    });
   }
 
   if (maxUrls > 0 && urls.length > maxUrls) {
@@ -900,12 +1006,18 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   const processedUrls = urls.length;
   const truncated = processedUrls < requestedUrls;
 
-  const { notifyOnComplete, notifyEmail } = parseNotifyFields(req.body || {});
-  if (notifyOnComplete && !isValidEmail(notifyEmail)) {
+  const { notifyOnComplete, notifyEmail } = staff
+    ? parseNotifyFields(req.body || {})
+    : { notifyOnComplete: false, notifyEmail: '' };
+  if (staff && notifyOnComplete && !isValidEmail(notifyEmail)) {
     return res.status(400).json({
       error:
         'Enter a valid e-mail address to receive a notification when tests finish (or uncheck that option).',
     });
+  }
+
+  if (scanPoolFull(runStatus)) {
+    return res.status(429).json({ error: 'The scanner is busy. Try again in a few minutes.' });
   }
 
   const domainKey = getSingleDomainKey(urls);
@@ -925,11 +1037,12 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   }
   const runId = newRunId();
   const key = runKey(domain, runId);
+  const guestToken = staff ? null : newGuestToken();
 
   const reportDir = runDirOf(domain, runId);
   if (!existsSync(reportDir)) mkdirSync(reportDir, { recursive: true });
 
-  const statementMeta = parseStatementMeta(req.body || {});
+  const statementMeta = staff ? parseStatementMeta(req.body || {}) : {};
   try {
     writeFileSync(join(reportDir, 'statement-meta.json'), JSON.stringify(statementMeta, null, 2), 'utf8');
   } catch (err) {
@@ -947,9 +1060,17 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     error: null,
     notifyRequested: !!(notifyOnComplete && notifyEmail),
     notifyEmail: notifyOnComplete && notifyEmail ? notifyEmail : null,
+    tier: staff ? 'staff' : 'guest',
+    guestToken,
+    guestIp: staff ? null : ip,
+    guestUrl: staff ? null : urls[0],
   };
   notificationAttempted.delete(key);
   runStatus.set(key, initialState);
+  if (!staff) {
+    trackGuestRunStart(ip);
+    persistGuestToken(guestToken, { domain, runId, url: urls[0], ip });
+  }
   dbUpsertRun(domain, runId, { ...initialState, statementMeta }).catch((err) => {
     console.error(`[run ${domain}/${runId}] DB initial write failed:`, err.message);
   });
@@ -974,6 +1095,11 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   child.stdout?.on('data', () => {});
 
   child.on('close', (code) => {
+    const cur = runStatus.get(key);
+    if (cur?.tier === 'guest' && cur.guestIp) {
+      trackGuestRunEnd(cur.guestIp);
+      cur.guestIp = null;
+    }
     const reportPath = join(reportDir, 'accessibility-report.html');
     const resultsPath = join(reportDir, 'accessibility-results.json');
 
@@ -1047,6 +1173,11 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   });
 
   child.on('error', (err) => {
+    const cur = runStatus.get(key);
+    if (cur?.tier === 'guest' && cur.guestIp) {
+      trackGuestRunEnd(cur.guestIp);
+      cur.guestIp = null;
+    }
     runStatePatch(domain, runId, {
       status: 'error',
       urls: processedUrls,
@@ -1067,6 +1198,8 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     requestedUrls,
     truncated,
     maxUrls: maxUrls > 0 ? maxUrls : null,
+    guestToken: guestToken || undefined,
+    teaser: !staff,
   });
 });
 
@@ -1132,6 +1265,155 @@ app.get('/api/status/:id', async (req, res) => {
   if (!out) return res.status(404).json({ error: 'Run not found' });
   if (out.error === 'Invalid run id') return res.status(400).json({ error: out.error });
   res.json({ ...out, runId });
+});
+
+async function resolveGuestBinding(token) {
+  if (!isValidGuestToken(token)) return null;
+  const fromFile = readGuestTokenRecord(token);
+  if (fromFile) return fromFile;
+  if (dbPool) {
+    try {
+      const row = await dbGetRunByGuestToken(token);
+      if (row) return { domain: row.domain, runId: row.runId, url: null };
+    } catch (err) {
+      console.error('[guest-token] DB lookup failed:', err.message);
+    }
+  }
+  return null;
+}
+
+app.get('/api/guest/:token/status', async (req, res) => {
+  const token = String(req.params.token || '');
+  const binding = await resolveGuestBinding(token);
+  if (!binding) return res.status(404).json({ error: 'Scan not found' });
+  const out = await resolveStatus({ domain: binding.domain, runId: binding.runId });
+  if (!out) return res.status(404).json({ error: 'Scan not found' });
+  if (out.error === 'Invalid run id') return res.status(400).json({ error: out.error });
+  return res.json({
+    status: out.status,
+    error: out.error || null,
+    urls: 1,
+    processedUrls: out.processedUrls ?? 1,
+  });
+});
+
+app.get('/api/guest/:token/teaser', async (req, res) => {
+  const token = String(req.params.token || '');
+  const binding = await resolveGuestBinding(token);
+  if (!binding) return res.status(404).json({ error: 'Scan not found' });
+  const out = await resolveStatus({ domain: binding.domain, runId: binding.runId });
+  if (!out) return res.status(404).json({ error: 'Scan not found' });
+  if (out.status !== 'done') {
+    return res.status(409).json({ error: 'Scan is not finished yet.', status: out.status });
+  }
+  const key = runKey(binding.domain, binding.runId);
+  let resultJson = runStatus.get(key)?.resultJson || null;
+  if (!resultJson && dbPool) {
+    try {
+      const row = await dbGetRun(binding.domain, binding.runId);
+      resultJson = row?.resultJson || null;
+    } catch (err) {
+      console.error('[teaser] DB read failed:', err.message);
+    }
+  }
+  if (!resultJson) {
+    resultJson = readJsonIfExists(join(runDirOf(binding.domain, binding.runId), 'accessibility-results.json'));
+  }
+  if (!resultJson) return res.status(404).json({ error: 'Results are not available yet.' });
+  const teaser = buildTeaserPayload(resultJson, {
+    domain: binding.domain,
+    url: binding.url,
+  });
+  return res.json(teaser);
+});
+
+app.post('/api/lead', async (req, res) => {
+  const name = String(req.body?.name ?? '').trim();
+  const company = String(req.body?.company ?? '').trim();
+  const email = String(req.body?.email ?? '').trim();
+  const phone = String(req.body?.phone ?? '').trim().slice(0, 80);
+  const message = String(req.body?.message ?? '').trim().slice(0, 4000);
+  const token = String(req.body?.token ?? '').trim();
+  if (!name || !email) {
+    return res.status(400).json({ error: 'Name and email are required.' });
+  }
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ error: 'Enter a valid email address.' });
+  }
+  let scannedUrl = '';
+  let domain = '';
+  let score = null;
+  if (token) {
+    const binding = await resolveGuestBinding(token);
+    if (binding) {
+      domain = binding.domain;
+      scannedUrl = binding.url || '';
+      try {
+        const out = await resolveStatus({ domain: binding.domain, runId: binding.runId });
+        if (out?.status === 'done') {
+          const key = runKey(binding.domain, binding.runId);
+          let resultJson = runStatus.get(key)?.resultJson || null;
+          if (!resultJson && dbPool) {
+            const row = await dbGetRun(binding.domain, binding.runId);
+            resultJson = row?.resultJson || null;
+          }
+          if (!resultJson) {
+            resultJson = readJsonIfExists(join(runDirOf(binding.domain, binding.runId), 'accessibility-results.json'));
+          }
+          if (resultJson) {
+            const teaser = buildTeaserPayload(resultJson, { domain, url: scannedUrl });
+            score = teaser.score;
+            scannedUrl = teaser.url || scannedUrl;
+          }
+        }
+      } catch (err) {
+        console.error('[lead] teaser lookup failed:', err.message);
+      }
+    }
+  }
+  const row = {
+    name,
+    company,
+    email,
+    phone,
+    message,
+    scannedUrl,
+    domain,
+    runToken: token,
+    score,
+    source: 'scan-teaser',
+    cta: 'wcag-services',
+  };
+  try {
+    const { emailed } = await sendLeadEmail(row);
+    row.emailed = emailed;
+    if (dbPool) {
+      try {
+        await dbInsertLead(row);
+      } catch (err) {
+        console.error('[lead] DB insert failed:', err.message);
+        appendLeadFile({ ...row, createdAt: new Date().toISOString() });
+      }
+    } else {
+      appendLeadFile({ ...row, createdAt: new Date().toISOString() });
+    }
+    return res.json({ ok: true, emailed });
+  } catch (err) {
+    console.error('[lead]', err?.message || err);
+    return res.status(500).json({ error: 'Could not submit your request. Try again later.' });
+  }
+});
+
+app.get('/api/admin/leads', async (_req, res) => {
+  try {
+    if (dbPool) {
+      const leads = await dbListLeads(200);
+      return res.json({ leads, source: 'db' });
+    }
+    return res.json({ leads: readLeadFileRows(200), source: 'file' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/health/db', async (req, res) => {

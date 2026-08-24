@@ -91,6 +91,71 @@ export async function sendAccessRequestEmail(payload) {
   return { emailed: true };
 }
 
+/**
+ * @param {{ name: string; company?: string; email: string; phone?: string; message?: string; scannedUrl?: string; domain?: string; score?: number | null }} payload
+ * @returns {Promise<{ emailed: boolean }>}
+ */
+export async function sendLeadEmail(payload) {
+  const name = String(payload?.name || '').trim();
+  const company = String(payload?.company || '').trim();
+  const email = String(payload?.email || '').trim();
+  const phone = String(payload?.phone || '').trim();
+  const message = String(payload?.message || '').trim();
+  const scannedUrl = String(payload?.scannedUrl || '').trim();
+  const domain = String(payload?.domain || '').trim();
+  const score = payload?.score == null || payload?.score === '' ? '—' : String(payload.score);
+  const transport = createSmtpTransport();
+  const to = String(process.env.ACCESS_REQUEST_TO || 'info@about-us.be').trim();
+  const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@localhost';
+  const subject = `WCAG services lead — ${domain || scannedUrl || 'scan'} (score ${score})`;
+  const text = [
+    `Name: ${name}`,
+    `Company: ${company || '—'}`,
+    `Email: ${email}`,
+    `Phone: ${phone || '—'}`,
+    `Scanned URL: ${scannedUrl || '—'}`,
+    `Domain: ${domain || '—'}`,
+    `Score: ${score}`,
+    '',
+    'Message:',
+    message || '—',
+    '',
+  ].join('\n');
+  const html = `<p><strong>Name:</strong> ${escapeHtml(name)}</p>
+<p><strong>Company:</strong> ${escapeHtml(company || '—')}</p>
+<p><strong>Email:</strong> ${escapeHtml(email)}</p>
+<p><strong>Phone:</strong> ${escapeHtml(phone || '—')}</p>
+<p><strong>Scanned URL:</strong> ${escapeHtml(scannedUrl || '—')}</p>
+<p><strong>Domain:</strong> ${escapeHtml(domain || '—')}</p>
+<p><strong>Score:</strong> ${escapeHtml(score)}</p>
+<p><strong>Message:</strong></p><p>${escapeHtml(message || '—').replace(/\n/g, '<br/>')}</p>`;
+
+  if (!transport) {
+    console.warn('[lead] SMTP not configured; logging only.');
+    console.warn('[lead]', {
+      name,
+      company: company || null,
+      email,
+      phone: phone || null,
+      scannedUrl: scannedUrl || null,
+      domain: domain || null,
+      score,
+      messagePreview: message.slice(0, 500),
+    });
+    return { emailed: false };
+  }
+
+  await transport.sendMail({
+    from,
+    to,
+    subject,
+    text,
+    html,
+    replyTo: email,
+  });
+  return { emailed: true };
+}
+
 function escapeHtml(s) {
   return String(s || '')
     .replace(/&/g, '&amp;')

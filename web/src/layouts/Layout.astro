@@ -3,8 +3,12 @@ import LoginModal from '../components/LoginModal.astro';
 
 interface Props {
   title?: string;
+  /** Allow search engines on the public teaser landing and result pages. */
+  indexable?: boolean;
+  /** guest-ok: public pages. required: staff report/admin pages still lock until login. */
+  authMode?: 'required' | 'guest-ok';
 }
-const { title = 'Accessibility audit · Us' } = Astro.props;
+const { title = 'Accessibility audit · Us', indexable = false, authMode = 'required' } = Astro.props;
 const publicAppBase = import.meta.env.PUBLIC_APP_BASE?.trim() ?? '';
 const devApiBase =
   import.meta.env.DEV && (import.meta.env.PUBLIC_DEV_API_URL?.trim() ?? '')
@@ -19,14 +23,18 @@ const appBaseMeta =
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+    {indexable ? (
+      <meta name="robots" content="index, follow" />
+    ) : (
+      <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+    )}
     <title>{title}</title>
     {appBaseMeta ? <meta name="accessibility-app-base" content={appBaseMeta} /> : null}
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%2319191B'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/styles/tokens.css" />
     <link rel="stylesheet" href="/styles/app.css" />
   </head>
-  <body>
+  <body data-wcag-auth={authMode}>
     <script is:inline>
       (function () {
         var m = document.querySelector('meta[name="accessibility-app-base"]');
@@ -44,7 +52,12 @@ const appBaseMeta =
         };
       })();
     </script>
-    <div id="wcag-main" class="wcag-main-shell" hidden inert>
+    <div
+      id="wcag-main"
+      class="wcag-main-shell"
+      hidden={authMode === 'required'}
+      inert={authMode === 'required' ? true : undefined}
+    >
       <slot />
     </div>
     <div id="wcag-session-bar" class="wcag-session-bar" hidden>
@@ -52,9 +65,13 @@ const appBaseMeta =
         Log out
       </button>
     </div>
-    <LoginModal />
+    <LoginModal startLocked={authMode === 'required'} />
     <noscript>
-      <div class="wcag-noscript">Enable JavaScript to sign in and use this app.</div>
+      <div class="wcag-noscript">
+        {authMode === 'guest-ok'
+          ? 'Enable JavaScript to run a free accessibility check.'
+          : 'Enable JavaScript to sign in and use this app.'}
+      </div>
     </noscript>
     <style is:global>
       .wcag-session-bar {

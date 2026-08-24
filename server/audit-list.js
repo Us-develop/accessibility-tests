@@ -205,7 +205,7 @@ export async function listRunsForDomain(dbPool, reportsBase, domain) {
 }
 
 /** Score 0–100 derived the same way as the Astro payload (pass+axePass / scoreDen). */
-function scoreFromResult(resultJson) {
+export function scoreFromResult(resultJson) {
   if (!resultJson || typeof resultJson !== 'object') return null;
   const summary = resultJson.summary || {};
   const pass = Number(summary.pass || 0);

@@ -1,0 +1,119 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import AppHeader from '../../components/AppHeader.astro';
+---
+<Layout title="WCAG service leads · Us">
+  <div class="app-shell">
+    <AppHeader crumb="Leads" />
+    <main class="app-main">
+      <div class="container" style="padding: clamp(32px, 5vw, 56px) 0;">
+        <span class="eyebrow"><span class="dot"></span>Staff · teaser funnel</span>
+        <h1 style="font-size: clamp(32px, 4vw, 48px); margin: 12px 0 8px;">WCAG service leads</h1>
+        <p class="p-large muted" style="max-width: 640px; margin-bottom: 24px;">
+          Requests from the public 1-page snapshot. Sign-in required.
+        </p>
+        <p id="leads-msg" class="muted" style="min-height: 20px; margin-bottom: 16px;"></p>
+        <div class="card-flat" style="overflow-x: auto;">
+          <table class="leads-table" id="leads-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Name</th>
+                <th>Company</th>
+                <th>Email</th>
+                <th>Score</th>
+                <th>URL</th>
+                <th>Emailed</th>
+              </tr>
+            </thead>
+            <tbody id="leads-body">
+              <tr><td colspan="7" class="muted">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<script>
+  function wcUrl(path) {
+    return typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(path) : path;
+  }
+  function wcCreds() {
+    return typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
+  }
+  function esc(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  async function load() {
+    const msg = document.getElementById('leads-msg');
+    const body = document.getElementById('leads-body');
+    try {
+      const res = await fetch(wcUrl('/api/admin/leads'), { credentials: wcCreds() });
+      if (res.status === 401) {
+        document.dispatchEvent(new CustomEvent('wcag:login-required'));
+        if (msg) msg.textContent = 'Sign in to view leads.';
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (msg) msg.textContent = data.error || 'Could not load leads.';
+        return;
+      }
+      const leads = Array.isArray(data.leads) ? data.leads : [];
+      if (msg) msg.textContent = leads.length ? `${leads.length} lead(s)` : 'No leads yet.';
+      if (!body) return;
+      if (!leads.length) {
+        body.innerHTML = '<tr><td colspan="7" class="muted">No leads yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = leads
+        .map((lead) => {
+          const when = lead.createdAt ? new Date(lead.createdAt).toLocaleString() : '—';
+          const url = lead.scannedUrl || lead.scanned_url || '';
+          const emailed = lead.emailed ? 'yes' : 'no';
+          return `<tr>
+            <td>${esc(when)}</td>
+            <td>${esc(lead.name)}</td>
+            <td>${esc(lead.company)}</td>
+            <td><a class="link" href="mailto:${esc(lead.email)}">${esc(lead.email)}</a></td>
+            <td>${lead.score == null ? '—' : esc(lead.score)}</td>
+            <td>${url ? `<a class="link" href="${esc(url)}">${esc(url)}</a>` : '—'}</td>
+            <td>${emailed}</td>
+          </tr>`;
+        })
+        .join('');
+    } catch {
+      if (msg) msg.textContent = 'Network error.';
+    }
+  }
+
+  load();
+  document.addEventListener('wcag:logged-in', load);
+</script>
+
+<style>
+  .leads-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .leads-table th,
+  .leads-table td {
+    text-align: left;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    vertical-align: top;
+  }
+  .leads-table th {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fg-3);
+  }
+</style>

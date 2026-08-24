@@ -1,8 +1,13 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+
+const cookieHeader = Astro.request.headers.get('cookie') || '';
+const ssrStaff = /(?:^|;\s*)wcag_access=1(?:;|$)/.test(cookieHeader);
+
+export const prerender = false;
 ---
-<Layout title="Accessibility audit · Us">
+<Layout title="Free accessibility check · Us" indexable={true} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader />
     <main class="app-main">
@@ -12,7 +17,54 @@ import AppHeader from '../components/AppHeader.astro';
           style="position: absolute; top: -120px; right: -100px; width: 460px; height: 460px; border-radius: 50%; background: var(--us-grad-iridescent); opacity: 0.5; filter: blur(40px); pointer-events: none; animation: drift 22s ease-in-out infinite;"
         >
         </div>
-        <div class="fade-up" style="text-align: left; margin-bottom: 40px;">
+        <div class="fade-up guest-only" hidden={ssrStaff} style="text-align: left; margin-bottom: 40px;">
+          <span class="eyebrow"><span class="dot"></span>Free snapshot · 1 page · WCAG 2.2 AA</span>
+          <h1 style="font-size: clamp(40px, 5.4vw, 68px); margin-top: 14px; margin-bottom: 12px;">
+            Check a page for accessibility — <em
+              style="font-style: normal; background: var(--us-grad-iridescent); -webkit-background-clip: text; background-clip: text; color: transparent;"
+              >in plain English.</em
+            >
+          </h1>
+          <p class="p-large muted" style="max-width: 620px;">
+            Paste a public URL. We run automated WCAG 2.2 AA checks and show a score plus the top issues.
+            Need a full audit and remediation? Ask Us for WCAG services after the scan.
+          </p>
+        </div>
+
+        <form id="guest-run-form" class="card guest-only" hidden={ssrStaff} style="padding: 0; overflow: hidden;">
+          <div style="padding: 32px 32px 28px;">
+            <label class="field-label" for="guest-url">Page URL</label>
+            <input
+              id="guest-url"
+              name="url"
+              class="input"
+              type="url"
+              inputmode="url"
+              autocomplete="url"
+              placeholder="https://example.com"
+              required
+            />
+            <p class="muted" style="font-size: 13px; margin-top: 12px;">
+              One public page per check. By starting a scan you confirm you are allowed to request this URL.
+            </p>
+            <div id="guest-turnstile" style="margin-top: 18px;"></div>
+          </div>
+          <div
+            style="background: var(--us-ink); color: var(--us-cream); padding: 24px 32px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;"
+          >
+            <div>
+              <div style="font-family: var(--font-display); font-size: 20px; font-weight: 700; letter-spacing: -0.01em;">
+                Free 1-page snapshot
+              </div>
+              <div style="opacity: 0.7; font-size: 13px; margin-top: 4px;">Sign in for sitemaps, history, and full reports</div>
+            </div>
+            <button type="submit" class="btn btn-grad btn-lg" style="min-width: 200px;" id="guest-submit-btn">
+              Check this page
+            </button>
+          </div>
+        </form>
+
+        <div class="fade-up staff-only" hidden={!ssrStaff} style="text-align: left; margin-bottom: 40px;">
           <span class="eyebrow"><span class="dot"></span>WCAG 2.2 · AA · EN 301 549</span>
           <h1 style="font-size: clamp(40px, 5.4vw, 68px); margin-top: 14px; margin-bottom: 12px;">
             Audit a site for accessibility — <em
@@ -25,7 +77,7 @@ import AppHeader from '../components/AppHeader.astro';
           </p>
         </div>
 
-        <form id="run-form" class="card" style="padding: 0; overflow: hidden;">
+        <form id="run-form" class="card staff-only" hidden={!ssrStaff} style="padding: 0; overflow: hidden;">
           <div style="padding: 32px 32px 36px;">
             <div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px;">
               <span style="font-family: var(--font-mono); font-size: 12px; color: var(--fg-3); letter-spacing: 0.04em;"
@@ -135,8 +187,10 @@ import AppHeader from '../components/AppHeader.astro';
 
         <p id="form-err" class="muted" style="font-size: 14px; margin-top: 14px; color: var(--status-error); display: none;"></p>
 
-        <p class="muted" style="font-size: 12px; margin-top: 14px; text-align: center;">
+        <p class="muted staff-only" hidden={!ssrStaff} style="font-size: 12px; margin-top: 14px; text-align: center;">
           <a href="/audits" class="link">All domain audits</a>
+          ·
+          <a href="/admin/leads" class="link">Leads</a>
         </p>
       </div>
     </main>
@@ -145,6 +199,7 @@ import AppHeader from '../components/AppHeader.astro';
 
 <script>
   const form = document.getElementById('run-form');
+  const guestForm = document.getElementById('guest-run-form');
   const urlsEl = document.getElementById('urls');
   const hint = document.getElementById('url-hint');
   const summary = document.getElementById('run-summary');
@@ -152,6 +207,34 @@ import AppHeader from '../components/AppHeader.astro';
 
   function wcUrl(path) {
     return typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(path) : path;
+  }
+  function wcCreds() {
+    return typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
+  }
+
+  function setStaffMode(isStaff) {
+    document.querySelectorAll('.staff-only').forEach((el) => {
+      el.hidden = !isStaff;
+    });
+    document.querySelectorAll('.guest-only').forEach((el) => {
+      el.hidden = !!isStaff;
+    });
+  }
+
+  async function parseJsonResponse(res) {
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (ct.includes('application/json')) {
+      return res.json().catch(() => ({}));
+    }
+    const raw = await res.text().catch(() => '');
+    if (raw && raw.trim().startsWith('{')) {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return {};
+      }
+    }
+    return {};
   }
 
   function countUrls() {
@@ -169,29 +252,58 @@ import AppHeader from '../components/AppHeader.astro';
   urlsEl?.addEventListener('input', refreshHint);
   refreshHint();
 
+  async function refreshMode() {
+    try {
+      const res = await fetch(wcUrl('/api/auth/status'), { credentials: wcCreds() });
+      const data = await res.json().catch(() => ({}));
+      const isStaff = data.authEnabled === false || data.authenticated === true;
+      setStaffMode(isStaff);
+    } catch {
+      setStaffMode(false);
+    }
+  }
+
+  let turnstileWidgetId = null;
+  async function maybeLoadTurnstile() {
+    try {
+      const res = await fetch(wcUrl('/api/config'), { credentials: wcCreds() });
+      const data = await res.json().catch(() => ({}));
+      const siteKey = data.turnstileSiteKey;
+      if (!siteKey) return;
+      const mount = document.getElementById('guest-turnstile');
+      if (!mount) return;
+      await new Promise((resolve, reject) => {
+        if (window.turnstile) {
+          resolve();
+          return;
+        }
+        const s = document.createElement('script');
+        s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        s.async = true;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('captcha'));
+        document.head.appendChild(s);
+      });
+      if (window.turnstile && turnstileWidgetId == null) {
+        turnstileWidgetId = window.turnstile.render(mount, { sitekey: siteKey });
+      }
+    } catch {
+      /* captcha optional when the server has no secret */
+    }
+  }
+
+  refreshMode();
+  maybeLoadTurnstile();
+  document.addEventListener('wcag:logged-in', () => setStaffMode(true));
+
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!errEl) return;
     errEl.style.display = 'none';
     const fd = new FormData(form);
     try {
-      const runUrl = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl('/api/run') : '/api/run';
-      const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
-      const res = await fetch(runUrl, { method: 'POST', body: fd, credentials: creds });
-      const ct = (res.headers.get('content-type') || '').toLowerCase();
-      let data = {};
-      if (ct.includes('application/json')) {
-        data = await res.json().catch(() => ({}));
-      } else {
-        const raw = await res.text().catch(() => '');
-        if (raw && raw.trim().startsWith('{')) {
-          try {
-            data = JSON.parse(raw);
-          } catch {
-            /* ignore */
-          }
-        }
-      }
+      const res = await fetch(wcUrl('/api/run'), { method: 'POST', body: fd, credentials: wcCreds() });
+      const data = await parseJsonResponse(res);
       if (res.status === 401) {
         document.dispatchEvent(new CustomEvent('wcag:login-required'));
         errEl.textContent = data.error || 'Sign in to run an audit.';
@@ -219,6 +331,42 @@ import AppHeader from '../components/AppHeader.astro';
     } catch {
       errEl.textContent = 'Network error — is the API running? For dev, start legacy server on port 3456.';
       errEl.style.display = 'block';
+    }
+  });
+
+  guestForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!errEl) return;
+    errEl.style.display = 'none';
+    const url = String(new FormData(guestForm).get('url') || '').trim();
+    const fd = new FormData();
+    fd.set('url', url);
+    if (window.turnstile && turnstileWidgetId != null) {
+      const token = window.turnstile.getResponse(turnstileWidgetId);
+      if (token) fd.set('turnstileToken', token);
+    }
+    const btn = document.getElementById('guest-submit-btn');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch(wcUrl('/api/run'), { method: 'POST', body: fd, credentials: wcCreds() });
+      const data = await parseJsonResponse(res);
+      if (!res.ok) {
+        errEl.textContent = data.error || res.statusText || 'Request failed';
+        errEl.style.display = 'block';
+        if (window.turnstile && turnstileWidgetId != null) window.turnstile.reset(turnstileWidgetId);
+        return;
+      }
+      if (data.guestToken) {
+        window.location.href = wcUrl(`/loading?token=${encodeURIComponent(data.guestToken)}`);
+        return;
+      }
+      errEl.textContent = 'Could not start the free scan.';
+      errEl.style.display = 'block';
+    } catch {
+      errEl.textContent = 'Network error — is the API running?';
+      errEl.style.display = 'block';
+    } finally {
+      if (btn) btn.disabled = false;
     }
   });
 </script>

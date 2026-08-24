@@ -8,17 +8,20 @@ export const prerender = false;
 const url = new URL(Astro.request.url);
 const domain = url.searchParams.get('domain') || url.searchParams.get('id') || '';
 const runId = url.searchParams.get('runId') || '';
+const token = url.searchParams.get('token') || '';
 
-if (!domain || !runId) {
+if (!token && (!domain || !runId)) {
   // Tolerate the legacy ?id=domain shape: we cannot recover runId here, so render a soft error.
 }
 ---
 
-<Layout title={`Audit in progress · ${domain || 'Us'}`}>
+<Layout title={`Audit in progress · ${domain || 'Us'}`} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader domain={domain || null} runId={runId || null} active={null} crumb="Running" />
     <main class="app-main">
-      {domain && runId ? (
+      {token ? (
+        <LoadingMonitor client:only="svelte" guestToken={token} />
+      ) : domain && runId ? (
         <LoadingMonitor client:only="svelte" domain={domain} runId={runId} />
       ) : (
         <div class="container-narrow" style="padding: clamp(32px, 6vw, 64px) 0;">

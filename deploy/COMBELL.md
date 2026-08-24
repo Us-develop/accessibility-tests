@@ -54,7 +54,10 @@ Set these in Combell’s environment configuration (names may vary by UI). Never
 | `DATABASE_URL`                | Optional Postgres connection string for run persistence.                                                                                                                                         |
 | `DATABASE_SSL`                | `true` if the DB requires TLS (often external managed Postgres).                                                                                                                                 |
 | `REPORTS_BASE`                | Absolute path to a **writable** directory if `./reports` is not persistent on hosting.                                                                                                           |
-| `SMTP_`* / `ACCESS_REQUEST_*` | Optional mail for access-request flow (see `web/.env.example` and server code).                                                                                                                  |
+| `SMTP_`* / `ACCESS_REQUEST_`* | Optional mail for access-request and teaser-scan leads (see `web/.env.example` and server code). |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Optional Cloudflare Turnstile for guest scans. If the secret is set, guests must pass captcha. |
+| `GUEST_SCANS_PER_HOUR` / `GUEST_SCANS_PER_DAY` | Guest rate limits (defaults 3 / hour, 10 / day). |
+| `SCAN_MAX_CONCURRENT` | Max simultaneous Playwright scans (default 3). |
 
 
 Root and `web/` `**.env`** / `**.env.local`** files are merged at startup (`[server/load-env.mjs](../server/load-env.mjs)`); production should prefer host-managed env vars.
@@ -64,8 +67,7 @@ Root and `web/` `**.env`** / `**.env.local`** files are merged at startup (`[ser
 After SSL and DNS work:
 
 1. Open `https://your-domain/` (or HTTP if no SSL yet — then keep `AUTH_COOKIE_SECURE` aligned).
-2. Log in.
-3. Run a **single-URL** audit against a trivial public page you control.
-4. Confirm `/report/...` loads and `**REPORTS_BASE`** (or `./reports`) contains new artifact folders.
+2. As a **guest** (logged out), run a **single-URL** snapshot against a trivial public page you control, then submit the WCAG services form.
+3. Log in and run a full audit (sitemap/CSV still available). Confirm `/report/...` loads and `**REPORTS_BASE`** (or `./reports`) contains new artifact folders.
 
 Failures at „Run audit“ with Chromium errors usually mean unsupported Playwright/OS on shared hosting; escalate with support or migrate to VPS.

@@ -18,8 +18,8 @@
     return 'same-origin';
   }
 
-  /** @type {{ domain: string, runId: string, sampleUrls?: string[] }} */
-  let { domain, runId, sampleUrls = [] } = $props();
+  /** @type {{ domain?: string, runId?: string, guestToken?: string, sampleUrls?: string[] }} */
+  let { domain = '', runId = '', guestToken = '', sampleUrls = [] } = $props();
 
   const RULES = [
     'image-alt', 'color-contrast', 'keyboard-trap', 'focus-visible',
@@ -56,7 +56,10 @@
 
   async function poll() {
     try {
-      const res = await fetch(wcUrl(`/api/status/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}`), {
+      const statusPath = guestToken
+        ? `/api/guest/${encodeURIComponent(guestToken)}/status`
+        : `/api/status/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}`;
+      const res = await fetch(wcUrl(statusPath), {
         cache: 'no-store',
         credentials: wcCreds(),
       });
@@ -82,7 +85,11 @@
         clearInterval(pollTimer);
         clearInterval(progressTimer);
         setTimeout(() => {
-          window.location.replace(wcUrl(`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`));
+          if (guestToken) {
+            window.location.replace(wcUrl(`/teaser/${encodeURIComponent(guestToken)}`));
+          } else {
+            window.location.replace(wcUrl(`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`));
+          }
         }, 600);
       } else if (data.status === 'error') {
         clearInterval(pollTimer);
@@ -135,8 +142,12 @@
         Reading every <em>pixel</em>, line, and aria.
       </h1>
       <p class="p-large muted loading-lead">
-        We're scanning {totalPages} page{totalPages === 1 ? '' : 's'} against {RULES.length}+ WCAG 2.2 AA rules.
-        Sit tight, or close this tab &mdash; we'll email when it's done.
+        {#if guestToken}
+          We're scanning this page against WCAG 2.2 AA rules. A snapshot of the top issues will appear next.
+        {:else}
+          We're scanning {totalPages} page{totalPages === 1 ? '' : 's'} against {RULES.length}+ WCAG 2.2 AA rules.
+          Sit tight, or close this tab &mdash; we'll email when it's done.
+        {/if}
       </p>
 
       <div class="progress-row">

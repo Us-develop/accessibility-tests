@@ -1,8 +1,12 @@
 ---
 /**
- * Blocking glass sign-in overlay until POST /api/auth/login sets the HttpOnly wcag_access cookie.
+ * Glass sign-in overlay. On staff pages it blocks until login; on guest pages it is optional.
  * Coordinates with #wcag-main / #wcag-session-bar in Layout.astro.
  */
+interface Props {
+  startLocked?: boolean;
+}
+const { startLocked = true } = Astro.props;
 const LOGIN_TILE_IMAGES = Array.from({ length: 10 }, (_, i) => {
   const n = String(i + 1).padStart(2, '0');
   return `/assets/login-tiles/tile-${n}.png`;
@@ -20,7 +24,9 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
 <div
   id="wcag-login-modal"
   class="wcag-login-overlay"
-  aria-hidden="false"
+  data-start-locked={startLocked ? 'true' : 'false'}
+  hidden={!startLocked}
+  aria-hidden={startLocked ? 'false' : 'true'}
   role="presentation"
 >
   <div class="wcag-login-scene" aria-hidden="true">
@@ -64,6 +70,9 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     <div class="wcag-login-flip">
       <div class="wcag-login-flip-inner" id="wcag-login-flip-inner">
         <div class="wcag-login-face wcag-login-face--front">
+          <button type="button" class="wcag-login-close" id="wcag-login-close" hidden={startLocked}>
+            Close
+          </button>
           <h2 id="wcag-login-title" class="wcag-login-title">Sign in</h2>
           <p class="wcag-login-lead">Enter your username and password to use the app.</p>
           <p id="wcag-login-err" class="wcag-login-err" role="alert" hidden></p>
@@ -156,7 +165,13 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     return document.getElementById('wcag-session-bar');
   }
 
+  function guestOk() {
+    const overlay = qs('wcag-login-modal');
+    return overlay?.getAttribute('data-start-locked') === 'false';
+  }
+
   function lockAppShell() {
+    if (guestOk()) return;
     const main = getMain();
     const bar = getBar();
     if (main) {
@@ -215,6 +230,11 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     overlay.setAttribute('aria-hidden', 'true');
   }
 
+  function syncCloseButton() {
+    const closeBtn = qs('wcag-login-close');
+    if (closeBtn) closeBtn.hidden = !guestOk();
+  }
+
   async function refreshAuthGate() {
     const errEl = qs('wcag-login-err');
     if (errEl && errEl.textContent) {
@@ -235,6 +255,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       if (data.authenticated === true) {
         closeModal();
         unlockAppShell(true);
+        document.body.classList.add('is-staff');
         if (errEl) {
           errEl.hidden = true;
           errEl.textContent = '';
@@ -242,12 +263,23 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
         return;
       }
 
+      document.body.classList.remove('is-staff');
       if (errEl) {
         errEl.hidden = true;
         errEl.textContent = '';
       }
+      if (guestOk()) {
+        closeModal();
+        unlockAppShell(false);
+        return;
+      }
       openModal();
     } catch {
+      if (guestOk()) {
+        closeModal();
+        unlockAppShell(false);
+        return;
+      }
       lockAppShell();
       openModal();
       if (errEl) {
@@ -258,18 +290,24 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    lockAppShell();
+    syncCloseButton();
+    if (!guestOk()) lockAppShell();
     refreshAuthGate();
   });
 
   document.addEventListener('wcag:login-required', () => {
-    lockAppShell();
+    if (!guestOk()) lockAppShell();
     const errEl = qs('wcag-login-err');
-    if (errEl) {
+    if (errEl && !guestOk()) {
       errEl.textContent = 'Your session expired. Sign in again.';
       errEl.hidden = false;
     }
     openModal();
+  });
+
+  document.addEventListener('wcag:open-login', () => {
+    openModal();
+    qs('wcag-login-user')?.focus();
   });
 
   const form = qs('wcag-login-form');
@@ -302,7 +340,11 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       }
       closeModal();
       unlockAppShell(true);
+      document.body.classList.add('is-staff');
       document.dispatchEvent(new CustomEvent('wcag:logged-in'));
+      if (guestOk()) {
+        window.location.reload();
+      }
     } catch {
       if (errEl) {
         errEl.textContent = 'Network error — is the server running?';
@@ -392,7 +434,25 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       errEl.textContent = '';
       errEl.hidden = true;
     }
+    document.body.classList.remove('is-staff');
+    if (guestOk()) {
+      closeModal();
+      window.location.reload();
+      return;
+    }
     openModal();
+  });
+
+  qs('wcag-login-close')?.addEventListener('click', () => {
+    closeModal();
+    if (guestOk()) unlockAppShell(false);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!guestOk()) return;
+    const overlay = qs('wcag-login-modal');
+    if (overlay && !overlay.hidden) closeModal();
   });
 </script>
 
@@ -416,6 +476,27 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
   }
   .wcag-login-overlay[hidden] {
     display: none !important;
+  }
+
+  .wcag-login-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    border: 0;
+    background: transparent;
+    color: var(--fg-2, #2e2e2e);
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 8px;
+  }
+  .wcag-login-close:hover {
+    background: rgba(255, 255, 255, 0.45);
+  }
+  .wcag-login-face--front {
+    position: relative;
   }
 
   .wcag-login-scene {
