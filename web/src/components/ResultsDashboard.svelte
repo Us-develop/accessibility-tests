@@ -62,6 +62,7 @@
    *   manualTotal: number,
    *   manualPercent: number,
    *   coveredScCount?: number,
+   *   wcagAaCount?: number,
    *   scoreAvailable?: boolean,
    *   totalAxeIncomplete?: number,
    *   locked?: boolean,
@@ -98,6 +99,7 @@
     manualTotal,
     manualPercent: manualPercentInitial = 0,
     coveredScCount = 0,
+    wcagAaCount = 56,
     scoreAvailable = true,
     totalAxeIncomplete = 0,
     locked = false,
@@ -129,6 +131,7 @@
     { key: 'pages', label: 'By page', count: pagesTable.length },
     { key: 'rules', label: 'Rules' },
     { key: 'manual', label: 'Manual checks', count: `${manualChecked}/${manualTotal}` },
+    ...(!locked ? [{ key: 'coverage', label: 'WCAG coverage' }] : []),
   ]);
   const variants = [
     { key: 'detailed', label: 'Detailed' },
@@ -219,6 +222,9 @@
     manualChecked = info.checked.length;
   }
 
+  function gotoCoverage() {
+    window.location.href = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/coverage`;
+  }
   function gotoSales() {
     window.location.href = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/sales`;
   }
@@ -287,6 +293,10 @@
         <p class="hero-disclaimer">
           Automated scan only — not a WCAG 2.2 AA or EAA conformance claim.
           <a class="link" href="/limitations" style="color: inherit; text-decoration: underline;">What we can and cannot test</a>
+          {#if !locked}
+            ·
+            <button type="button" class="link" style="background:none;border:0;padding:0;font:inherit;cursor:pointer;color:inherit;text-decoration:underline;" onclick={gotoCoverage}>WCAG coverage analysis</button>
+          {/if}
         </p>
       </div>
       {#if !locked}
@@ -316,7 +326,7 @@
     <div class="tabs-row">
       <div class="tabs" style="margin-bottom: 0; border: 0;">
         {#each tabs as t (t.key)}
-          <button class="tab" class:active={tab === t.key} onclick={() => (tab = t.key)}>
+          <button class="tab" class:active={tab === t.key} onclick={() => (t.key === 'coverage' ? gotoCoverage() : (tab = t.key))}>
             {t.label}
             {#if t.count != null}<span class="count">{t.count}</span>{/if}
             {#if locked && t.key !== 'overview'}
@@ -592,7 +602,7 @@
         <div class="card-flat" style="padding: 24px;">
           <h3 style="font-size: 18px; margin-bottom: 6px;">{rulesTable.length} finding{rulesTable.length === 1 ? '' : 's'} on this run</h3>
           <p class="muted" style="font-size: 13px; margin-bottom: 20px;">
-            This list is unique automated findings (errors, warnings, and axe “needs review”). The library maps to {coveredScCount} WCAG success criteria; WCAG 2.2 Level A and AA include 50 criteria and automation cannot test all of them.
+            This list is unique automated findings (errors, warnings, and axe “needs review”). The library maps to {coveredScCount} WCAG success criteria; WCAG 2.2 Level A and AA include {wcagAaCount} criteria and automation cannot test all of them.
           </p>
           {#if rulesTable.length === 0}
             <p class="muted" style="font-size: 14px;">Nothing fired this round — well done.</p>
@@ -613,6 +623,7 @@
       {:else if tab === 'manual'}
         <p class="muted" style="font-size: 14px; margin-bottom: 16px; max-width: 720px;">
           Checklist progress only — these items are <strong>not performed</strong> until someone ticks them. They do not change the automated score.
+          See <button type="button" class="link" style="background:none;border:0;padding:0;font:inherit;cursor:pointer;" onclick={gotoCoverage}>WCAG coverage</button> for which success criteria these checks can cover.
         </p>
         <ManualChecklist
           {domain}

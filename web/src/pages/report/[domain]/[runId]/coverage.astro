@@ -1,0 +1,47 @@
+---
+import Layout from '../../../../layouts/Layout.astro';
+import AppHeader from '../../../../components/AppHeader.astro';
+import WcagCoverage from '../../../../components/WcagCoverage.svelte';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { isValidReportId } from '../../../../../../server/fs-utils.js';
+import { runDir, isValidRunId } from '../../../../../../server/run-ids.js';
+
+export const prerender = false;
+
+const rawDomain = Astro.params.domain ?? '';
+const rawRunId = Astro.params.runId ?? '';
+const domain = typeof rawDomain === 'string' ? rawDomain : String(rawDomain);
+const runId = typeof rawRunId === 'string' ? rawRunId : String(rawRunId);
+
+if (!isValidReportId(domain) || !isValidRunId(runId)) {
+  return new Response('Invalid run id', { status: 400 });
+}
+
+const resultsPath = join(runDir(domain, runId), 'accessibility-results.json');
+if (!existsSync(resultsPath)) {
+  return new Response('Report not found', { status: 404 });
+}
+
+const primaryHost = domain.replace(/^www\./, '');
+---
+
+<Layout title={`WCAG coverage · ${primaryHost}`}>
+  <div class="app-shell">
+    <AppHeader domain={domain} runId={runId} active="coverage" />
+    <main class="app-main">
+      <div style="background: var(--us-cream); min-height: calc(100dvh - 65px);">
+        <div class="container-narrow" style="padding: clamp(28px, 4vw, 48px) 0 80px;">
+          <a class="btn btn-ghost btn-sm" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`}>← Back to report</a>
+          <span class="eyebrow" style="display: inline-flex; margin: 18px 0 8px;"><span class="dot"></span>WCAG 2.2 A + AA · {primaryHost}</span>
+          <h1 style="font-size: clamp(28px, 4vw, 40px); margin: 0 0 10px;">What was checked — and what was not</h1>
+          <p class="muted" style="max-width: 640px; margin-bottom: 28px;">
+            The table is computed from this run. The written analysis uses Anthropic when an API key is configured; otherwise it uses the same matrix in plain language.
+            Neither is an official WCAG or EAA audit.
+          </p>
+          <WcagCoverage client:load {domain} {runId} {primaryHost} />
+        </div>
+      </div>
+    </main>
+  </div>
+</Layout>

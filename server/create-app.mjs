@@ -17,6 +17,7 @@ import { readJsonIfExists, isValidReportId } from './fs-utils.js';
 import { listAuditEntries, listRunsForDomain } from './audit-list.js';
 import { getFtpConfig, ftpDownload, ftpUpload, persistReportArtifactsToFtp } from './ftp.js';
 import { normalizeManualProgress } from '../manual-checklist.js';
+import { analysisCacheBody, anthropicConfigured, buildWcagAnalysisPayload } from '../anthropic-wcag-analysis.js';
 import {
   newRunId,
   isValidRunId,
@@ -87,6 +88,7 @@ const AUTH_COOKIE_SECURE = parseBooleanEnv('AUTH_COOKIE_SECURE', false);
 
 // In-memory run status (running, done, error)
 const runStatus = new Map();
+const wcagAnalysisInflight = new Map();
 /** Run IDs we already attempted to notify (success or skip) */
 const notificationAttempted = new Set();
 
@@ -1794,6 +1796,116 @@ app.put('/api/report/:id/manual-progress', async (req, res) => {
   const out = await writeManualProgress(domain, runId, checked);
   if (out.error) return res.status(out.status).json({ error: out.error });
   res.json({ ok: true, checked: out.checked });
+});
+
+function wcagAnalysisCachePath(domain, runId) {
+  return join(runDirOf(domain, runId), 'wcag-analysis.json');
+}
+
+function readWcagAnalysisCache(domain, runId) {
+  const p = wcagAnalysisCachePath(domain, runId);
+  if (!existsSync(p)) return null;
+  try {
+    return JSON.parse(readFileSync(p, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeWcagAnalysisCache(domain, runId, body) {
+  const dir = runDirOf(domain, runId);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const p = wcagAnalysisCachePath(domain, runId);
+  writeFileSync(p, JSON.stringify(body, null, 2), 'utf8');
+  if (FTP_CONFIG) {
+    ftpUpload(FTP_CONFIG, p, `${domain}/${runId}/wcag-analysis.json`).catch(() => {});
+  }
+}
+
+async function readRunReportData(domain, runId) {
+  if (dbPool) {
+    try {
+      const dbRun = await dbGetRun(domain, runId);
+      if (dbRun?.resultJson) return dbRun.resultJson;
+    } catch (err) {
+      console.error(`[run ${domain}/${runId}] report JSON lookup failed:`, err.message);
+    }
+  }
+  const filePath = join(runDirOf(domain, runId), 'accessibility-results.json');
+  let raw = existsSync(filePath) ? readFileSync(filePath, 'utf8') : null;
+  if (!raw) {
+    try {
+      raw = await ftpDownload(FTP_CONFIG, `${domain}/${runId}/accessibility-results.json`);
+    } catch {
+      raw = null;
+    }
+  }
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function publicWcagAnalysis(payload) {
+  return {
+    standard: payload.coverage.standard,
+    total: payload.coverage.total,
+    pages: payload.coverage.pages,
+    counts: payload.coverage.counts,
+    buckets: payload.coverage.buckets,
+    criteria: payload.coverage.criteria,
+    narrative: payload.narrative,
+    source: payload.source,
+    model: payload.model,
+    hash: payload.hash,
+    llmAvailable: payload.llmAvailable,
+    llmError: payload.llmError || null,
+  };
+}
+
+async function handleWcagAnalysis(domain, runId, { forceLlm }) {
+  const reportData = await readRunReportData(domain, runId);
+  if (!reportData) return { status: 404, error: 'Report not found' };
+  const progress = await readManualProgress(domain, runId);
+  const key = `${runKey(domain, runId)}:${forceLlm ? 'llm' : 'read'}`;
+  if (wcagAnalysisInflight.has(key)) {
+    return wcagAnalysisInflight.get(key);
+  }
+  const job = (async () => {
+    const cached = readWcagAnalysisCache(domain, runId);
+    const payload = await buildWcagAnalysisPayload(reportData, progress.checked, {
+      forceLlm: Boolean(forceLlm) && anthropicConfigured(),
+      cached,
+    });
+    if (!cached || cached.hash !== payload.hash || cached.source !== payload.source) {
+      writeWcagAnalysisCache(domain, runId, analysisCacheBody(payload));
+    }
+    return { status: 200, body: publicWcagAnalysis(payload) };
+  })();
+  wcagAnalysisInflight.set(key, job);
+  try {
+    return await job;
+  } finally {
+    wcagAnalysisInflight.delete(key);
+  }
+}
+
+app.get('/api/report/:domain/:runId/wcag-analysis', async (req, res) => {
+  const { domain, runId } = req.params;
+  if (!isValidDomain(domain) || !isValidRunId(runId)) return res.status(400).json({ error: 'Invalid run id' });
+  const out = await handleWcagAnalysis(domain, runId, { forceLlm: false });
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  res.json(out.body);
+});
+
+app.post('/api/report/:domain/:runId/wcag-analysis', async (req, res) => {
+  const { domain, runId } = req.params;
+  if (!isValidDomain(domain) || !isValidRunId(runId)) return res.status(400).json({ error: 'Invalid run id' });
+  const out = await handleWcagAnalysis(domain, runId, { forceLlm: true });
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  res.json(out.body);
 });
 
 function serveReportFile(domain, runId, filename) {

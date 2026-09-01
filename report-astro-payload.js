@@ -14,6 +14,7 @@ import {
   buildChartsSectionHtml,
   buildChartSectionStyles,
 } from './report-summary.js';
+import { WCAG_22_AA_COUNT } from './wcag-sc-labels.js';
 import {
   scoreFromReport,
   countAxeIncomplete,
@@ -336,6 +337,7 @@ export function buildAstroMainReportPayload(reportData) {
     pagesTable,
     rulesTable,
     coveredScCount,
+    wcagAaCount: WCAG_22_AA_COUNT,
     urls: reportData.urls || [],
     reportData,
   };

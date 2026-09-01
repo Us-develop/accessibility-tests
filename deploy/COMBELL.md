@@ -58,6 +58,8 @@ Set these in Combell’s environment configuration (names may vary by UI). Never
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Optional Cloudflare Turnstile for guest scans. If the secret is set, guests must pass captcha. |
 | `GUEST_SCANS_PER_HOUR` / `GUEST_SCANS_PER_DAY` | Guest rate limits (defaults 3 / hour, 10 / day). |
 | `SCAN_MAX_CONCURRENT` | Max simultaneous Playwright scans (default 3). |
+| `ANTHROPIC_API_KEY` | Optional. Writes a prose WCAG coverage analysis on the report Coverage page. The criterion matrix is always computed locally. |
+| `ANTHROPIC_MODEL` | Optional. Defaults to `claude-sonnet-4-5`. |
 
 
 Root and `web/` `**.env`** / `**.env.local`** files are merged at startup (`[server/load-env.mjs](../server/load-env.mjs)`); production should prefer host-managed env vars.

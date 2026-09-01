@@ -9,7 +9,7 @@
  */
 
 /**
- * @typedef {{ id: string, text: string, disabilities: string[] }} ManualItem
+ * @typedef {{ id: string, text: string, disabilities: string[], coversSc?: string[] }} ManualItem
  */
 
 /** Generate a stable, URL-safe id from the item text. */
@@ -22,32 +22,32 @@ function slugify(text) {
 }
 
 const MANUAL_VERIFICATION_TEXTS = [
-  { text: 'Page title is unique and describes the page or result of the user action.', disabilities: ['Blindness', 'Low Vision', 'Reading Disabilities', 'Cognitive Disabilities'] },
-  { text: 'Link purpose can be determined from the link text alone (no "click here").', disabilities: ['Blindness', 'Low Vision', 'Reading Disabilities', 'Cognitive Disabilities'] },
-  { text: 'Alternative text is meaningful and concise, not just present.', disabilities: ['Blindness', 'Low Vision', 'Deafblindness'] },
-  { text: 'Color contrast meets 4.5:1 for normal text, 3:1 for large text and UI.', disabilities: ['Low Vision', 'Colorblindness'] },
-  { text: 'Information is not conveyed by color alone.', disabilities: ['Colorblindness', 'Low Vision'] },
-  { text: 'Focus order is logical and matches visual order; no positive tabindex.', disabilities: ['Blindness', 'Dexterity/Motor Disabilities'] },
-  { text: 'All interactive elements are keyboard accessible and have visible focus.', disabilities: ['Blindness', 'Dexterity/Motor Disabilities', 'Low Vision'] },
-  { text: 'Pointer targets are at least 24×24 CSS pixels (WCAG 2.2 AA 2.5.8), allowing listed exceptions such as inline links. 44×44 is AAA 2.5.5, not the AA bar.', disabilities: ['Dexterity/Motor Disabilities', 'Low Vision'] },
-  { text: 'Form error messages are associated with fields and announced to screen readers.', disabilities: ['Blindness', 'Cognitive Disabilities', 'Reading Disabilities'] },
-  { text: 'Dynamic content changes are announced (e.g. aria-live) where appropriate.', disabilities: ['Blindness', 'Cognitive Disabilities'] },
-  { text: 'No content flashes more than 3 times per second (seizure risk).', disabilities: ['Seizure Disorders'] },
-  { text: 'Video has captions and, if needed, audio description; audio has transcript.', disabilities: ['Deafness and Hard-of-Hearing', 'Deafblindness'] },
-  { text: 'Motion/animation can be paused or disabled (e.g. prefers-reduced-motion).', disabilities: ['Cognitive Disabilities'] },
+  { text: 'Page title is unique and describes the page or result of the user action.', disabilities: ['Blindness', 'Low Vision', 'Reading Disabilities', 'Cognitive Disabilities'], coversSc: ['2.4.2'] },
+  { text: 'Link purpose can be determined from the link text alone (no "click here").', disabilities: ['Blindness', 'Low Vision', 'Reading Disabilities', 'Cognitive Disabilities'], coversSc: ['2.4.4'] },
+  { text: 'Alternative text is meaningful and concise, not just present.', disabilities: ['Blindness', 'Low Vision', 'Deafblindness'], coversSc: ['1.1.1'] },
+  { text: 'Color contrast meets 4.5:1 for normal text, 3:1 for large text and UI.', disabilities: ['Low Vision', 'Colorblindness'], coversSc: ['1.4.3', '1.4.11'] },
+  { text: 'Information is not conveyed by color alone.', disabilities: ['Colorblindness', 'Low Vision'], coversSc: ['1.4.1', '1.3.3'] },
+  { text: 'Focus order is logical and matches visual order; no positive tabindex.', disabilities: ['Blindness', 'Dexterity/Motor Disabilities'], coversSc: ['2.4.3'] },
+  { text: 'All interactive elements are keyboard accessible and have visible focus.', disabilities: ['Blindness', 'Dexterity/Motor Disabilities', 'Low Vision'], coversSc: ['2.1.1', '2.4.7'] },
+  { text: 'Pointer targets are at least 24×24 CSS pixels (WCAG 2.2 AA 2.5.8), allowing listed exceptions such as inline links. 44×44 is AAA 2.5.5, not the AA bar.', disabilities: ['Dexterity/Motor Disabilities', 'Low Vision'], coversSc: ['2.5.8'] },
+  { text: 'Form error messages are associated with fields and announced to screen readers.', disabilities: ['Blindness', 'Cognitive Disabilities', 'Reading Disabilities'], coversSc: ['3.3.1', '3.3.3'] },
+  { text: 'Dynamic content changes are announced (e.g. aria-live) where appropriate.', disabilities: ['Blindness', 'Cognitive Disabilities'], coversSc: ['4.1.3'] },
+  { text: 'No content flashes more than 3 times per second (seizure risk).', disabilities: ['Seizure Disorders'], coversSc: ['2.3.1'] },
+  { text: 'Video has captions and, if needed, audio description; audio has transcript.', disabilities: ['Deafness and Hard-of-Hearing', 'Deafblindness'], coversSc: ['1.2.1', '1.2.2', '1.2.3', '1.2.5'] },
+  { text: 'Motion/animation can be paused or disabled (e.g. prefers-reduced-motion).', disabilities: ['Cognitive Disabilities'], coversSc: ['2.2.2'] },
 ];
 
 const ASSISTIVE_TECH_TEXTS = [
-  { text: 'Screen reader (NVDA, JAWS, or VoiceOver): Navigate by headings and landmarks; all content reachable.', disabilities: ['Blindness', 'Low Vision'] },
-  { text: 'Screen reader: Form fields have announced labels and errors; buttons/links have clear names.', disabilities: ['Blindness', 'Low Vision'] },
-  { text: 'Screen reader: No unexpected context changes on focus; dynamic updates are announced.', disabilities: ['Blindness', 'Cognitive Disabilities'] },
-  { text: 'Keyboard only: Tab through every interactive element; no keyboard traps.', disabilities: ['Blindness', 'Dexterity/Motor Disabilities'] },
-  { text: 'Keyboard only: Focus order matches visual order; focus is always visible.', disabilities: ['Blindness', 'Dexterity/Motor Disabilities', 'Low Vision'] },
-  { text: 'Keyboard only: All actions (menus, modals, carousels) work with keyboard alone.', disabilities: ['Blindness', 'Dexterity/Motor Disabilities'] },
-  { text: 'Zoom: At 200% zoom, content reflows; no horizontal scrolling; text still readable.', disabilities: ['Low Vision'] },
-  { text: 'Zoom: No content clipped or overlapping at 200%.', disabilities: ['Low Vision'] },
-  { text: 'Reduce motion: Animations respect prefers-reduced-motion or can be paused.', disabilities: ['Cognitive Disabilities'] },
-  { text: 'Mobile/touch: All features work with touch; targets are large enough; no gesture-only actions.', disabilities: ['Dexterity/Motor Disabilities', 'Low Vision'] },
+  { text: 'Screen reader (NVDA, JAWS, or VoiceOver): Navigate by headings and landmarks; all content reachable.', disabilities: ['Blindness', 'Low Vision'], coversSc: ['1.3.1', '1.3.2', '2.4.1'] },
+  { text: 'Screen reader: Form fields have announced labels and errors; buttons/links have clear names.', disabilities: ['Blindness', 'Low Vision'], coversSc: ['3.3.2', '4.1.2'] },
+  { text: 'Screen reader: No unexpected context changes on focus; dynamic updates are announced.', disabilities: ['Blindness', 'Cognitive Disabilities'], coversSc: ['3.2.1', '3.2.2', '4.1.3'] },
+  { text: 'Keyboard only: Tab through every interactive element; no keyboard traps.', disabilities: ['Blindness', 'Dexterity/Motor Disabilities'], coversSc: ['2.1.1', '2.1.2'] },
+  { text: 'Keyboard only: Focus order matches visual order; focus is always visible.', disabilities: ['Blindness', 'Dexterity/Motor Disabilities', 'Low Vision'], coversSc: ['2.4.3', '2.4.7'] },
+  { text: 'Keyboard only: All actions (menus, modals, carousels) work with keyboard alone.', disabilities: ['Blindness', 'Dexterity/Motor Disabilities'], coversSc: ['2.1.1'] },
+  { text: 'Zoom: At 200% zoom, content reflows; no horizontal scrolling; text still readable.', disabilities: ['Low Vision'], coversSc: ['1.4.4', '1.4.10'] },
+  { text: 'Zoom: No content clipped or overlapping at 200%.', disabilities: ['Low Vision'], coversSc: ['1.4.4', '1.4.10'] },
+  { text: 'Reduce motion: Animations respect prefers-reduced-motion or can be paused.', disabilities: ['Cognitive Disabilities'], coversSc: ['2.2.2'] },
+  { text: 'Mobile/touch: All features work with touch; targets are large enough; no gesture-only actions.', disabilities: ['Dexterity/Motor Disabilities', 'Low Vision'], coversSc: ['2.5.1', '2.5.4', '2.5.7', '2.5.8'] },
 ];
 
 /** @type {ManualItem[]} */

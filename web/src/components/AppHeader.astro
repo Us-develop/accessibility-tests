@@ -1,6 +1,6 @@
 ---
 interface Step {
-  key: 'history' | 'results' | 'sales' | 'statement' | 'developer';
+  key: 'history' | 'results' | 'coverage' | 'sales' | 'statement' | 'developer';
   label: string;
 }
 
@@ -20,6 +20,7 @@ const { domain = null, runId = null, active = null, crumb = 'New audit' } = Astr
 const STEPS: Step[] = [
   { key: 'history', label: 'History' },
   { key: 'results', label: 'Results' },
+  { key: 'coverage', label: 'Coverage' },
   { key: 'sales', label: 'Sales' },
   { key: 'statement', label: 'Statement' },
   { key: 'developer', label: 'Developer' },
@@ -30,10 +31,12 @@ function stepHref(stepKey: Step['key']): string | null {
   if (stepKey === 'history') return `/report/${encodeURIComponent(domain)}/history`;
   if (!runId) return null;
   if (stepKey === 'results') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`;
+  if (stepKey === 'coverage') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/coverage`;
   if (stepKey === 'sales') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/sales`;
   if (stepKey === 'statement') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/statement`;
   if (stepKey === 'developer') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/accessibility-developers.html`;
-  return null;
+  const _exhaustive: never = stepKey;
+  return _exhaustive;
 }
 
 const activeLabel = STEPS.find((s) => s.key === active)?.label || '';

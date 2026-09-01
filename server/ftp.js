@@ -95,6 +95,7 @@ export async function persistReportArtifactsToFtp(domain, runId, ftpConfig) {
     'accessibility-results-previous.json',
     'statement-meta.json',
     'manual-progress.json',
+    'wcag-analysis.json',
   ];
   const jobs = [];
   baseFiles.forEach((name) => {
