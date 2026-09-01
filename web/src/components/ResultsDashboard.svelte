@@ -608,7 +608,7 @@
             <p class="muted" style="font-size: 14px;">Nothing fired this round — well done.</p>
           {:else}
             <div class="dash-rules-grid">
-              {#each rulesTable as r (`${r.type}:${r.id}`)
+              {#each rulesTable as r (`${r.type}:${r.id}`)}
                 <div style="padding: 10px 14px; border: 1px solid var(--border-subtle); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
                   <div>
                     <div class="mono" style="font-size: 12px; font-weight: 500;">{r.rule}</div>
