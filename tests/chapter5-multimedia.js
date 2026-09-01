@@ -86,5 +86,22 @@ export async function runMultimediaChecks(page) {
     });
   }
 
+  const embedPlayers = await page.evaluate(() => {
+    const iframes = Array.from(document.querySelectorAll('iframe[src]'));
+    return iframes.filter((el) => {
+      const src = (el.getAttribute('src') || '').toLowerCase();
+      return /youtube|youtu\.be|vimeo|dailymotion|wistia|loom\.com/.test(src);
+    }).length;
+  });
+  if (embedPlayers > 0) {
+    results.push({
+      id: 'embedded-media-captions',
+      rule: 'Embedded video players must be checked manually for captions (WCAG 1.2.2)',
+      status: 'info',
+      message: `Found ${embedPlayers} YouTube/Vimeo/other embed(s). Native <track> checks do not apply; a human must verify captions.`,
+      chapter: chapterId,
+    });
+  }
+
   return results;
 }

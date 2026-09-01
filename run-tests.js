@@ -82,7 +82,14 @@ async function getUrls() {
 }
 
 async function runAxeScan(page, url) {
-  const builder = new AxeBuilder({ page });
+  const builder = new AxeBuilder({ page }).withTags([
+    'wcag2a',
+    'wcag2aa',
+    'wcag21a',
+    'wcag21aa',
+    'wcag22a',
+    'wcag22aa',
+  ]);
   const includeAxePasses = parseBooleanEnv('ENABLE_AXE_PASSES', false);
   if (!includeAxePasses) {
     builder.options({
@@ -226,6 +233,7 @@ async function main() {
     ],
   });
 
+  let completed = 0;
   try {
     await runWithConcurrency(urls, urlConcurrency, async (url) => {
       console.log(`\nTesting: ${url}`);
@@ -260,8 +268,17 @@ async function main() {
           if (domNodeCount > largeDomThreshold) {
             contrastChecksEnabledForPage = false;
             console.warn(
-              `  Large DOM detected (${domNodeCount} nodes); disabling heavy contrast checks for this page to avoid timeouts/memory pressure.`
+              `  Large DOM detected (${domNodeCount} nodes); skipping custom contrast (axe color-contrast still runs).`
             );
+            report.customResults.push({
+              id: 'contrast-not-run',
+              rule: 'Custom contrast checks skipped on a large DOM',
+              status: 'info',
+              message: `This page has ${domNodeCount} nodes. Custom contrast was skipped to avoid timeouts; axe WCAG contrast rules still ran.`,
+              chapter: 'visualDesign',
+              url,
+            });
+            report.summary.info++;
           }
         }
 
@@ -286,6 +303,8 @@ async function main() {
         });
         report.summary.fail++;
       } finally {
+        completed += 1;
+        console.log(JSON.stringify({ type: 'progress', done: completed, total: urls.length, url }));
         await page.close().catch(() => {});
         await context.close();
       }

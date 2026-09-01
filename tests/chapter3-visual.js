@@ -133,8 +133,8 @@ export async function runVisualChecks(page, options = {}) {
       results.push({
         id: 'text-contrast',
         rule: 'Text contrast MUST meet 4.5:1 (normal) or 3:1 (large text)',
-        status: 'fail',
-        message: `Found ${contrastCheck.totalFailures} text element(s) below minimum contrast${contrastCheck.lowest ? ` (lowest: ${contrastCheck.lowest}:1)` : ''} across ${contrastCheck.checked} checked element(s)`,
+        status: 'warn',
+        message: `Heuristic (solid-background approximation; axe also reports WCAG 1.4.3): ${contrastCheck.totalFailures} text element(s) below minimum contrast${contrastCheck.lowest ? ` (lowest: ${contrastCheck.lowest}:1)` : ''} across ${contrastCheck.checked} checked element(s)`,
         chapter: chapterId,
         occurrences: contrastCheck.sample,
       });
@@ -288,8 +288,8 @@ export async function runVisualChecks(page, options = {}) {
       results.push({
         id: 'non-text-contrast',
         rule: 'Visual UI indicators MUST meet 3:1 contrast (borders, outlines, control boundaries)',
-        status: 'fail',
-        message: `Found ${nonTextContrast.totalFailures} low-contrast UI indicator(s) across ${nonTextContrast.checkedIndicators} checked border/outline indicator(s)`,
+        status: 'warn',
+        message: `Heuristic (solid-background approximation; axe also reports WCAG 1.4.11): ${nonTextContrast.totalFailures} low-contrast UI indicator(s) across ${nonTextContrast.checkedIndicators} checked border/outline indicator(s)`,
         chapter: chapterId,
         occurrences: nonTextContrast.sample,
       });

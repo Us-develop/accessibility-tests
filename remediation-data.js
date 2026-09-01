@@ -3,7 +3,7 @@
  * Used by generate-report.js for developer-friendly fix guidance.
  */
 
-const W3C_BASE = 'https://www.w3.org/WAI/WCAG21/Understanding/';
+const W3C_BASE = 'https://www.w3.org/WAI/WCAG22/Understanding/';
 
 /** WCAG 2.1 Success Criterion ID -> W3C Understanding URL slug */
 const SC_TO_SLUG = {
@@ -28,6 +28,7 @@ const SC_TO_SLUG = {
   '2.4.6': 'headings-and-labels',
   '2.4.7': 'focus-visible',
   '2.5.5': 'target-size',
+  '2.5.8': 'target-size-minimum',
   '3.1.1': 'language-of-page',
   '3.2.2': 'on-input',
   '3.3.1': 'error-identification',
@@ -40,7 +41,7 @@ const SC_TO_SLUG = {
 export function wcagScUrl(sc) {
   const slug = SC_TO_SLUG[sc];
   if (slug) return `${W3C_BASE}${slug}.html`;
-  return 'https://www.w3.org/WAI/WCAG21/quickref/';
+  return 'https://www.w3.org/WAI/WCAG22/quickref/';
 }
 
 /**
@@ -231,8 +232,8 @@ export const REMEDIATION_MAP = {
     effort: 'simple',
   },
   'touch-target-size': {
-    wcag: ['2.5.5'],
-    snippet: 'Min 44×44px touch targets with spacing. padding or min-height/min-width.',
+    wcag: ['2.5.8'],
+    snippet: 'WCAG 2.2 AA 2.5.8: targets at least 24×24 CSS pixels (with listed exceptions). 44×44 is AAA 2.5.5 / platform guidance.',
     impact: 'medium',
     effort: 'moderate',
   },

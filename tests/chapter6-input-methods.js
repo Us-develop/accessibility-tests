@@ -34,7 +34,7 @@ export async function runInputMethodChecks(page) {
     chapter: chapterId,
   });
 
-  // Touch target size (44x44px minimum)
+  // Touch target size (WCAG 2.2 AA 2.5.8 is 24×24 CSS px)
   const touchChecks = await page.evaluate(() => {
     const interactive = document.querySelectorAll(
       'a[href], button, input, select, textarea, [role="button"], [role="link"], [onclick]'
@@ -42,7 +42,7 @@ export async function runInputMethodChecks(page) {
     const tooSmall = [];
     interactive.forEach((el, i) => {
       const rect = el.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0 && (rect.width < 44 || rect.height < 44)) {
+      if (rect.width > 0 && rect.height > 0 && (rect.width < 24 || rect.height < 24)) {
         tooSmall.push({ index: i + 1, w: Math.round(rect.width), h: Math.round(rect.height) });
       }
     });
@@ -52,9 +52,32 @@ export async function runInputMethodChecks(page) {
   if (touchChecks.tooSmall.length > 0) {
     results.push({
       id: 'touch-target-size',
-      rule: 'Touch targets SHOULD be at least 44x44 pixels',
+      rule: 'Pointer targets SHOULD be at least 24×24 CSS pixels (WCAG 2.2 AA 2.5.8)',
       status: 'warn',
-      message: `${touchChecks.tooSmall.length} interactive element(s) below 44x44px`,
+      message: `${touchChecks.tooSmall.length} interactive element(s) below 24×24px (exceptions such as inline links are not applied automatically)`,
+      chapter: chapterId,
+    });
+  }
+
+  const enhancedSmall = await page.evaluate(() => {
+    const interactive = document.querySelectorAll(
+      'a[href], button, input, select, textarea, [role="button"], [role="link"]'
+    );
+    let n = 0;
+    interactive.forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0 && (rect.width < 44 || rect.height < 44) && rect.width >= 24 && rect.height >= 24) {
+        n += 1;
+      }
+    });
+    return n;
+  });
+  if (enhancedSmall > 0) {
+    results.push({
+      id: 'touch-target-size-enhanced',
+      rule: 'Targets below 44×44 CSS pixels (AAA 2.5.5 / platform guidance) — not an AA fail',
+      status: 'info',
+      message: `${enhancedSmall} interactive element(s) are between 24px and 44px`,
       chapter: chapterId,
     });
   }

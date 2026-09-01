@@ -112,6 +112,7 @@ function isValidEmail(email) {
 
 function isIndexablePath(pathname) {
   if (pathname === '/' || pathname === '') return true;
+  if (pathname === '/limitations') return true;
   if (pathname === '/teaser' || pathname.startsWith('/teaser/')) return true;
   return false;
 }
@@ -119,7 +120,7 @@ function isIndexablePath(pathname) {
 function isGuestOpenPath(req) {
   const p = req.path;
   if (req.method === 'GET') {
-    if (p === '/' || p === '/loading') return true;
+    if (p === '/' || p === '/loading' || p === '/limitations') return true;
     if (p === '/teaser' || p.startsWith('/teaser/')) return true;
     if (p === '/api/config') return true;
     if (p.startsWith('/api/guest/')) return true;
@@ -717,6 +718,7 @@ app.get('/robots.txt', (_req, res) => {
       'User-agent: *',
       'Allow: /',
       'Allow: /teaser/',
+      'Allow: /limitations',
       'Disallow: /api/',
       'Disallow: /report/',
       'Disallow: /audits',
@@ -1091,8 +1093,28 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   );
 
   let stderr = '';
+  let stdoutBuf = '';
   child.stderr?.on('data', (d) => { stderr += d.toString(); });
-  child.stdout?.on('data', () => {});
+  child.stdout?.on('data', (d) => {
+    stdoutBuf += d.toString();
+    const lines = stdoutBuf.split('\n');
+    stdoutBuf = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('{')) continue;
+      try {
+        const msg = JSON.parse(trimmed);
+        if (msg && msg.type === 'progress') {
+          runStatePatch(domain, runId, {
+            scannedPages: Number(msg.done) || 0,
+            currentUrl: msg.url || null,
+          });
+        }
+      } catch {
+        /* ignore non-JSON log lines */
+      }
+    }
+  });
 
   child.on('close', (code) => {
     const cur = runStatus.get(key);
@@ -1230,6 +1252,8 @@ async function resolveStatus({ domain, runId }) {
     urls: status.urls,
     processedUrls: status.processedUrls ?? status.urls,
     requestedUrls: status.requestedUrls ?? status.urls,
+    scannedPages: status.scannedPages ?? (status.status === 'done' ? status.processedUrls ?? status.urls : 0),
+    currentUrl: status.currentUrl || null,
     truncated: !!status.truncated,
     error: status.error,
   };
@@ -1294,6 +1318,8 @@ app.get('/api/guest/:token/status', async (req, res) => {
     error: out.error || null,
     urls: 1,
     processedUrls: out.processedUrls ?? 1,
+    scannedPages: out.scannedPages ?? 0,
+    currentUrl: out.currentUrl || null,
   });
 });
 

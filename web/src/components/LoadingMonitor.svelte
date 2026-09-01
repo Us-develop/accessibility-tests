@@ -1,7 +1,6 @@
 <script>
   /**
-   * Polls /api/status/<domain>/<runId> and animates the chrome holo loading view from view-loading.jsx.
-   * Once the run is `done`, redirects to the report. On error, surfaces it in the live log.
+   * Polls /api/status and shows real page progress from the worker.
    */
   import { onMount, onDestroy } from 'svelte';
 
@@ -21,38 +20,36 @@
   /** @type {{ domain?: string, runId?: string, guestToken?: string, sampleUrls?: string[] }} */
   let { domain = '', runId = '', guestToken = '', sampleUrls = [] } = $props();
 
-  const RULES = [
-    'image-alt', 'color-contrast', 'keyboard-trap', 'focus-visible',
-    'label', 'aria-required-attr', 'reflow', 'link-name',
-    'consistent-identification', 'status-messages', 'heading-order',
-    'valid-html', 'document-title', 'html-has-lang', 'skip-link',
-  ];
-
-  const STAGES = [
-    { at: 5, label: 'Crawling sitemap' },
-    { at: 25, label: 'Loading pages' },
-    { at: 50, label: 'Running rules' },
-    { at: 75, label: 'Cross-checking ARIA' },
-    { at: 95, label: 'Compiling report' },
-  ];
-
+  let pollTimer;
   let progress = $state(2);
-  let pageIdx = $state(0);
-  let ruleIdx = $state(0);
   let totalPages = $state(sampleUrls.length || 1);
   let processedPages = $state(0);
-  let issuesFound = $state(0);
+  let currentUrl = $state(sampleUrls[0] || '');
   let errorMsg = $state('');
-  let urls = $state(sampleUrls);
 
   const currentStage = $derived(
-    STAGES.filter((s) => progress >= s.at).at(-1) || STAGES[0]
+    progress >= 100
+      ? { label: 'Compiling report' }
+      : processedPages === 0
+        ? { label: 'Starting scan' }
+        : { label: `Scanning page ${Math.min(processedPages, totalPages)} of ${totalPages}` }
   );
 
-  let pollTimer;
-  let pageTimer;
-  let ruleTimer;
-  let progressTimer;
+  function applyStatus(data) {
+    const total = Number(data.urls || data.processedUrls || totalPages || 1);
+    if (total > 0) totalPages = total;
+    if (data.scannedPages != null) processedPages = Number(data.scannedPages);
+    else if (data.status === 'running' && data.currentUrl) processedPages = Math.max(processedPages, 1);
+    if (data.currentUrl) currentUrl = String(data.currentUrl);
+    if (data.error) errorMsg = String(data.error);
+    if (data.status === 'done') {
+      processedPages = totalPages;
+      progress = 100;
+    } else if (totalPages > 0) {
+      const pct = Math.round((processedPages / totalPages) * 90);
+      progress = Math.max(4, Math.min(90, pct || 4));
+    }
+  }
 
   async function poll() {
     try {
@@ -75,15 +72,9 @@
         return;
       }
       const data = await res.json();
-      if (data.urls) totalPages = data.urls;
-      if (data.processedUrls != null) processedPages = data.processedUrls;
-      if (data.error) {
-        errorMsg = String(data.error);
-      }
+      applyStatus(data);
       if (data.status === 'done') {
-        progress = 100;
         clearInterval(pollTimer);
-        clearInterval(progressTimer);
         setTimeout(() => {
           if (guestToken) {
             window.location.replace(wcUrl(`/teaser/${encodeURIComponent(guestToken)}`));
@@ -93,7 +84,6 @@
         }, 600);
       } else if (data.status === 'error') {
         clearInterval(pollTimer);
-        clearInterval(progressTimer);
       }
     } catch {
       /* network blip; the next tick will retry */
@@ -102,27 +92,12 @@
 
   onMount(() => {
     poll();
-    pollTimer = setInterval(poll, 2500);
-    progressTimer = setInterval(() => {
-      if (progress < 92) progress = Math.min(92, progress + 0.6);
-      issuesFound = Math.round((progress / 100) * Math.max(8, totalPages * 4));
-    }, 200);
-    pageTimer = setInterval(() => {
-      pageIdx = (pageIdx + 1) % Math.max(1, urls.length);
-    }, 700);
-    ruleTimer = setInterval(() => {
-      ruleIdx = (ruleIdx + 1) % RULES.length;
-    }, 240);
+    pollTimer = setInterval(poll, 1500);
   });
 
   onDestroy(() => {
     clearInterval(pollTimer);
-    clearInterval(pageTimer);
-    clearInterval(ruleTimer);
-    clearInterval(progressTimer);
   });
-
-  const currentUrl = $derived(urls[pageIdx] || `/${domain}`);
 </script>
 
 <div class="loading-shell" data-screen-label="02 Loading - Running audit">
@@ -136,17 +111,17 @@
     <div>
       <span class="eyebrow">
         <span class="dot" style="background: var(--us-mint-text);"></span>
-        Audit in progress &middot; WCAG 2.2 AA
+        Audit in progress &middot; automated WCAG 2.2 AA checks
       </span>
       <h1 class="loading-title">
         Reading every <em>pixel</em>, line, and aria.
       </h1>
       <p class="p-large muted loading-lead">
         {#if guestToken}
-          We're scanning this page against WCAG 2.2 AA rules. A snapshot of the top issues will appear next.
+          We're scanning this page with axe-core and custom checks aligned with WCAG 2.2 AA. A snapshot of the top issues will appear next. This is not a full audit.
         {:else}
-          We're scanning {totalPages} page{totalPages === 1 ? '' : 's'} against {RULES.length}+ WCAG 2.2 AA rules.
-          Sit tight, or close this tab &mdash; we'll email when it's done.
+          We're scanning {totalPages} page{totalPages === 1 ? '' : 's'} with automated WCAG 2.2 AA checks.
+          You can close this tab — we'll email when it's done if you asked us to.
         {/if}
       </p>
 
@@ -163,15 +138,22 @@
       <div class="live-log">
         <div class="log-line log-ok">
           <span>&check;</span>
-          <span>fetched sitemap.xml &mdash; {totalPages} URL{totalPages === 1 ? '' : 's'} discovered</span>
+          <span>{totalPages} URL{totalPages === 1 ? '' : 's'} queued</span>
         </div>
         <div class="log-line log-active">
           <span>&rarr;</span>
-          <span>scanning <strong>{currentUrl}</strong> &middot; rule <strong>{RULES[ruleIdx]}</strong></span>
+          <span>
+            {processedPages > 0
+              ? `page ${Math.min(processedPages, totalPages)} of ${totalPages}`
+              : 'waiting for first page'}
+            {#if currentUrl}
+              &middot; <strong>{currentUrl}</strong>
+            {/if}
+          </span>
         </div>
-        <div class="log-line log-warn">
-          <span>!</span>
-          <span><strong>{issuesFound}</strong> issues found across {Math.min(totalPages, Math.max(1, Math.ceil(progress / 12)))} pages so far</span>
+        <div class="log-line">
+          <span>·</span>
+          <span>Issue counts appear when the scan finishes — we do not invent them while it runs.</span>
         </div>
         {#if errorMsg}
           <div class="log-line log-error">

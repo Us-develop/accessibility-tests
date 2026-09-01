@@ -14,63 +14,14 @@ import {
   buildChartsSectionHtml,
   buildChartSectionStyles,
 } from './report-summary.js';
-import { MANUAL_VERIFICATION_ITEMS, ASSISTIVE_TECH_ITEMS } from './manual-checklist.js';
-
-/** Same keys as generate-report.js DISABILITY_MAP (subset used for chart disability stats). */
-const DISABILITY_MAP = {
-  'page-title-exists': ['Blindness', 'Low Vision', 'Reading Disabilities', 'Cognitive Disabilities'],
-  'html-lang': ['Blindness', 'Reading Disabilities', 'Cognitive Disabilities'],
-  'landmarks-present': ['Blindness', 'Low Vision', 'Cognitive Disabilities'],
-  'single-main': ['Blindness', 'Low Vision', 'Cognitive Disabilities'],
-  'heading-structure': ['Blindness', 'Low Vision', 'Reading Disabilities', 'Cognitive Disabilities'],
-  'heading-main-h1': ['Blindness', 'Low Vision', 'Reading Disabilities', 'Cognitive Disabilities'],
-  'link-text': ['Blindness', 'Low Vision', 'Reading Disabilities'],
-  'link-meaningful': ['Blindness', 'Low Vision', 'Reading Disabilities', 'Cognitive Disabilities'],
-  'skip-link': ['Blindness', 'Dexterity/Motor Disabilities'],
-  'table-headers': ['Blindness', 'Low Vision', 'Reading Disabilities', 'Cognitive Disabilities'],
-  'list-markup': ['Blindness', 'Low Vision', 'Reading Disabilities', 'Cognitive Disabilities'],
-  'iframe-titles': ['Blindness', 'Low Vision', 'Cognitive Disabilities'],
-  'unique-ids': ['Blindness', 'Cognitive Disabilities'],
-  'img-alt': ['Blindness', 'Low Vision', 'Deafblindness'],
-  'img-alt-length': ['Blindness', 'Low Vision', 'Deafblindness', 'Cognitive Disabilities'],
-  'svg-role': ['Blindness', 'Low Vision', 'Deafblindness'],
-  'svg-accessible-name': ['Blindness', 'Low Vision', 'Deafblindness'],
-  'canvas-alt': ['Blindness', 'Low Vision', 'Deafblindness'],
-  'image-map-alt': ['Blindness', 'Low Vision', 'Deafblindness'],
-  'link-differentiation': ['Colorblindness', 'Low Vision'],
-  'text-contrast': ['Low Vision', 'Colorblindness'],
-  'non-text-contrast': ['Low Vision', 'Colorblindness'],
-  'focus-indicator': ['Low Vision', 'Dexterity/Motor Disabilities', 'Blindness'],
-  'no-horizontal-scroll': ['Low Vision', 'Dexterity/Motor Disabilities'],
-  'viewport-zoom': ['Low Vision', 'Dexterity/Motor Disabilities'],
-  'video-captions': ['Deafness and Hard-of-Hearing', 'Deafblindness'],
-  'video-autoplay': ['Deafness and Hard-of-Hearing', 'Cognitive Disabilities'],
-  'audio-autoplay': ['Deafness and Hard-of-Hearing'],
-  'flash-alternative': ['Blindness', 'Deafness and Hard-of-Hearing'],
-  'tabindex-positive': ['Dexterity/Motor Disabilities', 'Blindness'],
-  'touch-target-size': ['Dexterity/Motor Disabilities', 'Low Vision'],
-  'form-labels': ['Blindness', 'Cognitive Disabilities', 'Reading Disabilities'],
-  'placeholder-not-only-label': ['Blindness', 'Cognitive Disabilities', 'Reading Disabilities'],
-  'no-auto-refresh': ['Cognitive Disabilities', 'Dexterity/Motor Disabilities'],
-  'dynamic-announcements': ['Blindness', 'Cognitive Disabilities'],
-  'dynamic-status-roles': ['Blindness', 'Cognitive Disabilities'],
-  'dynamic-aria-busy': ['Blindness', 'Cognitive Disabilities'],
-  'page-load': ['Various'],
-};
-
-const ALL_DISABILITIES = [
-  'Blindness',
-  'Low Vision',
-  'Colorblindness',
-  'Deafness and Hard-of-Hearing',
-  'Deafblindness',
-  'Dexterity/Motor Disabilities',
-  'Speech Disabilities',
-  'Cognitive Disabilities',
-  'Reading Disabilities',
-  'Seizure Disorders',
-  'Various',
-];
+import {
+  scoreFromReport,
+  countAxeIncomplete,
+  buildPrinciples,
+  buildDisabilities,
+  buildSuggestedFixes,
+  buildPlainEnglishStats,
+} from './report-buckets.js';
 
 
 function severityRank(level) {
@@ -223,29 +174,16 @@ export function buildAstroMainReportPayload(reportData) {
     (sum, r) => sum + (r.passes?.length || 0),
     0
   );
-  const scoreDen = pass + fail + warn + totalAxeViolations + totalAxePasses;
+  const totalAxeIncomplete = countAxeIncomplete(reportData);
   const total = pass + fail + warn + info + totalAxeViolations + totalAxePasses;
-  const score = scoreDen === 0 ? 100 : Math.round(((pass + totalAxePasses) / scoreDen) * 100);
-  const scoreClamp = Math.max(0, Math.min(100, score));
+  const score = scoreFromReport(reportData);
+  const scoreClamp = score == null ? 0 : score;
 
-  const disabilityStats = {};
-  ALL_DISABILITIES.forEach((d) => {
-    disabilityStats[d] = 0;
-  });
-  (reportData.customResults || []).forEach((r) => {
-    (DISABILITY_MAP[r.id] || ['Various']).forEach((d) => {
-      if (disabilityStats[d] !== undefined) disabilityStats[d]++;
-    });
-  });
-  [...MANUAL_VERIFICATION_ITEMS, ...ASSISTIVE_TECH_ITEMS].forEach((item) => {
-    (item.disabilities || []).forEach((d) => {
-      if (disabilityStats[d] !== undefined) disabilityStats[d]++;
-    });
-  });
-  Object.values(reportData.axeResults || {}).forEach((data) => {
-    const count = (data.violations?.length || 0) * Math.max(1, reportData.urls?.length || 1);
-    disabilityStats['Various'] = (disabilityStats['Various'] || 0) + count;
-  });
+  const principles = buildPrinciples(reportData);
+  const disabilities = buildDisabilities(reportData);
+  const suggestedFixes = buildSuggestedFixes(fixOrderItems, 8);
+  const plainEnglish = buildPlainEnglishStats(reportData);
+  const disabilityStats = Object.fromEntries(disabilities.map((d) => [d.label, d.issues]));
 
   const issueMetrics = computeIssueMetrics(reportData);
   const chartPayload = buildChartDataPayload(reportData, {
@@ -295,7 +233,7 @@ export function buildAstroMainReportPayload(reportData) {
     errors: fail + totalAxeViolations,
     warnings: warn,
     passed: pass + totalAxePasses,
-    notice: info,
+    notice: info + totalAxeIncomplete,
   };
 
   // Per-page table: errors/warnings/passed per URL.
@@ -321,6 +259,7 @@ export function buildAstroMainReportPayload(reportData) {
   // Per-rule table for the rules tab. Keyed on rule id, counts occurrences across pages.
   const ruleBuckets = new Map();
   (reportData.customResults || []).forEach((r) => {
+    if (r.status !== 'fail' && r.status !== 'warn') return;
     const key = `custom:${r.id}`;
     const bucket = ruleBuckets.get(key) || {
       id: r.id,
@@ -349,6 +288,20 @@ export function buildAstroMainReportPayload(reportData) {
       bucket.pages.add(url);
       ruleBuckets.set(key, bucket);
     });
+    (data.incomplete || []).forEach((v) => {
+      const key = `axe-incomplete:${v.id}`;
+      const bucket = ruleBuckets.get(key) || {
+        id: v.id,
+        rule: `${v.help || v.id} (needs review)`,
+        type: 'axe-incomplete',
+        severity: 'notice',
+        occurrences: 0,
+        pages: new Set(),
+      };
+      bucket.occurrences += Math.max(1, (v.nodes || []).length || 1);
+      bucket.pages.add(url);
+      ruleBuckets.set(key, bucket);
+    });
   });
   const rulesTable = [...ruleBuckets.values()]
     .map((b) => ({ ...b, pages: [...b.pages] }))
@@ -358,6 +311,12 @@ export function buildAstroMainReportPayload(reportData) {
     primaryHost,
     auditedDate,
     scoreClamp,
+    scoreAvailable: score != null,
+    principles,
+    disabilities,
+    suggestedFixes,
+    plainEnglish,
+    totalAxeIncomplete,
     pass,
     fail,
     warn,

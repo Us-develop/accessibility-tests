@@ -63,5 +63,20 @@ export async function runDynamicChecks(page) {
     chapter: chapterId,
   });
 
+  const spaHint = await page.evaluate(() => {
+    const text = (document.body && document.body.innerText ? document.body.innerText : '').trim();
+    const hasSpaRoot = !!document.querySelector('#root, #app, [data-reactroot], [ng-version], [data-v-app]');
+    return { textLen: text.length, hasSpaRoot };
+  });
+  if (spaHint.hasSpaRoot && spaHint.textLen < 80) {
+    results.push({
+      id: 'spa-may-be-unrendered',
+      rule: 'Page looks client-rendered; automated checks may have missed in-app content',
+      status: 'warn',
+      message: `SPA root detected with only ${spaHint.textLen} characters of text at scan time. Enable WAIT_FOR_NETWORKIDLE or test URLs after hydration. This chapter cannot certify dynamic updates.`,
+      chapter: chapterId,
+    });
+  }
+
   return results;
 }

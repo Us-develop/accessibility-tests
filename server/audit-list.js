@@ -3,6 +3,7 @@ import { join } from 'path';
 import { computeIssueCountFromResult } from './report-data.js';
 import { isValidReportId, readJsonIfExists } from './fs-utils.js';
 import { listRunIdsForDomain, isValidRunId, runDir } from './run-ids.js';
+import { scoreFromReport } from '../report-buckets.js';
 
 function entryFromDb(domain, dbRow, totalRuns) {
   const resultJson = dbRow.resultJson || null;
@@ -204,20 +205,7 @@ export async function listRunsForDomain(dbPool, reportsBase, domain) {
   });
 }
 
-/** Score 0–100 derived the same way as the Astro payload (pass+axePass / scoreDen). */
+/** Score 0–100 from this run's automated checks (vacuous passes excluded). Null if nothing scored. */
 export function scoreFromResult(resultJson) {
-  if (!resultJson || typeof resultJson !== 'object') return null;
-  const summary = resultJson.summary || {};
-  const pass = Number(summary.pass || 0);
-  const fail = Number(summary.fail || 0);
-  const warn = Number(summary.warn || 0);
-  let axeViolations = 0;
-  let axePasses = 0;
-  Object.values(resultJson.axeResults || {}).forEach((r) => {
-    axeViolations += Number((r && r.violations && r.violations.length) || 0);
-    axePasses += Number((r && r.passes && r.passes.length) || 0);
-  });
-  const den = pass + fail + warn + axeViolations + axePasses;
-  if (den === 0) return 100;
-  return Math.max(0, Math.min(100, Math.round(((pass + axePasses) / den) * 100)));
+  return scoreFromReport(resultJson);
 }

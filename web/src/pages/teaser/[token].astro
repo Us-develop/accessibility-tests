@@ -11,7 +11,6 @@ import { isValidReportId } from '../../../../server/fs-utils.js';
 import { runDir, isValidRunId } from '../../../../server/run-ids.js';
 import { dbPool, dbGetRunByGuestToken } from '../../../../server/db.js';
 import { isValidGuestToken, readGuestTokenRecord } from '../../../../server/guest.mjs';
-import { getSamplePrinciples, getSampleDisabilities, getSampleSprint } from '../../lib/sample-buckets';
 import { MANUAL_TODO_GROUPS } from '../../../../manual-checklist.js';
 
 export const prerender = false;
@@ -62,14 +61,10 @@ if (!isValidGuestToken(token)) {
         try {
           const json = JSON.parse(readFileSync(resultsPath, 'utf8'));
           const payload = buildAstroMainReportPayload(json);
-          const principles = getSamplePrinciples({
-            errors: payload.severityCounts.errors,
-            warnings: payload.severityCounts.warnings,
-            passed: payload.severityCounts.passed,
-          });
-          const disabilities = getSampleDisabilities(payload.disabilityStats || {});
+          const principles = payload.principles || [];
+          const disabilities = payload.disabilities || [];
           const lockedFixes = lockFixItems(payload.fixOrderItems || []);
-          const sprint = getSampleSprint(lockedFixes, 8);
+          const suggestedFixes = payload.suggestedFixes || { points: 0, tickets: [] };
           const trendDate = payload.auditedDate?.slice(0, 6) || 'now';
           const manualTotal = MANUAL_TODO_GROUPS.reduce((s, g) => s + g.items.length, 0);
           pageTitle = `Accessibility snapshot · ${payload.primaryHost}`;
@@ -94,7 +89,9 @@ if (!isValidGuestToken(token)) {
             reportData: {},
             domain,
             runId,
-            sprintPoints: sprint.points,
+            sprintPoints: suggestedFixes.points,
+            scoreAvailable: payload.scoreAvailable !== false,
+            totalAxeIncomplete: payload.totalAxeIncomplete ?? 0,
             pagesScanned: payload.urls.length,
             rulesChecked: payload.rulesTable.length,
             previousScore: null,

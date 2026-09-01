@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node run-tests.js",
+    "test:unit": "node --test tests/*.test.js",
     "test:report": "node run-tests.js --report",
     "report": "node generate-report.js",
     "start": "node server.js",

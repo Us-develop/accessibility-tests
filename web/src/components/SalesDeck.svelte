@@ -14,6 +14,7 @@
    *   rulesChecked: number,
    *   trend: Array<{ date: string, score: number }>,
    *   principles: Array<{ key: string, label: string, errors: number, warnings: number, passed: number, color: string, textColor: string }>,
+   *   plainEnglish?: { headline: string, cards: Array<{ value: string, label: string, body: string }> },
    *   topFixes: Array<{ rank: string, title: string, impact: string, points: number, color: string }>,
    *   coordinator?: string,
    *   coordinatorEmail?: string,
@@ -32,6 +33,7 @@
     rulesChecked,
     trend,
     principles,
+    plainEnglish = { headline: '', cards: [] },
     topFixes,
     coordinator = '',
     coordinatorEmail = '',
@@ -40,7 +42,6 @@
     runId,
   } = $props();
 
-  const passing = $derived(scoreClamp >= 80);
   const delta = $derived(previousScore != null ? scoreClamp - previousScore : null);
 
   let slideIdx = $state(0);
@@ -114,13 +115,13 @@
               <span style="opacity: 0.5; font-size: 14px;">{auditDate}</span>
             </div>
             <div>
-              <span class="eyebrow" style="color: rgba(255,255,255,0.6);"><span class="dot"></span>Accessibility audit · WCAG 2.2 AA</span>
+              <span class="eyebrow" style="color: rgba(255,255,255,0.6);"><span class="dot"></span>Automated scan · WCAG 2.2 AA aligned</span>
               <h1 class="cover-title">A clear-eyed look at <em>{companyName}</em></h1>
-              <p class="cover-lead">What's working, what's blocking real users, and what we'd change first.</p>
+              <p class="cover-lead">What automation found, what still needs a human, and what we'd change first.</p>
             </div>
             <div class="cover-foot">
               <div style="font-size: 14px; opacity: 0.6;">Prepared for {legalName || companyName}</div>
-              <div style="font-size: 14px; opacity: 0.6;">{pagesScanned} pages · {rulesChecked} rules</div>
+              <div style="font-size: 14px; opacity: 0.6;">{pagesScanned} pages · automated checks (not a conformance audit)</div>
             </div>
           </div>
         </section>
@@ -130,24 +131,24 @@
           <div class="slide-pad score-grid">
             <div>
               <span class="eyebrow"><span class="dot"></span>The bottom line</span>
-              <h2 class="score-h2">Your site scores <span class="grad-text">{scoreClamp}/100</span>.</h2>
+              <h2 class="score-h2">Automated score <span class="grad-text">{scoreClamp}/100</span>.</h2>
               <p class="score-p">
                 {#if delta != null}
-                  That's <strong>{delta >= 0 ? `+${delta}` : delta}</strong> {delta >= 0 ? 'points up from' : 'points below'} your last audit —
+                  That's <strong>{delta >= 0 ? `+${delta}` : delta}</strong> {delta >= 0 ? 'points up from' : 'points below'} your last scan —
                 {/if}
-                {passing ? 'safely above' : 'short of'} the 80-point compliance target.
+                this is a ratio of automated checks, not WCAG or EAA conformance.
               </p>
               <div style="display: flex; gap: 10px;">
                 {#if delta != null}
                   <span class="tag {delta >= 0 ? 'tag-success' : 'tag-error'}" style="font-size: 14px; padding: 8px 14px;">
-                    {delta >= 0 ? `↑ +${delta}` : `↓ ${delta}`} since last audit
+                    {delta >= 0 ? `↑ +${delta}` : `↓ ${delta}`} since last scan
                   </span>
                 {/if}
-                <span class="tag tag-outline" style="font-size: 14px; padding: 8px 14px;">WCAG 2.2 AA</span>
+                <span class="tag tag-outline" style="font-size: 14px; padding: 8px 14px;">Not a legal sign-off</span>
               </div>
             </div>
             <div style="display: flex; justify-content: center;">
-              <ScoreDonut score={scoreClamp} size={deckDonutSize} stroke={32} threshold={80} label="Compliance" />
+              <ScoreDonut score={scoreClamp} size={deckDonutSize} stroke={32} threshold={80} label="Automated" />
             </div>
           </div>
         </section>
@@ -155,28 +156,22 @@
         <!-- 3: plain English -->
         <section data-screen-label="Slide 03 - Plain english" class="slide slide-white">
           <div class="slide-pad" style="display: flex; flex-direction: column; justify-content: center;">
-            <span class="eyebrow"><span class="dot"></span>What this means in plain English</span>
+            <span class="eyebrow"><span class="dot"></span>What this scan found</span>
             <h2 class="slide-h2 wide" style="margin-top: 14px; margin-bottom: 40px;">
-              Roughly <em class="hl-peach">1 in 4 visitors</em> hits a real obstacle on your site.
+              {plainEnglish.headline || 'Automated findings for this run.'}
             </h2>
             <div class="deck-grid-3">
-              <div class="plain-card" style="background: var(--us-lilac); color: var(--us-lilac-text);">
-                <div class="plain-big">92%</div>
-                <div class="plain-label">of screen-reader users</div>
-                <div class="plain-body">encounter at least one missing alt text or unlabelled form field per session.</div>
-              </div>
-              <div class="plain-card" style="background: var(--us-mint); color: var(--us-mint-text);">
-                <div class="plain-big">78%</div>
-                <div class="plain-label">of low-vision users</div>
-                <div class="plain-body">hit unreadable text — body copy on cream backgrounds drops below WCAG contrast.</div>
-              </div>
-              <div class="plain-card" style="background: var(--us-sky); color: var(--us-sky-text);">
-                <div class="plain-big">64%</div>
-                <div class="plain-label">of keyboard-only users</div>
-                <div class="plain-body">get stuck on the size selector at checkout — they can't add to cart.</div>
-              </div>
+              {#each (plainEnglish.cards || []) as card, i (card.label)}
+                {@const bg = i === 0 ? 'var(--us-lilac)' : i === 1 ? 'var(--us-mint)' : 'var(--us-sky)'}
+                {@const fg = i === 0 ? 'var(--us-lilac-text)' : i === 1 ? 'var(--us-mint-text)' : 'var(--us-sky-text)'}
+                <div class="plain-card" style="background: {bg}; color: {fg};">
+                  <div class="plain-big">{card.value}</div>
+                  <div class="plain-label">{card.label}</div>
+                  <div class="plain-body">{card.body}</div>
+                </div>
+              {/each}
             </div>
-            <p class="muted" style="font-size: 12px; margin-top: 20px;"><em>Sample numbers — TODO: derive from real disability stats.</em></p>
+            <p class="muted" style="font-size: 12px; margin-top: 20px;">Figures are from this automated run only. A human audit is still required for WCAG 2.2 AA or EAA conformance.</p>
           </div>
         </section>
 

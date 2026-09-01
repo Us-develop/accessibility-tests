@@ -10,7 +10,6 @@ import { runDir, isValidRunId } from '../../../../../../server/run-ids.js';
 import { listRunsForDomain } from '../../../../../../server/audit-list.js';
 import { dbPool } from '../../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../../server/paths.js';
-import { getSamplePrinciples, getSampleDisabilities, getSampleSprint } from '../../../../lib/sample-buckets';
 import { MANUAL_TODO_GROUPS, normalizeManualProgress } from '../../../../../../manual-checklist.js';
 
 export const prerender = false;
@@ -43,14 +42,9 @@ try {
   });
 }
 
-// Build the dashboard's required props from the payload.
-const principles = getSamplePrinciples({
-  errors: payload.severityCounts.errors,
-  warnings: payload.severityCounts.warnings,
-  passed: payload.severityCounts.passed,
-});
-const disabilities = getSampleDisabilities(payload.disabilityStats || {});
-const sprint = getSampleSprint(payload.fixOrderItems || [], 8);
+const principles = payload.principles || [];
+const disabilities = payload.disabilities || [];
+const suggestedFixes = payload.suggestedFixes || { points: 0, tickets: [] };
 
 // Pull score history for the trend chart from prior runs of this domain.
 const allRuns = await listRunsForDomain(dbPool, REPORTS_BASE, domain);
@@ -106,7 +100,9 @@ const dashboardProps = {
   reportData: payload.reportData,
   domain,
   runId,
-  sprintPoints: sprint.points,
+  sprintPoints: suggestedFixes.points,
+  scoreAvailable: payload.scoreAvailable !== false,
+  totalAxeIncomplete: payload.totalAxeIncomplete ?? 0,
   pagesScanned: payload.urls.length,
   rulesChecked: payload.rulesTable.length,
   previousScore,

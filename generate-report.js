@@ -22,6 +22,7 @@ import {
   ASSISTIVE_TECH_ITEMS,
   MANUAL_TODO_GROUPS,
 } from './manual-checklist.js';
+import { scoreFromReport, buildDisabilities } from './report-buckets.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUTPUT_DIR = join(__dirname, 'reports');
@@ -302,24 +303,12 @@ export function generateReport(reportData, options = {}) {
   const fail = reportData.summary?.fail || 0;
   const warn = reportData.summary?.warn || 0;
   const info = reportData.summary?.info || 0;
-  // Score excludes advisory "info" rows. Denominator: pass + fail + warn + axe violations + axe passes.
-  const scoreDen = pass + fail + warn + totalAxeViolations + totalAxePasses;
   const total = pass + fail + warn + info + totalAxeViolations + totalAxePasses;
-  const score = scoreDen === 0 ? 100 : Math.round(((pass + totalAxePasses) / scoreDen) * 100);
-  const scoreClamp = Math.max(0, Math.min(100, score));
+  const score = scoreFromReport(reportData);
+  const scoreClamp = score == null ? 0 : score;
 
-  const disabilityStats = {};
-  ALL_DISABILITIES.forEach((d) => { disabilityStats[d] = 0; });
-  (reportData.customResults || []).forEach((r) => {
-    (DISABILITY_MAP[r.id] || ['Various']).forEach((d) => { if (disabilityStats[d] !== undefined) disabilityStats[d]++; });
-  });
-  [...MANUAL_VERIFICATION_ITEMS, ...ASSISTIVE_TECH_ITEMS].forEach((item) => {
-    (item.disabilities || []).forEach((d) => { if (disabilityStats[d] !== undefined) disabilityStats[d]++; });
-  });
-  Object.values(reportData.axeResults || {}).forEach((data) => {
-    const count = (data.violations?.length || 0) * Math.max(1, reportData.urls?.length || 1);
-    disabilityStats['Various'] = (disabilityStats['Various'] || 0) + count;
-  });
+  const disabilityList = buildDisabilities(reportData);
+  const disabilityStats = Object.fromEntries(disabilityList.map((d) => [d.label, d.issues]));
 
   const issueMetrics = computeIssueMetrics(reportData);
   const totalIssues = fail + warn + totalAxeViolations;
@@ -336,14 +325,8 @@ export function generateReport(reportData, options = {}) {
     }
   })();
   const auditedDate = new Date(reportData.generatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-  const complianceHeadline = scoreClamp >= 75
-    ? 'WCAG 2.1 compliance — Level AA partial'
-    : scoreClamp >= 60
-      ? 'WCAG 2.1 compliance — Level A partial'
-      : 'WCAG 2.1 compliance — below Level A';
-  const complianceNote = scoreClamp >= 75
-    ? `The site meets ${scoreClamp}% of tested criteria. Continue resolving remaining serious and critical issues to reach full Level AA.`
-    : `The site meets ${scoreClamp}% of tested criteria. Level AA has not been reached. Resolving critical issues first is the fastest path forward.`;
+  const complianceHeadline = 'Automated findings — not a WCAG or EAA conformance claim';
+  const complianceNote = `Automated score ${scoreClamp}/100 is the share of applicable machine checks that passed on this run. It is not Level A or AA compliance. A human audit is still required.`;
   const categoryStats = computeCategoryStats(fixOrderItems);
   const categoryMax = Math.max(1, ...categoryStats.map((c) => c.count));
   const topCategoryCards = [...categoryStats].sort((a, b) => b.count - a.count).slice(0, 3);
@@ -664,7 +647,7 @@ export function generateReport(reportData, options = {}) {
     <div class="hero-stats">
       <p class="audit-kicker">Accessibility audit report</p>
       <h2 class="audit-domain">${escapeHtml(primaryHost)}</h2>
-      <p class="audit-meta">Audited ${totalPages} page${totalPages === 1 ? '' : 's'} · ${auditedDate} · WCAG 2.1</p>
+      <p class="audit-meta">Scanned ${totalPages} page${totalPages === 1 ? '' : 's'} · ${auditedDate} · automated WCAG 2.2 AA checks</p>
       <div class="kpi-grid" aria-label="Top metrics">
         <div class="kpi"><div class="label">Overall score</div><div class="value warn">${scoreClamp} / 100</div></div>
         <div class="kpi"><div class="label">Total issues</div><div class="value">${totalIssues}</div></div>
@@ -677,9 +660,9 @@ export function generateReport(reportData, options = {}) {
           <h3 class="compliance-title">${escapeHtml(complianceHeadline)}</h3>
           <p class="compliance-copy">${escapeHtml(complianceNote)}</p>
           <div class="status-row">
-            <span class="status-pill a">Level A — ${scoreClamp >= 60 ? 'partial' : 'not reached'}</span>
-            <span class="status-pill aa">Level AA — ${scoreClamp >= 75 ? 'partial' : 'not reached'}</span>
-            <span class="status-pill aaa">Level AAA — not reached</span>
+            <span class="status-pill a">Level A — not claimed</span>
+            <span class="status-pill aa">Level AA — not claimed</span>
+            <span class="status-pill aaa">Level AAA — not claimed</span>
           </div>
         </div>
       </div>
@@ -731,22 +714,14 @@ export function generateReport(reportData, options = {}) {
     </div>
 
     <div class="extra-stats">
-      <h3>Industry benchmarks</h3>
-      <div class="bench-grid">
-        <div class="bench-card"><small>Better than</small><strong>${betterThan}%</strong></div>
-        <div class="bench-card"><small>Industry avg</small><strong>${industryAvg} / 100</strong></div>
-        <div class="bench-card"><small>Gap to avg</small><strong style="color:${gapToAvg < 0 ? '#df2020' : '#41bd73'}">${gapToAvg > 0 ? '+' : ''}${gapToAvg} pts</strong></div>
-        <div class="bench-card"><small>Top 10% threshold</small><strong>&ge; ${top10Threshold}</strong></div>
-      </div>
-      <div class="bench-note bad">Your score of ${scoreClamp} is ${gapToAvg < 0 ? 'below' : 'above'} the industry average of ${industryAvg}. Closing to average requires fixing roughly ${closeGapIssues} additional issues.</div>
-      <div class="bench-note info">Sites in the top 10% score ${top10Threshold} or above. Reaching that tier takes an estimated ${top10Issues} further fixes, mostly in contrast and keyboard navigation.</div>
+      <h3>How to read this report</h3>
+      <div class="bench-note info">This HTML is generated from the same automated run as the live dashboard. Industry averages, visitor estimates, and “better than X%” figures are not included because we do not have that data. The 0–100 figure is an automated check ratio, not WCAG 2.2 AA or EAA conformance.</div>
     </div>
     <div class="extra-stats">
       <h3>Score distribution — where you sit</h3>
       <div class="dist-card">
         <div class="dist-area"></div>
         <div class="dist-marker you" style="left:${distLeft}%;">You ${scoreClamp}</div>
-        <div class="dist-marker avg" style="left:${avgLeft}%;">Avg ${industryAvg}</div>
         <div class="dist-axis"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
       </div>
     </div>
@@ -769,7 +744,7 @@ export function generateReport(reportData, options = {}) {
       </div>
     </div>
     <div class="extra-stats">
-      <div class="bench-note good">Keyboard navigation and screen reader scores beat the industry average — these are genuine strengths. Prioritise color contrast and form labels to lift the overall score above ${industryAvg}.</div>
+      <div class="bench-note info">Category bars above are counts of automated findings in this run, not an industry ranking.</div>
     </div>
     <div class="extra-stats">
       <h3>Business impact & legal risk</h3>
@@ -792,7 +767,7 @@ export function generateReport(reportData, options = {}) {
         </div>
       </div>
       <div class="impact-highlight">
-        Estimated users affected by at least one critical barrier: ~${estimatedAffectedUsers.toLocaleString()} / month. Fixing critical issues alone could recover an estimated &euro;${revenueLow.toLocaleString()}-${revenueHigh.toLocaleString()} in blocked annual revenue.
+        Automated findings do not estimate lost revenue or monthly visitors. Use this report to prioritize fixes, then confirm with a human audit.
       </div>
     </div>
 
@@ -820,7 +795,7 @@ export function generateReport(reportData, options = {}) {
         </select>
       </div>
       <div class="disability-stats" id="disability-stats">
-        ${ALL_DISABILITIES.map((d) => `<span class="stat" data-disability="${escapeHtml(d)}"><strong>${escapeHtml(d)}:</strong> ${disabilityStats[d] || 0}</span>`).join('')}
+        ${disabilityList.map((d) => `<span class="stat" data-disability="${escapeHtml(d.key)}"><strong>${escapeHtml(d.label)}:</strong> ${d.issues}</span>`).join('')}
       </div>
     </div>
 
@@ -1076,25 +1051,25 @@ export function generateReport(reportData, options = {}) {
           <div class="val good">${projectedPercentile}</div>
         </div>
       </div>
-      <div class="insight-green">Completing steps 1 and 2 alone would likely move the site above the industry average of ${industryAvg}. A re-audit after implementation will confirm actual uplift.</div>
+      <div class="insight-green">Re-run the scan after fixes to compare automated scores. Score change is not proof of WCAG conformance.</div>
 
       <div class="impact-box">
-        <h3>User impact simulation</h3>
-        <p>Estimated share of monthly visitors who encounter at least one accessibility barrier, by disability type.</p>
+        <h3>Who these findings tend to affect</h3>
+        <p>Issue counts below are mapped from this run’s automated fails and warnings — not estimated monthly visitors.</p>
         <div class="sim-chart">
-          ${userImpactRows.map(([label, value]) => {
-            const width = Math.max(5, Math.round((value / maxImpactUsers) * 100));
-            return `<div class="sim-row"><div class="label">${escapeHtml(label)}</div><div class="track"><div class="fill" style="width:${width}%"></div></div><div class="num">${Number(value).toLocaleString()}</div></div>`;
+          ${disabilityList.map((d) => {
+            const width = Math.max(5, d.percent);
+            return `<div class="sim-row"><div class="label">${escapeHtml(d.label)}</div><div class="track"><div class="fill" style="width:${width}%"></div></div><div class="num">${d.issues} issues · ${d.percent}% of pages</div></div>`;
           }).join('')}
         </div>
       </div>
 
       <div class="next-steps">
         <h3>Next steps</h3>
-        <div class="next-box">Schedule a remediation sprint focused on steps 1–3. A re-audit after sprint completion will confirm score improvement and identify any regressions before the EAA deadline.</div>
+        <div class="next-box">Schedule a human review of remaining issues. A re-scan after fixes will show whether automated findings cleared; it still does not certify WCAG 2.2 AA or EAA conformance.</div>
         <div class="cta-row">
           <a href="#suggested-fixes">Fix plan for ${escapeHtml(topPath)} ↗</a>
-          <a href="https://www.w3.org/WAI/WCAG21/quickref/" target="_blank" rel="noopener">What does Level AA require? ↗</a>
+          <a href="https://www.w3.org/WAI/WCAG22/quickref/" target="_blank" rel="noopener">What does Level AA require? ↗</a>
           <a href="https://digital-strategy.ec.europa.eu/en/policies/web-accessibility" target="_blank" rel="noopener">EU Accessibility Act ↗</a>
         </div>
       </div>

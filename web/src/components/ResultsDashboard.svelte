@@ -62,6 +62,8 @@
    *   manualTotal: number,
    *   manualPercent: number,
    *   coveredScCount?: number,
+   *   scoreAvailable?: boolean,
+   *   totalAxeIncomplete?: number,
    *   locked?: boolean,
    * }}
    */
@@ -96,6 +98,8 @@
     manualTotal,
     manualPercent: manualPercentInitial = 0,
     coveredScCount = 0,
+    scoreAvailable = true,
+    totalAxeIncomplete = 0,
     locked = false,
   } = $props();
 
@@ -109,7 +113,14 @@
   let manualPercent = $state(manualPercentInitial);
   let manualChecked = $state(manualInitialChecked.length);
 
-  const passing = $derived(scoreClamp >= threshold);
+  const passing = $derived(severityCounts.errors === 0);
+  const automatedLabel = $derived(
+    !scoreAvailable
+      ? 'No scored checks'
+      : severityCounts.errors === 0
+        ? 'No automated errors'
+        : 'Automated findings'
+  );
   const tabs = $derived([
     { key: 'overview', label: 'Overview' },
     { key: 'issues', label: 'Issues', count: severityCounts.errors + severityCounts.warnings },
@@ -240,36 +251,43 @@
               <div class="score-info-pop">
                 <strong style="display:block; margin-bottom: 6px;">Automated score formula</strong>
                 <div style="font-family: var(--font-mono); font-size: 12px; line-height: 1.5;">
-                  score = (passed checks + axe passes)<br />
-                  &nbsp; ÷ (passed + failed + warnings + axe passes + axe violations)<br />
+                  score = applicable passed checks<br />
+                  &nbsp; ÷ (passed + failed + warnings + axe violations)<br />
                   &nbsp; × 100
                 </div>
                 <p style="margin: 8px 0 0; font-size: 12px;">
-                  The <strong>Manual checks</strong> donut on the right tracks completion of the manual &amp; assistive-tech checklist. The two are kept separate so the automated number isn't inflated by checking boxes.
+                  This is <strong>not</strong> a WCAG or EAA conformance score. Vacuous passes (for example “no meta refresh”) are excluded. Axe “needs review” items are listed separately. The <strong>Manual checks</strong> donut is checklist progress, not a human audit unless those items were actually completed.
                 </p>
               </div>
             </details>
           </div>
-          <div class="hero-score-label">Automated</div>
+          <div class="hero-score-label">Automated score</div>
         </div>
         <div class="hero-score-block">
           <ScoreDonut score={manualPercent} size={130} stroke={12} threshold={100} label="" />
-          <div class="hero-score-label">Manual checks · {manualChecked}/{manualTotal}</div>
+          <div class="hero-score-label">Checklist progress · {manualChecked}/{manualTotal}</div>
         </div>
       </div>
       <div>
         <span class="eyebrow" style="color: rgba(255,255,255,0.6);">
           <span class="dot" style="background: {passing ? '#8DFFB7' : '#FFB985'};"></span>
-          {passing ? 'Passing' : 'Below threshold'} &middot; audited {auditedDate}
+          {automatedLabel} &middot; scanned {auditedDate}
         </span>
-        <h1 class="hero-title">{primaryHost} &middot; {scoreClamp}/100</h1>
+        <h1 class="hero-title">{primaryHost} &middot; {scoreAvailable ? `${scoreClamp}/100` : 'n/a'}</h1>
         <div class="hero-meta">
           <span><strong style="color: #FFB985;">{severityCounts.errors}</strong> errors</span>
           <span><strong style="color: #F3AAFF;">{severityCounts.warnings}</strong> warnings</span>
           <span><strong style="color: #8DFFB7;">{severityCounts.passed}</strong> passed</span>
+          {#if totalAxeIncomplete > 0}
+            <span><strong style="color: #A7F0FB;">{totalAxeIncomplete}</strong> needs review</span>
+          {/if}
           <span>·</span>
-          <span>{pagesScanned ?? urls.length} pages · {rulesChecked ?? rulesTable.length} rules · WCAG 2.2 AA</span>
+          <span>{pagesScanned ?? urls.length} pages · automated WCAG 2.2 AA checks</span>
         </div>
+        <p class="hero-disclaimer">
+          Automated scan only — not a WCAG 2.2 AA or EAA conformance claim.
+          <a class="link" href="/limitations" style="color: inherit; text-decoration: underline;">What we can and cannot test</a>
+        </p>
       </div>
       {#if !locked}
         <div style="display: flex; gap: 8px;">
@@ -333,7 +351,7 @@
         <!-- BIG STATS -->
         <div class="stat-strip" class:compact={variant === 'compact'} class:detailed={variant === 'detailed'}>
           <div class="stat" style="background: var(--us-lilac); color: var(--us-lilac-text);">
-            <div class="stat-label">Compliance score</div>
+            <div class="stat-label">Automated score</div>
             <div class="stat-value">{scoreClamp}<span class="stat-suffix">/100</span></div>
             {#if scoreDelta != null}
               <div class="stat-sub">{scoreDelta >= 0 ? `+${scoreDelta}` : scoreDelta} since last audit</div>
@@ -438,7 +456,7 @@
               {/each}
             </div>
             <p class="muted" style="font-size: 11px; margin-top: 12px;">
-              <em>Sample split — TODO: derive from real chapter mapping.</em>
+              Counts are mapped from WCAG success criteria (and chapter when no SC is known).
             </p>
           </div>
           <div class="card-flat">
@@ -524,11 +542,11 @@
           {/each}
         </div>
         <p class="muted" style="font-size: 11px; margin-top: 12px; text-align: center;">
-          <em>Sample split — TODO: derive from real chapter mapping.</em>
+          Mapped from WCAG success criteria on this run — not a fixed split.
         </p>
       {:else if tab === 'disability'}
         <p class="muted" style="font-size: 14px; margin-bottom: 20px; max-width: 720px;">
-          Each issue is mapped to the disability groups it most directly affects. A higher percentage means more of the user journey is blocked for that group.
+          Percentage is the share of <strong>scanned pages</strong> with at least one automated fail or warning mapped to that group. This is not a measure of how blocked a real user would be.
         </p>
         <div class="card-flat" style="padding: 0;">
           {#each disabilities as d, i (d.key)}
@@ -542,12 +560,12 @@
                 </div>
               </div>
               <div style="font-family: var(--font-display); font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums;">{d.percent}<span style="font-size: 14px;">%</span></div>
-              <span class="tag tag-outline">{d.percent > 70 ? 'Severely impacted' : d.percent > 40 ? 'Impacted' : 'Mildly impacted'}</span>
+              <span class="tag tag-outline">{d.impact}</span>
             </div>
           {/each}
         </div>
         <p class="muted" style="font-size: 11px; margin-top: 12px;">
-          <em>Sample percentages — TODO: derive from real per-page issue counts.</em>
+          Only fail and warning findings are counted. Unchecked manual checklist items are not included.
         </p>
       {:else if tab === 'pages'}
         <div class="card-flat" style="padding: 0;">
@@ -572,15 +590,15 @@
         </div>
       {:else if tab === 'rules'}
         <div class="card-flat" style="padding: 24px;">
-          <h3 style="font-size: 18px; margin-bottom: 6px;">{rulesTable.length} rule{rulesTable.length === 1 ? '' : 's'} triggered by this run</h3>
+          <h3 style="font-size: 18px; margin-bottom: 6px;">{rulesTable.length} finding{rulesTable.length === 1 ? '' : 's'} on this run</h3>
           <p class="muted" style="font-size: 13px; margin-bottom: 20px;">
-            Automated checks cover {coveredScCount} WCAG success criteria. WCAG 2.2 AA conformance requires meeting all Level A and AA criteria — items not in this list still need a human review.
+            This list is unique automated findings (errors, warnings, and axe “needs review”). The library maps to {coveredScCount} WCAG success criteria; WCAG 2.2 Level A and AA include 50 criteria and automation cannot test all of them.
           </p>
           {#if rulesTable.length === 0}
             <p class="muted" style="font-size: 14px;">Nothing fired this round — well done.</p>
           {:else}
             <div class="dash-rules-grid">
-              {#each rulesTable as r (r.id)}
+              {#each rulesTable as r (`${r.type}:${r.id}`)
                 <div style="padding: 10px 14px; border: 1px solid var(--border-subtle); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
                   <div>
                     <div class="mono" style="font-size: 12px; font-weight: 500;">{r.rule}</div>
@@ -593,6 +611,9 @@
           {/if}
         </div>
       {:else if tab === 'manual'}
+        <p class="muted" style="font-size: 14px; margin-bottom: 16px; max-width: 720px;">
+          Checklist progress only — these items are <strong>not performed</strong> until someone ticks them. They do not change the automated score.
+        </p>
         <ManualChecklist
           {domain}
           {runId}
@@ -798,6 +819,12 @@
     font-size: clamp(26px, 6vw, 38px);
     margin-top: 10px;
     margin-bottom: 6px;
+  }
+  .hero-disclaimer {
+    margin: 12px 0 0;
+    font-size: 13px;
+    opacity: 0.75;
+    max-width: 52ch;
   }
   .hero-meta {
     opacity: 0.7;

@@ -49,8 +49,7 @@ const responseTime = `${responseDays} business day${responseDays === 1 ? '' : 's
 const lastAudit = statementMeta.lastAuditDate || '';
 const auditDate = payload.auditedDate || new Date().toISOString().slice(0, 10);
 
-const passing = payload.scoreClamp >= 80;
-const conformance = passing ? 'Substantial conformance' : 'Partial conformance';
+const conformance = 'Draft — not a conformance claim';
 
 const errorIssues = (payload.fixOrderItems || []).filter((i) => i.status === 'fail' || i.status === 'violation' || i.type === 'violation');
 
@@ -71,7 +70,7 @@ function nextYear(s: string): string {
           <div class="statement-toolbar">
             <div style="display: flex; flex-direction: column; gap: 6px;">
               <a class="btn btn-ghost btn-sm" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`} style="align-self: flex-start;">← Back to report</a>
-              <span class="eyebrow"><span class="dot"></span>Auto-generated · ready to publish</span>
+              <span class="eyebrow"><span class="dot"></span>Auto-generated draft · not for publication as-is</span>
             </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
               <a class="btn btn-secondary btn-sm" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/accessibility-statement.html`}>Open static HTML</a>
@@ -95,10 +94,9 @@ function nextYear(s: string): string {
             <section style="margin-bottom: 28px;">
               <h2 class="statement-h2">1. Commitment</h2>
               <p>
-                <strong>{legal}</strong> is committed to making its website accessible
-                in accordance with <em>WCAG 2.2 AA</em> and the EU Web Accessibility Directive.
-                We aim to enable as many people as possible to use our digital services,
-                regardless of ability or technology.
+                <strong>{legal}</strong> aims to make its website usable by as many people as possible.
+                The target technical standard is <em>WCAG 2.2 Level AA</em> (and EN 301 549 where the EAA applies).
+                This page is an <strong>automated draft</strong>. It is not a published accessibility statement and not a legal conformance claim.
               </p>
             </section>
 
@@ -109,14 +107,14 @@ function nextYear(s: string): string {
                 <div>
                   <div style="font-family: var(--font-display); font-weight: 700; font-size: 22px; margin-bottom: 2px;">{conformance}</div>
                   <div style="font-size: 14px; color: var(--fg-2);">
-                    This site is <strong>{passing ? 'mostly compliant' : 'partially compliant'}</strong> with WCAG 2.2 level AA.
-                    Compliance score: {payload.scoreClamp}/100.
+                    Automated score on this run: {payload.scoreClamp}/100.
+                    That number is the share of applicable automated checks that passed — not WCAG 2.2 AA compliance.
                   </div>
                 </div>
               </div>
               <p>
-                "Partially compliant" means some content does not yet fully conform to the standard.
-                The non-compliant content is listed below.
+                A published statement should use the official EU/EN 301 549 wording (fully / partially / not compliant) only after a human evaluation.
+                Automated findings that still need work are listed below.
               </p>
             </section>
 
@@ -126,7 +124,7 @@ function nextYear(s: string): string {
                 <p class="muted">No outstanding errors at the time of this audit.</p>
               ) : (
                 <Fragment>
-                  <p style="margin-bottom: 12px;">The following items are known to fall short of WCAG 2.2 AA:</p>
+                  <p style="margin-bottom: 12px;">Automated findings that likely fall short of WCAG 2.2 AA (verify before publishing):</p>
                   <ol style="padding-left: 22px; display: flex; flex-direction: column; gap: 8px;">
                     {errorIssues.slice(0, 12).map((i) => (
                       <li style="font-size: 14px;">
@@ -146,10 +144,10 @@ function nextYear(s: string): string {
             <section style="margin-bottom: 28px;">
               <h2 class="statement-h2">4. Preparation of this statement</h2>
               <p>
-                This statement was prepared on <strong>{auditDate}</strong>, following an accessibility audit using a combination of
-                automated scanning ({payload.rulesTable.length} WCAG 2.2 AA rules across {payload.urls.length} pages)
-                and manual heuristic review.
-                {nextYear(auditDate) ? <Fragment> The next review is scheduled for {nextYear(auditDate)}.</Fragment> : null}
+                This draft was generated on <strong>{auditDate}</strong> from an automated scan
+                ({payload.urls.length} page{payload.urls.length === 1 ? '' : 's'}).
+                It does not include a complete manual or assistive-technology review.
+                {nextYear(auditDate) ? <Fragment> A human review should be scheduled; a suggested date is {nextYear(auditDate)}.</Fragment> : null}
               </p>
               {lastAudit && (
                 <p>The previous audit was conducted on <strong>{lastAudit}</strong>.</p>

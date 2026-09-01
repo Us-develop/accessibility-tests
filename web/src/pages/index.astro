@@ -18,7 +18,7 @@ export const prerender = false;
         >
         </div>
         <div class="fade-up guest-only" hidden={ssrStaff} style="text-align: left; margin-bottom: 40px;">
-          <span class="eyebrow"><span class="dot"></span>Free snapshot · 1 page · WCAG 2.2 AA</span>
+          <span class="eyebrow"><span class="dot"></span>Free snapshot · 1 page · automated WCAG 2.2 AA checks</span>
           <h1 style="font-size: clamp(40px, 5.4vw, 68px); margin-top: 14px; margin-bottom: 12px;">
             Check a page for accessibility — <em
               style="font-style: normal; background: var(--us-grad-iridescent); -webkit-background-clip: text; background-clip: text; color: transparent;"
@@ -26,8 +26,9 @@ export const prerender = false;
             >
           </h1>
           <p class="p-large muted" style="max-width: 620px;">
-            Paste a public URL. We run automated WCAG 2.2 AA checks and show a score plus the top issues.
-            Need a full audit and remediation? Ask Us for WCAG services after the scan.
+            Paste a public URL. We run automated checks aligned with WCAG 2.2 AA and show a score plus the top issues.
+            This is not a full audit or legal sign-off.
+            Need a human audit and remediation? Ask Us for WCAG services after the scan.
           </p>
         </div>
 
@@ -65,7 +66,7 @@ export const prerender = false;
         </form>
 
         <div class="fade-up staff-only" hidden={!ssrStaff} style="text-align: left; margin-bottom: 40px;">
-          <span class="eyebrow"><span class="dot"></span>WCAG 2.2 · AA · EN 301 549</span>
+          <span class="eyebrow"><span class="dot"></span>Automated · WCAG 2.2 AA aligned · EN 301 549 informed</span>
           <h1 style="font-size: clamp(40px, 5.4vw, 68px); margin-top: 14px; margin-bottom: 12px;">
             Audit a site for accessibility — <em
               style="font-style: normal; background: var(--us-grad-iridescent); -webkit-background-clip: text; background-clip: text; color: transparent;"
@@ -73,7 +74,8 @@ export const prerender = false;
             >
           </h1>
           <p class="p-large muted" style="max-width: 620px;">
-            Drop in URLs or a sitemap. We run automated checks and custom chapter tests, then deliver HTML reports for your team.
+            Drop in URLs or a sitemap. We run axe-core plus custom chapter tests and deliver HTML reports.
+            Results are automated findings, not a conformance certificate.
           </p>
         </div>
 
@@ -186,6 +188,10 @@ export const prerender = false;
         </form>
 
         <p id="form-err" class="muted" style="font-size: 14px; margin-top: 14px; color: var(--status-error); display: none;"></p>
+
+        <p class="muted" style="font-size: 12px; margin-top: 14px; text-align: center;">
+          <a href="/limitations" class="link">What this scan can and cannot test</a>
+        </p>
 
         <p class="muted staff-only" hidden={!ssrStaff} style="font-size: 12px; margin-top: 14px; text-align: center;">
           <a href="/audits" class="link">All domain audits</a>

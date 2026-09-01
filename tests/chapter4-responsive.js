@@ -15,7 +15,7 @@ export async function runResponsiveChecks(page, viewport = { width: 320, height:
     const html = document.documentElement;
     const docWidth = Math.max(body.scrollWidth, html.scrollWidth);
     const viewWidth = window.innerWidth;
-    const hasHorizontalScroll = docWidth > viewWidth;
+    const hasHorizontalScroll = docWidth > viewWidth + 10;
     return { docWidth, viewWidth, hasHorizontalScroll };
   });
 
@@ -24,8 +24,8 @@ export async function runResponsiveChecks(page, viewport = { width: 320, height:
     rule: 'Content MUST NOT require horizontal scrolling at 320px width (simplified check; not a full WCAG 1.4.10 assessment)',
     status: !overflowChecks.hasHorizontalScroll ? 'pass' : 'fail',
     message: overflowChecks.hasHorizontalScroll
-      ? `Horizontal overflow: content ${overflowChecks.docWidth}px vs viewport ${overflowChecks.viewWidth}px`
-      : 'No horizontal overflow at 320px',
+      ? `Horizontal overflow: content ${overflowChecks.docWidth}px vs viewport ${overflowChecks.viewWidth}px (more than 10px)`
+      : 'No meaningful horizontal overflow at 320px',
     chapter: chapterId,
   });
 

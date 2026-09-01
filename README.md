@@ -38,7 +38,7 @@ AUTH_ENABLED=false npm start
 
 - **Page load:** URLs open with `domcontentloaded` (see `PAGE_GOTO_TIMEOUT_MS`, optional `WAIT_FOR_NETWORKIDLE` in the test runner and server-spawned runs).
 - **Media:** `BLOCK_MEDIA_REQUESTS` (default `true`) skips video/audio fetches, which can change layout or behavior on media-heavy pages.
-- **Assisted review:** The suite combines axe-core, custom heuristics, and manual checklist items. It is **not** a complete manual WCAG audit or legal compliance sign-off.
+- **Assisted review:** The suite combines axe-core (WCAG 2.2 A/AA tags), custom heuristics, and a manual checklist. It is **not** a complete WCAG audit or legal sign-off. See `/limitations` in the web UI.
 - **Reports:** Axe results are placed in **one primary checklist chapter** per rule (so chapter charts do not double-count the same axe issue). Use the per-page violation list for the canonical axe finding list.
 
 ## Web UI

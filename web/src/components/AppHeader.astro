@@ -48,8 +48,6 @@ const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
 
     {domain ? (
       <nav class="nav-crumbs" aria-label="Audit progress" style="font-family: var(--font-mono);">
-        <span class="nav-host-hint" style="color: var(--fg-3);">wcag.about-us.be</span>
-        <span class="sep nav-host-hint">/</span>
         {(() => {
           const href = stepHref('history');
           return href ? (
@@ -72,7 +70,7 @@ const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
     )}
 
     <div class="app-header-chrome">
-      <span class="muted" style="font-size: 13px;">WCAG 2.2 AA</span>
+      <span class="muted" style="font-size: 13px;">WCAG 2.2 AA aligned</span>
       <button type="button" class="btn btn-ghost wcag-header-login" id="wcag-header-login">
         Log in
       </button>

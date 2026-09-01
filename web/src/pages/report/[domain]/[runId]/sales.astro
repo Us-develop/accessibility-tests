@@ -10,7 +10,6 @@ import { runDir, isValidRunId } from '../../../../../../server/run-ids.js';
 import { listRunsForDomain } from '../../../../../../server/audit-list.js';
 import { dbPool } from '../../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../../server/paths.js';
-import { getSamplePrinciples } from '../../../../lib/sample-buckets';
 
 export const prerender = false;
 
@@ -40,11 +39,8 @@ try {
   }
 } catch {}
 
-const principles = getSamplePrinciples({
-  errors: payload.severityCounts.errors,
-  warnings: payload.severityCounts.warnings,
-  passed: payload.severityCounts.passed,
-});
+const principles = payload.principles || [];
+const plainEnglish = payload.plainEnglish || { headline: '', cards: [] };
 
 const allRuns = await listRunsForDomain(dbPool, REPORTS_BASE, domain);
 const trend = allRuns
@@ -91,6 +87,7 @@ const deckProps = {
     { date: 'now', score: payload.scoreClamp },
   ],
   principles,
+  plainEnglish,
   topFixes,
   coordinator,
   coordinatorEmail,
