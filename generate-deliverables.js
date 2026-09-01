@@ -949,7 +949,7 @@ function dedupeFindingsByRule(items) {
 
 function buildLimitationBlocks(fixOrderItems) {
   if (!fixOrderItems.length) {
-    return '<p>No open issues were recorded in this automated run. Manual and assistive-technology testing may still identify barriers; we recommend completing those checks before claiming full conformance.</p>';
+    return '<p>This automated run recorded no failed checks or axe violations. That is not a WCAG 2.2 AA pass. Complete manual and assistive-technology testing before using official conformance wording.</p>';
   }
   const groups = new Map();
   for (const item of fixOrderItems) {
@@ -1078,22 +1078,20 @@ export function generateAccessibilityStatement(data, outputDir) {
 
     <div class="statement-section">
       <h2>Conformance status</h2>
-      <p>The <a href="https://www.w3.org/WAI/standards-guidelines/wcag/" target="_blank" rel="noopener">Web Content Accessibility Guidelines (WCAG)</a> defines requirements for designers and developers to improve accessibility for people with disabilities. It defines three levels of conformance: Level A, Level AA, and Level AAA. <strong>${escapeHtml(siteDisplay)}</strong> is <strong>partially conformant</strong> with <strong>WCAG 2.2 Level AA</strong>. Partially conformant means that some parts of the content do not fully conform to the accessibility standard.</p>
-      <p>The following pages were included in the automated assessment supporting this statement:</p>
+      <p>The <a href="https://www.w3.org/WAI/standards-guidelines/wcag/" target="_blank" rel="noopener">Web Content Accessibility Guidelines (WCAG)</a> define three levels of conformance: Level A, Level AA, and Level AAA. The target for this draft is <strong>WCAG 2.2 Level AA</strong> (and EN 301 549 where the EAA applies).</p>
+      <p>This file is an <strong>automated draft</strong>. It does not state that <strong>${escapeHtml(siteDisplay)}</strong> is fully, partially, or not conformant. Use those official terms only after a human evaluation.</p>
+      <p>The following pages were included in the automated assessment:</p>
       <ul>${testedUrls.map((u) => `<li>${escapeHtml(u)}</li>`).join('')}</ul>
     </div>
 
     <div class="statement-section">
       <h2>Measures to support accessibility</h2>
-      <p>${statementStrong(sm, 'orgShortName', '[ORGANIZATION SHORT NAME]')} takes the following measures to ensure accessibility of <strong>${escapeHtml(siteDisplay)}</strong>:</p>
+      <p>List only measures ${statementStrong(sm, 'orgShortName', '[ORGANIZATION SHORT NAME]')} actually takes. The items below are examples from the W3C statement generator — delete any that are not true before publishing.</p>
       <ul class="measures">
-        <li>Include accessibility as part of our mission statement.</li>
-        <li>Include accessibility throughout our internal policies.</li>
-        <li>Integrate accessibility into our procurement practices.</li>
-        <li>Appoint an accessibility officer and/or ombudsperson.</li>
-        <li>Provide continual accessibility training for our staff.</li>
-        <li>Assign clear accessibility goals and responsibilities.</li>
-        <li>Employ formal accessibility quality assurance methods.</li>
+        <li><span class="placeholder">[e.g. Include accessibility throughout our internal policies.]</span></li>
+        <li><span class="placeholder">[e.g. Integrate accessibility into procurement.]</span></li>
+        <li><span class="placeholder">[e.g. Appoint an accessibility officer.]</span></li>
+        <li><span class="placeholder">[e.g. Provide accessibility training for staff.]</span></li>
       </ul>
     </div>
 
@@ -1106,7 +1104,7 @@ export function generateAccessibilityStatement(data, outputDir) {
         <li>CSS</li>
         <li>JavaScript</li>
       </ul>
-      <p>These technologies are relied upon for conformance with the accessibility standards used.</p>
+      <p>These technologies need to work with the visitor’s browser and assistive technology. Confirm the list before publishing.</p>
     </div>
 
     <div class="statement-section">
@@ -1133,8 +1131,8 @@ export function generateAccessibilityStatement(data, outputDir) {
       <h2>Assessment approach</h2>
       <p>${statementStrong(sm, 'orgShortName', '[ORGANIZATION SHORT NAME]')} assessed the accessibility of <strong>${escapeHtml(siteDisplay)}</strong> by the following approaches:</p>
       <ul class="eval-list">
-        <li>Self-evaluation</li>
-        <li>Automated testing (Deque University checklists, axe-core) on ${escapeHtml(created.toLocaleString())}, covering the URLs listed under Conformance status.</li>
+        <li>Automated testing (custom checks and axe-core) on ${escapeHtml(created.toLocaleString())}, covering the URLs listed under Conformance status.</li>
+        <li><span class="placeholder">[Add keyboard, screen-reader, and other human evaluation if completed.]</span></li>
       </ul>
     </div>
 

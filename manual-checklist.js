@@ -29,7 +29,7 @@ const MANUAL_VERIFICATION_TEXTS = [
   { text: 'Information is not conveyed by color alone.', disabilities: ['Colorblindness', 'Low Vision'] },
   { text: 'Focus order is logical and matches visual order; no positive tabindex.', disabilities: ['Blindness', 'Dexterity/Motor Disabilities'] },
   { text: 'All interactive elements are keyboard accessible and have visible focus.', disabilities: ['Blindness', 'Dexterity/Motor Disabilities', 'Low Vision'] },
-  { text: 'Touch targets are at least 44×44px with spacing between them.', disabilities: ['Dexterity/Motor Disabilities', 'Low Vision'] },
+  { text: 'Pointer targets are at least 24×24 CSS pixels (WCAG 2.2 AA 2.5.8), allowing listed exceptions such as inline links. 44×44 is AAA 2.5.5, not the AA bar.', disabilities: ['Dexterity/Motor Disabilities', 'Low Vision'] },
   { text: 'Form error messages are associated with fields and announced to screen readers.', disabilities: ['Blindness', 'Cognitive Disabilities', 'Reading Disabilities'] },
   { text: 'Dynamic content changes are announced (e.g. aria-live) where appropriate.', disabilities: ['Blindness', 'Cognitive Disabilities'] },
   { text: 'No content flashes more than 3 times per second (seizure risk).', disabilities: ['Seizure Disorders'] },
