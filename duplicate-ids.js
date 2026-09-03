@@ -86,38 +86,70 @@ export function idsFromAxeViolation(violation) {
   return uniqueIds(collected);
 }
 
+const HTML_SNIPPET_MAX = 400;
+
 /**
- * Format occurrence as "tag#id.class1.class2" (element type, id if present, class(es) if present).
+ * @param {unknown} html
+ * @returns {string}
+ */
+function clipHtmlSnippet(html) {
+  const snippet = String(html || '').replace(/\s+/g, ' ').trim();
+  if (!snippet) return '';
+  return snippet.length > HTML_SNIPPET_MAX ? `${snippet.slice(0, HTML_SNIPPET_MAX - 1)}…` : snippet;
+}
+
+/**
+ * @param {string} html
+ * @param {string} tag
+ * @returns {boolean}
+ */
+function isBareTagHtml(html, tag) {
+  const compact = String(html || '').replace(/\s+/g, '');
+  const name = String(tag || 'element').toLowerCase();
+  return new RegExp(`^<${name}(?:\\s*/)?>$`, 'i').test(compact);
+}
+
+/**
+ * Format occurrence as "tag#id.class" when those exist.
+ * If there is no id or class, prefer the element HTML so developers can find a bare <svg>.
  * @param {object | null | undefined} occ
  * @returns {string}
  */
 export function formatOccurrenceDescriptor(occ) {
   if (!occ || typeof occ !== 'object') return '—';
+  const label = occ.occurrenceLabel || '';
+  const htmlSnippet = clipHtmlSnippet(occ.html);
+  const sel = occ.selector || (Array.isArray(occ.target) ? occ.target[0] : occ.target);
+  const selector = sel != null ? String(sel) : '';
+
   if (occ.tag != null) {
     const tag = (occ.tag || 'element').toLowerCase();
     const idPart = occ.id ? '#' + String(occ.id) : '';
     const classPart = occ.className
       ? '.' + String(occ.className).trim().split(/\s+/).filter(Boolean).join('.')
       : '';
-    const label = occ.occurrenceLabel || '';
-    return tag + idPart + classPart + label;
+    if (idPart || classPart) return tag + idPart + classPart + label;
+    if (htmlSnippet && !isBareTagHtml(htmlSnippet, tag)) return htmlSnippet + label;
+    if (selector) return (htmlSnippet ? `${htmlSnippet} — ${selector}` : selector) + label;
+    if (htmlSnippet) return htmlSnippet + label;
+    return tag + label;
   }
   if (occ.html) {
-    const html = String(occ.html);
-    const tagMatch = html.match(/<([a-z][a-z0-9]*)/i);
+    const tagMatch = htmlSnippet.match(/<([a-z][a-z0-9]*)/i);
     const tag = tagMatch ? tagMatch[1].toLowerCase() : 'element';
-    const idMatch = html.match(/\bid=["']([^"']*)["']/i);
+    const idMatch = htmlSnippet.match(/\bid=["']([^"']*)["']/i);
     const id = idMatch ? idMatch[1] : '';
-    const classMatch = html.match(/\bclass=["']([^"']*)["']/i);
+    const classMatch = htmlSnippet.match(/\bclass=["']([^"']*)["']/i);
     const rawClass = classMatch ? classMatch[1] : '';
-    const classPart = rawClass ? '.' + rawClass.trim().split(/\s+/).filter(Boolean).join('.') : '';
-    const compact = tag + (id ? '#' + id : '') + classPart;
-    const sel = occ.selector || (Array.isArray(occ.target) ? occ.target[0] : occ.target);
-    if (sel && !id && !rawClass.trim()) return `${compact} — ${sel}`;
-    return compact;
+    if (id || rawClass.trim()) {
+      const classPart = rawClass ? '.' + rawClass.trim().split(/\s+/).filter(Boolean).join('.') : '';
+      return tag + (id ? '#' + id : '') + classPart + label;
+    }
+    if (htmlSnippet && !isBareTagHtml(htmlSnippet, tag)) return htmlSnippet + label;
+    if (selector) return (htmlSnippet ? `${htmlSnippet} — ${selector}` : selector) + label;
+    return htmlSnippet || tag;
   }
-  const sel = occ.selector || (Array.isArray(occ.target) ? occ.target[0] : occ.target);
-  return sel != null ? String(sel) : '—';
+  return selector || '—';
 }
 
 /**

@@ -19,10 +19,20 @@ export function describeEls(list, limit = 40) {
     if (typeof el.className === 'string') className = el.className.trim();
     else if (el.className && typeof el.className.baseVal === 'string') className = el.className.baseVal.trim();
     className = className.split(/\s+/).filter(Boolean).join(' ');
+    let html = '';
+    try {
+      if (typeof el.outerHTML === 'string' && el.outerHTML) {
+        html = el.outerHTML.replace(/\s+/g, ' ').trim();
+        if (html.length > 400) html = `${html.slice(0, 399)}…`;
+      }
+    } catch {
+      html = '';
+    }
     return {
       tag,
       id,
       className,
+      html,
       occurrenceLabel: total > 1 ? ` (occurrence ${idx + 1} of ${total})` : '',
     };
   });

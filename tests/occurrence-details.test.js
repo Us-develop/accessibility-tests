@@ -17,7 +17,21 @@ describe('describeEls', () => {
     assert.equal(rows[0].tag, 'img');
     assert.equal(rows[0].id, 'hero');
     assert.equal(rows[0].className, 'banner wide');
+    assert.equal(rows[0].html, '');
     assert.match(rows[0].occurrenceLabel, /occurrence 1 of 2/);
+  });
+
+  it('stores outerHTML so a classless svg can be shown in full', () => {
+    const rows = describeEls([
+      {
+        tagName: 'SVG',
+        id: '',
+        className: '',
+        outerHTML: '<svg viewBox="0 0 24 24" width="32"><path d="M1 2"/></svg>',
+      },
+    ]);
+    assert.equal(rows[0].tag, 'svg');
+    assert.match(rows[0].html, /viewBox="0 0 24 24"/);
   });
 });
 
@@ -34,6 +48,22 @@ describe('occurrenceDetailsFromCustom', () => {
   it('falls back to a selector', () => {
     assert.deepEqual(occurrenceDetailsFromCustom({ selector: '.btn.primary' }), ['.btn.primary']);
   });
+
+  it('shows element html when an svg has no class or id', () => {
+    assert.deepEqual(
+      occurrenceDetailsFromCustom({
+        occurrences: [
+          {
+            tag: 'svg',
+            id: '',
+            className: '',
+            html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16"/></svg>',
+          },
+        ],
+      }),
+      ['<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16"/></svg>']
+    );
+  });
 });
 
 describe('occurrenceDetailsFromAxe', () => {
@@ -46,7 +76,7 @@ describe('occurrenceDetailsFromAxe', () => {
           { html: '<img>', target: ['.gallery img:nth-child(2)'] },
         ],
       }),
-      ['img#hero.banner', 'img — .gallery img:nth-child(2)']
+      ['img#hero.banner', '<img> — .gallery img:nth-child(2)']
     );
   });
 });
@@ -55,7 +85,7 @@ describe('formatOccurrenceDescriptor axe html', () => {
   it('appends the css target when html has no id or class', () => {
     assert.equal(
       formatOccurrenceDescriptor({ html: '<button>', target: ['form > button'] }),
-      'button — form > button'
+      '<button> — form > button'
     );
   });
 });

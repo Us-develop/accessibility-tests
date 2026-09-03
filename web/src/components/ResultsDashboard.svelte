@@ -773,7 +773,7 @@
             <h4 class="drawer-h4">Where they appear ({selected.occurrenceDetails.length})</h4>
             <div class="affected-pages" style="margin-bottom: 24px;">
               {#each selected.occurrenceDetails as desc, i (`${desc}-${i}`)}
-                <span class="mono affected-page">{desc}</span>
+                <span class="mono affected-page" class:affected-page--markup={desc.includes('<')}>{desc}</span>
               {/each}
             </div>
           {/if}
@@ -1245,6 +1245,10 @@
     color: var(--fg-1);
     text-decoration: none;
     overflow-wrap: anywhere;
+  }
+  .affected-page--markup {
+    white-space: pre-wrap;
+    word-break: break-word;
   }
   .affected-page:hover {
     background: var(--us-n-20);

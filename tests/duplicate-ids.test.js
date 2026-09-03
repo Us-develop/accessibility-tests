@@ -85,6 +85,18 @@ describe('formatOccurrenceDescriptor', () => {
       'div#header.site.wrap (occurrence 1 of 2)'
     );
   });
+
+  it('uses the element html when there is no id or class', () => {
+    assert.equal(
+      formatOccurrenceDescriptor({
+        tag: 'svg',
+        id: '',
+        className: '',
+        html: '<svg viewBox="0 0 24 24"><path d="M1 1"/></svg>',
+      }),
+      '<svg viewBox="0 0 24 24"><path d="M1 1"/></svg>'
+    );
+  });
 });
 
 describe('buildAstroMainReportPayload unique-ids', () => {
