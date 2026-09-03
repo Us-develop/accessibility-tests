@@ -44,9 +44,9 @@ const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
 
 <header class="app-header" data-screen-label="App header">
   <div class="app-header-inner">
-    <a class="brand" href="/">
-      <span class="brand-dot" aria-hidden="true"></span>
-      <span>Accessibility audit <small>by Us</small></span>
+    <a class="brand" href="/" aria-label="Us accessibility home">
+      <img class="brand-logo" src="/assets/us-logo.png" width="83" height="40" alt="Us" />
+      <span class="brand-text">Accessibility</span>
     </a>
 
     {domain ? (
@@ -73,6 +73,18 @@ const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
     )}
 
     <div class="app-header-chrome">
+      {domain ? (
+        <a
+          class={`btn btn-sm btn-all-scans ${active === 'history' ? 'btn-cream' : 'btn-secondary'}`}
+          href={`/report/${encodeURIComponent(domain)}/history`}
+          aria-label={`All scans of ${domain}`}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          All scans
+        </a>
+      ) : null}
       <span class="muted" style="font-size: 13px;">WCAG 2.2 AA aligned</span>
       <button type="button" class="btn btn-ghost wcag-header-login" id="wcag-header-login">
         Log in
@@ -82,13 +94,26 @@ const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
 </header>
 
 <script>
-  document.getElementById('wcag-header-login')?.addEventListener('click', () => {
-    document.dispatchEvent(new CustomEvent('wcag:open-login'));
-  });
+  if (!globalThis.__wcagHeaderLoginBound) {
+    globalThis.__wcagHeaderLoginBound = true;
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('#wcag-header-login')) {
+        document.dispatchEvent(new CustomEvent('wcag:open-login'));
+      }
+    });
+  }
 </script>
 
 <style>
   :global(body.is-staff) .wcag-header-login {
     display: none;
+  }
+  .btn-all-scans {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
   }
 </style>

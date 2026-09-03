@@ -253,6 +253,8 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       }
 
       if (data.authenticated === true) {
+        try { sessionStorage.setItem('wcagStaff', '1'); } catch {}
+        document.documentElement.classList.add('wcag-staff');
         closeModal();
         unlockAppShell(true);
         document.body.classList.add('is-staff');
@@ -264,6 +266,8 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       }
 
       document.body.classList.remove('is-staff');
+      document.documentElement.classList.remove('wcag-staff');
+      try { sessionStorage.removeItem('wcagStaff'); } catch {}
       if (errEl) {
         errEl.hidden = true;
         errEl.textContent = '';
@@ -280,6 +284,11 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
         unlockAppShell(false);
         return;
       }
+      if (document.documentElement.classList.contains('wcag-staff')) {
+        closeModal();
+        unlockAppShell(true);
+        return;
+      }
       lockAppShell();
       openModal();
       if (errEl) {
@@ -289,13 +298,46 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     }
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
+  function applyStaffShellHint() {
+    const overlay = qs('wcag-login-modal');
+    const guest = document.body?.getAttribute('data-wcag-auth') === 'guest-ok';
+    if (overlay) overlay.setAttribute('data-start-locked', guest ? 'false' : 'true');
     syncCloseButton();
-    if (!guestOk()) lockAppShell();
-    refreshAuthGate();
-  });
+    if (document.documentElement.classList.contains('wcag-staff')) {
+      closeModal();
+      unlockAppShell(true);
+      document.body.classList.add('is-staff');
+    } else if (!guestOk()) {
+      lockAppShell();
+    }
+  }
 
-  document.addEventListener('wcag:login-required', () => {
+  function onPageReady() {
+    applyStaffShellHint();
+    if (globalThis.__wcagAuthGateTimer) clearTimeout(globalThis.__wcagAuthGateTimer);
+    globalThis.__wcagAuthGateTimer = setTimeout(() => {
+      globalThis.__wcagAuthGateTimer = null;
+      refreshAuthGate();
+    }, 20);
+  }
+
+  if (!globalThis.__wcagLoginBound) {
+    globalThis.__wcagLoginBound = true;
+    document.addEventListener('astro:page-load', onPageReady);
+    document.addEventListener('astro:after-swap', applyStaffShellHint);
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', onPageReady);
+    } else {
+      onPageReady();
+    }
+  }
+
+  if (!globalThis.__wcagLoginUiBound) {
+    globalThis.__wcagLoginUiBound = true;
+    document.addEventListener('wcag:login-required', () => {
+    document.documentElement.classList.remove('wcag-staff');
+    document.body.classList.remove('is-staff');
+    try { sessionStorage.removeItem('wcagStaff'); } catch {}
     if (!guestOk()) lockAppShell();
     const errEl = qs('wcag-login-err');
     if (errEl && !guestOk()) {
@@ -341,6 +383,8 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       closeModal();
       unlockAppShell(true);
       document.body.classList.add('is-staff');
+      document.documentElement.classList.add('wcag-staff');
+      try { sessionStorage.setItem('wcagStaff', '1'); } catch {}
       document.dispatchEvent(new CustomEvent('wcag:logged-in'));
       if (guestOk()) {
         window.location.reload();
@@ -435,6 +479,8 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       errEl.hidden = true;
     }
     document.body.classList.remove('is-staff');
+    document.documentElement.classList.remove('wcag-staff');
+    try { sessionStorage.removeItem('wcagStaff'); } catch {}
     if (guestOk()) {
       closeModal();
       window.location.reload();
@@ -454,6 +500,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     const overlay = qs('wcag-login-modal');
     if (overlay && !overlay.hidden) closeModal();
   });
+  }
 </script>
 
 <style>

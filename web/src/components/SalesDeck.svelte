@@ -1,4 +1,5 @@
 <script>
+  import { navigate } from 'astro:transitions/client';
   import { onMount, onDestroy } from 'svelte';
   import ScoreDonut from './ScoreDonut.svelte';
   import TrendChart from './TrendChart.svelte';
@@ -21,6 +22,7 @@
    *   legalName?: string,
    *   domain: string,
    *   runId: string,
+   *   autoPrint?: boolean,
    * }}
    */
   let {
@@ -40,6 +42,7 @@
     legalName = '',
     domain,
     runId,
+    autoPrint = false,
   } = $props();
 
   const delta = $derived(previousScore != null ? scoreClamp - previousScore : null);
@@ -70,6 +73,16 @@
     }
     resizeDeckDonut();
     window.addEventListener('resize', resizeDeckDonut);
+    if (autoPrint) {
+      const triggerPrint = () => {
+        window.setTimeout(() => window.print(), 450);
+      };
+      if (document.fonts?.ready) {
+        document.fonts.ready.then(triggerPrint).catch(triggerPrint);
+      } else {
+        triggerPrint();
+      }
+    }
     return () => window.removeEventListener('resize', resizeDeckDonut);
   });
 
@@ -78,7 +91,7 @@
   });
 
   function gotoStatement() {
-    window.location.href = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/statement`;
+    navigate(`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/statement`);
   }
 </script>
 
@@ -109,8 +122,8 @@
           <div class="slide-pad cover-grid">
             <div class="cover-row">
               <span class="cover-brand">
-                <span class="brand-dot" style="width:32px;height:32px;"></span>
-                <span style="font-size: 18px;">Us · Accessibility</span>
+                <img class="cover-logo" src="/assets/us-logo.png" width="83" height="40" alt="Us" />
+                <span style="font-size: 18px;">Accessibility</span>
               </span>
               <span style="opacity: 0.5; font-size: 14px;">{auditDate}</span>
             </div>
@@ -260,7 +273,7 @@
         <!-- 8: closing -->
         <section data-screen-label="Slide 08 - Closing" class="slide slide-cream">
           <div class="slide-pad closing-pad">
-            <div class="brand-dot" style="width: 80px; height: 80px; margin-bottom: 32px;"></div>
+            <img class="closing-logo" src="/assets/us-logo.png" width="83" height="40" alt="Us" />
             <h2 class="closing-h2">
               Let's make it work for <em class="grad-text">everyone.</em>
             </h2>
@@ -403,6 +416,20 @@
     gap: 10px;
     font-family: var(--font-display);
     font-weight: 700;
+  }
+  .cover-logo {
+    height: 32px;
+    width: auto;
+    display: block;
+    border-radius: 8px;
+    background: var(--us-cream);
+  }
+  .closing-logo {
+    height: 48px;
+    width: auto;
+    display: block;
+    border-radius: 10px;
+    margin-bottom: 32px;
   }
   .cover-title {
     color: var(--us-cream);
@@ -685,6 +712,25 @@
     }
     .plain-big {
       font-size: clamp(44px, 10vw, 72px);
+    }
+  }
+
+  @media print {
+    .deck-head {
+      display: none !important;
+    }
+    .deck-shell {
+      min-height: auto !important;
+      padding: 0 !important;
+      background: none !important;
+    }
+    .deck-stage-wrap {
+      aspect-ratio: auto !important;
+      max-height: none !important;
+      height: auto !important;
+      overflow: visible !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
     }
   }
 </style>

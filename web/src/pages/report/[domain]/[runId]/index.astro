@@ -69,10 +69,13 @@ const previousScore = (() => {
 
 // Manual & assistive-tech checklist progress (separate from automated score).
 const manualProgressPath = join(runDir(domain, runId), 'manual-progress.json');
+const domainManualPath = join(runDir(domain, runId), '..', 'manual-progress.json');
 let manualChecked: string[] = [];
-if (existsSync(manualProgressPath)) {
+for (const p of [manualProgressPath, domainManualPath]) {
+  if (manualChecked.length > 0) break;
+  if (!existsSync(p)) continue;
   try {
-    const raw = JSON.parse(readFileSync(manualProgressPath, 'utf8'));
+    const raw = JSON.parse(readFileSync(p, 'utf8'));
     manualChecked = normalizeManualProgress(raw?.checked);
   } catch {}
 }

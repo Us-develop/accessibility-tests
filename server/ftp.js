@@ -102,6 +102,10 @@ export async function persistReportArtifactsToFtp(domain, runId, ftpConfig) {
     const local = join(reportDir, name);
     if (existsSync(local)) jobs.push({ local, remote: `${domain}/${runId}/${name}` });
   });
+  const domainManual = join(REPORTS_BASE, domain, 'manual-progress.json');
+  if (existsSync(domainManual)) {
+    jobs.push({ local: domainManual, remote: `${domain}/manual-progress.json` });
+  }
   listScreenshotFiles(reportDir).forEach((f) => {
     jobs.push({ local: f.local, remote: `${domain}/${runId}/${f.remote}` });
   });
