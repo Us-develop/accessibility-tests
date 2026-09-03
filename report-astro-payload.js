@@ -23,6 +23,13 @@ import {
   buildSuggestedFixes,
   buildPlainEnglishStats,
 } from './report-buckets.js';
+import {
+  idsFromCustomResult,
+  idsFromAxeViolation,
+  formatDuplicateIdList,
+  formatOccurrenceDescriptor,
+  duplicateIdSnippet,
+} from './duplicate-ids.js';
 
 
 function severityRank(level) {
@@ -132,6 +139,8 @@ export function buildAstroMainReportPayload(reportData) {
   (reportData.customResults || []).forEach((r) => {
     if (r.status === 'fail' || r.status === 'warn') {
       const rem = getRemediation(r.id, null);
+      const duplicateIds = idsFromCustomResult(r);
+      const snippet = duplicateIdSnippet(duplicateIds, rem.snippet);
       fixOrderItems.push(makeFixItem({
         type: 'custom',
         rule: r.rule,
@@ -139,12 +148,19 @@ export function buildAstroMainReportPayload(reportData) {
         url: r.url,
         status: r.status,
         ...rem,
+        snippet,
+        message: r.message || '',
+        duplicateIds,
+        duplicateIdLabel: formatDuplicateIdList(duplicateIds),
+        occurrenceDetails: (r.occurrences || []).map((occ) => formatOccurrenceDescriptor(occ)),
       }));
     }
   });
   Object.entries(reportData.axeResults || {}).forEach(([url, data]) => {
     (data.violations || []).forEach((v) => {
       const rem = getRemediation(null, v.id);
+      const duplicateIds = idsFromAxeViolation(v);
+      const snippet = duplicateIdSnippet(duplicateIds, rem.snippet);
       fixOrderItems.push(makeFixItem({
         type: 'violation',
         rule: v.help,
@@ -152,6 +168,10 @@ export function buildAstroMainReportPayload(reportData) {
         url,
         status: 'violation',
         ...rem,
+        snippet,
+        message: v.help || '',
+        duplicateIds,
+        duplicateIdLabel: formatDuplicateIdList(duplicateIds),
       }));
     });
   });
@@ -270,9 +290,13 @@ export function buildAstroMainReportPayload(reportData) {
       severity: severityFromStatus(r.status),
       occurrences: 0,
       pages: new Set(),
+      duplicateIds: [],
     };
     bucket.occurrences += 1;
     if (r.url) bucket.pages.add(r.url);
+    for (const id of idsFromCustomResult(r)) {
+      if (!bucket.duplicateIds.includes(id)) bucket.duplicateIds.push(id);
+    }
     ruleBuckets.set(key, bucket);
   });
   Object.entries(reportData.axeResults || {}).forEach(([url, data]) => {
@@ -285,9 +309,13 @@ export function buildAstroMainReportPayload(reportData) {
         severity: 'error',
         occurrences: 0,
         pages: new Set(),
+        duplicateIds: [],
       };
       bucket.occurrences += Math.max(1, (v.nodes || []).length || 1);
       bucket.pages.add(url);
+      for (const id of idsFromAxeViolation(v)) {
+        if (!bucket.duplicateIds.includes(id)) bucket.duplicateIds.push(id);
+      }
       ruleBuckets.set(key, bucket);
     });
     (data.incomplete || []).forEach((v) => {
@@ -306,7 +334,11 @@ export function buildAstroMainReportPayload(reportData) {
     });
   });
   const rulesTable = [...ruleBuckets.values()]
-    .map((b) => ({ ...b, pages: [...b.pages] }))
+    .map((b) => ({
+      ...b,
+      pages: [...b.pages],
+      duplicateIdLabel: formatDuplicateIdList(b.duplicateIds || []),
+    }))
     .sort((a, b) => b.occurrences - a.occurrences);
 
   return {

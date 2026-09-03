@@ -81,7 +81,7 @@ const previousScore = (() => {
 const fixOrderTopColors = ['var(--us-peach)', 'var(--us-lilac)', 'var(--us-mint)', 'var(--us-sky)', 'var(--us-pink)'];
 const topFixes = (payload.fixOrderTop || []).slice(0, 5).map((f, i) => ({
   rank: String(i + 1).padStart(2, '0'),
-  title: f.rule || f.id || 'Fix',
+  title: f.duplicateIdLabel ? `${f.rule || f.id} (${f.duplicateIdLabel})` : (f.rule || f.id || 'Fix'),
   impact: f.snippet || `Affects ${f.url || 'multiple pages'}.`,
   points: typeof f.effort === 'number' ? f.effort : f.impact === 'High' ? 5 : f.impact === 'Medium' ? 3 : 1,
   color: fixOrderTopColors[i % fixOrderTopColors.length],

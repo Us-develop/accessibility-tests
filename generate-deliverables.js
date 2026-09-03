@@ -108,6 +108,8 @@ export function generateDeveloperAdvice(data, outputDir) {
             </span>
             <span class="muted summary-effort">${effort} pt${effort === 1 ? '' : 's'}</span>
           </summary>
+          ${i.duplicateIdLabel ? `<p class="issue-desc"><strong>Duplicated IDs:</strong> <span class="mono">${escapeHtml(i.duplicateIdLabel)}</span></p>` : ''}
+          ${!i.duplicateIdLabel && i.message && i.message !== i.rule ? `<p class="issue-desc">${escapeHtml(i.message)}</p>` : ''}
           ${i.snippet ? `<p class="issue-desc">${escapeHtml(i.snippet)}</p>` : ''}
           ${i.url ? `<p class="muted issue-url">Found on <span class="mono">${escapeHtml(i.url)}</span></p>` : ''}
         </details>`;

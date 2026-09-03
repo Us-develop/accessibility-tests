@@ -24,6 +24,10 @@
    *   type?: string,
    *   wcag?: string[] | string,
    *   snippet?: string,
+   *   message?: string,
+   *   duplicateIds?: string[],
+   *   duplicateIdLabel?: string,
+   *   occurrenceDetails?: string[],
    *   fixCode?: string,
    *   fixCodeLanguage?: string,
    *   occurrencesTotal?: number,
@@ -535,8 +539,15 @@
               <div style="text-align: left;">
                 <div style="font-weight: 500; font-size: 15px; margin-bottom: 2px;">{item.rule}</div>
                 <div class="muted" style="font-size: 12px;">
-                  {#if item.wcag}WCAG {wcagDisplay(item.wcag)} · {/if}<span class="mono">{item.id}</span>
-                  {#if item.url} · {item.url}{/if}
+                  {#if item.duplicateIdLabel}
+                    Duplicated: <span class="mono">{item.duplicateIdLabel}</span>
+                    {#if item.wcag} · WCAG {wcagDisplay(item.wcag)}{/if}
+                    {#if item.url} · {item.url}{/if}
+                  {:else}
+                    {#if item.message && item.message !== item.rule}{item.message} · {/if}
+                    {#if item.wcag}WCAG {wcagDisplay(item.wcag)} · {/if}<span class="mono">{item.id}</span>
+                    {#if item.url} · {item.url}{/if}
+                  {/if}
                 </div>
               </div>
               {#if variant !== 'compact'}
@@ -634,7 +645,12 @@
                 <div style="padding: 10px 14px; border: 1px solid var(--border-subtle); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
                   <div>
                     <div class="mono" style="font-size: 12px; font-weight: 500;">{r.rule}</div>
-                    <div class="muted" style="font-size: 11px;">{r.occurrences} occurrence{r.occurrences === 1 ? '' : 's'} · {r.pages.length} page{r.pages.length === 1 ? '' : 's'}</div>
+                    <div class="muted" style="font-size: 11px;">
+                      {#if r.duplicateIdLabel}
+                        Duplicated: <span class="mono">{r.duplicateIdLabel}</span> ·
+                      {/if}
+                      {r.occurrences} occurrence{r.occurrences === 1 ? '' : 's'} · {r.pages.length} page{r.pages.length === 1 ? '' : 's'}
+                    </div>
                   </div>
                   <SeverityBadge severity={severityForBadge(r.severity)} />
                 </div>
@@ -702,6 +718,13 @@
             {#if selected.wcag}WCAG {wcagDisplay(selected.wcag)} · {/if}<span class="mono">{selected.id}</span>
           </div>
           <h2 style="font-size: 28px; margin-bottom: 14px;">{selected.rule}</h2>
+          {#if selected.duplicateIdLabel}
+            <p style="font-size: 15px; margin: 0 0 16px;">
+              Duplicated IDs: <span class="mono" style="font-weight: 600;">{selected.duplicateIdLabel}</span>
+            </p>
+          {:else if selected.message && selected.message !== selected.rule}
+            <p class="muted" style="font-size: 14px; margin: 0 0 16px;">{selected.message}</p>
+          {/if}
 
           <div class="dash-drawer-stats">
             <div class="mini-stat">
@@ -736,6 +759,15 @@
                 <CodeBlock code={selected.fixCode} language={selected.fixCodeLanguage || 'text'} />
               </div>
             {/if}
+          {/if}
+
+          {#if selected.occurrenceDetails && selected.occurrenceDetails.length > 0}
+            <h4 class="drawer-h4">Where they appear</h4>
+            <div class="affected-pages" style="margin-bottom: 24px;">
+              {#each selected.occurrenceDetails as desc, i (`${desc}-${i}`)}
+                <span class="mono affected-page">{desc}</span>
+              {/each}
+            </div>
           {/if}
 
           {#if fixUrls.length > 0}

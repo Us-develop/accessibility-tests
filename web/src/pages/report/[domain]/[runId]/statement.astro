@@ -129,6 +129,7 @@ function nextYear(s: string): string {
                     {errorIssues.slice(0, 12).map((i) => (
                       <li style="font-size: 14px;">
                         <strong>{i.rule || i.id}</strong>
+                        {i.duplicateIdLabel ? ` — ${i.duplicateIdLabel}` : ''}
                         {i.wcag ? <Fragment> <span class="muted">(WCAG {i.wcag})</span></Fragment> : null}
                         {i.snippet ? ` — ${i.snippet}` : ''}
                       </li>

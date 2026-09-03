@@ -23,6 +23,13 @@ import {
   MANUAL_TODO_GROUPS,
 } from './manual-checklist.js';
 import { scoreFromReport, buildDisabilities } from './report-buckets.js';
+import {
+  formatOccurrenceDescriptor,
+  idsFromCustomResult,
+  idsFromAxeViolation,
+  formatDuplicateIdList,
+  duplicateIdSnippet,
+} from './duplicate-ids.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUTPUT_DIR = join(__dirname, 'reports');
@@ -102,30 +109,6 @@ function escapeHtml(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-/** Format occurrence as "tag#id.class1.class2" (element type, id if present, class(es) if present). */
-function formatOccurrenceDescriptor(occ) {
-  if (occ.tag != null) {
-    const tag = (occ.tag || 'element').toLowerCase();
-    const idPart = occ.id ? '#' + String(occ.id) : '';
-    const classPart = occ.className ? '.' + String(occ.className).trim().split(/\s+/).filter(Boolean).join('.') : '';
-    const label = occ.occurrenceLabel || '';
-    return tag + idPart + classPart + label;
-  }
-  if (occ.html) {
-    const html = String(occ.html);
-    const tagMatch = html.match(/<([a-z][a-z0-9]*)/i);
-    const tag = tagMatch ? tagMatch[1].toLowerCase() : 'element';
-    const idMatch = html.match(/\bid=["']([^"']*)["']/i);
-    const id = idMatch ? idMatch[1] : '';
-    const classMatch = html.match(/\bclass=["']([^"']*)["']/i);
-    const rawClass = classMatch ? classMatch[1] : '';
-    const classPart = rawClass ? '.' + rawClass.trim().split(/\s+/).filter(Boolean).join('.') : '';
-    return tag + (id ? '#' + id : '') + classPart;
-  }
-  const sel = occ.selector || (Array.isArray(occ.target) ? occ.target[0] : occ.target);
-  return sel != null ? String(sel) : '—';
 }
 
 function severityRank(level) {
@@ -258,6 +241,8 @@ export function generateReport(reportData, options = {}) {
   (reportData.customResults || []).forEach((r) => {
     if (r.status === 'fail' || r.status === 'warn') {
       const rem = getRemediation(r.id, null);
+      const duplicateIds = idsFromCustomResult(r);
+      const snippet = duplicateIdSnippet(duplicateIds, rem.snippet);
       fixOrderItems.push({
         type: 'custom',
         rule: r.rule,
@@ -265,12 +250,19 @@ export function generateReport(reportData, options = {}) {
         url: r.url,
         status: r.status,
         ...rem,
+        snippet,
+        message: r.message || '',
+        duplicateIds,
+        duplicateIdLabel: formatDuplicateIdList(duplicateIds),
+        occurrenceDetails: (r.occurrences || []).map((occ) => formatOccurrenceDescriptor(occ)),
       });
     }
   });
   Object.entries(reportData.axeResults || {}).forEach(([url, data]) => {
     (data.violations || []).forEach((v) => {
       const rem = getRemediation(null, v.id);
+      const duplicateIds = idsFromAxeViolation(v);
+      const snippet = duplicateIdSnippet(duplicateIds, rem.snippet);
       fixOrderItems.push({
         type: 'violation',
         rule: v.help,
@@ -278,6 +270,10 @@ export function generateReport(reportData, options = {}) {
         url,
         status: 'violation',
         ...rem,
+        snippet,
+        message: v.help || '',
+        duplicateIds,
+        duplicateIdLabel: formatDuplicateIdList(duplicateIds),
       });
     });
   });
