@@ -82,15 +82,46 @@ Monitoring:
 - `GET /api/report/:domain/:runId/urls` → list URLs stored for a run.
 - `GET /api/audits/:domain/runs` → every run for a given domain (used by the history page).
 
-### Deployment (later — hosted Node)
+### Publish to the live VPS (OVH)
 
-When you deploy to **your own** Node-capable server (VPS, managed Node hosting, etc.):
+The production app is on the OVH VPS. It pulls the **`development`** branch. Log in as **`debian`**, then run git, `npm`, and the Astro build as **`deploy`**. The systemd unit is **`accessibility.service`** (not `accessibility-tests`). There is no pm2.
 
-1. Install dependencies and Chromium on that machine (`npm install`, `npx playwright install chromium`).
-2. Start with `npm start` or `node server.js` behind HTTPS as appropriate.
-3. Set **`APP_PASSWORD`** (and keep auth enabled), **`PORT`** if the platform requires it, optional **`DATABASE_URL`**, optional **`PUBLIC_BASE_URL`** for absolute links/emails.
+SSH:
 
-The app **must** be served by Node — the UI is rendered by the Astro shell at `web/` and is built with `npm run build`. Static hosting alone is not enough (`/api/run`, `/api/status/:domain/:runId`, reports).
+```bash
+ssh debian@135.125.226.198
+```
+
+Then paste:
+
+```bash
+cd /srv/accessibility-tests
+
+sudo -u deploy git fetch origin
+sudo -u deploy git checkout development
+sudo -u deploy git pull --ff-only origin development
+sudo -u deploy git log -1 --oneline
+
+# Only if package-lock.json or web/package-lock.json changed:
+# sudo -H -u deploy npm ci
+# sudo -H -u deploy npm ci --prefix web
+
+sudo -H -u deploy npm run build --prefix web
+sudo systemctl restart accessibility.service
+sudo systemctl status accessibility.service --no-pager
+```
+
+Do **not** run `npm ci` or `npm run build` as `debian` — `node_modules` is owned by `deploy` and you will get `EACCES`. After restart, hard-refresh the site.
+
+If the unit name is ever in doubt:
+
+```bash
+systemctl list-units --type=service --state=running | grep -iE 'access|node|wcag'
+```
+
+The app **must** be served by Node — the UI is rendered by the Astro shell at `web/` and is built with `npm run build --prefix web`. Static hosting alone is not enough (`/api/run`, `/api/status/:domain/:runId`, reports).
+
+For a new machine (not a routine publish): install dependencies and Chromium (`npm ci`, `npx playwright install chromium`), set **`APP_PASSWORD`** (keep auth enabled), **`PORT`** if needed, optional **`DATABASE_URL`**, optional **`PUBLIC_BASE_URL`**.
 
 **Different origin for HTML vs API:** If users load the form from another host, add inside `<head>` of the Astro layout (`web/src/layouts/Layout.astro`):
 

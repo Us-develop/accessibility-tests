@@ -1,0 +1,23 @@
+---
+description: After shipping to development, always offer the live OVH VPS publish commands
+alwaysApply: true
+---
+
+# Live VPS publish commands
+
+The production site is the **OVH VPS**, not Combell. It tracks Git branch **`development`**.
+
+Whenever the user would need these commands — code merged or pushed to `development`, they ask how to go live, they ask to publish, or a change will not show until the VPS is updated — paste the copy-paste block from **README.md → “Publish to the live VPS (OVH)”**. Do not wait for them to ask if the work is meant to be live.
+
+Facts (do not invent alternatives):
+
+- SSH user: `debian@135.125.226.198`
+- App path: `/srv/accessibility-tests`
+- Git and npm user: `deploy` (`sudo -u deploy` / `sudo -H -u deploy`)
+- Branch: `development`
+- Build: `sudo -H -u deploy npm run build --prefix web`
+- Restart: `sudo systemctl restart accessibility.service`
+- Never `npm` as `debian` (EACCES on `node_modules`)
+- Never `accessibility-tests.service` or `pm2`
+
+If `package-lock.json` or `web/package-lock.json` changed, also include `npm ci` as `deploy` (root and `web/`).
