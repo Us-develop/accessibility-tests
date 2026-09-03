@@ -5,7 +5,8 @@
 
 /** Head links: favicon + fonts (Bricolage Grotesque + Public Sans). */
 export const REPORT_BRAND_HEAD = `
-  <link rel="icon" href="https://about-us.be/wp-content/smush-avif/2025/09/logo-us-32x32.png.avif" sizes="32x32">
+  <link rel="icon" href="/assets/us-favicon.png" type="image/png" sizes="88x88">
+  <link rel="apple-touch-icon" href="/assets/us-favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Public+Sans:ital,wght@0,300..900;1,400..700&display=swap" rel="stylesheet">

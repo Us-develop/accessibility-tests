@@ -35,7 +35,8 @@ const gateLocked = authMode === 'required' && !staffHint;
     )}
     <title>{title}</title>
     {appBaseMeta ? <meta name="accessibility-app-base" content={appBaseMeta} /> : null}
-    <link rel="icon" href="/assets/us-logo.png" type="image/png" />
+    <link rel="icon" href="/assets/us-favicon.png" type="image/png" sizes="88x88" />
+    <link rel="apple-touch-icon" href="/assets/us-favicon.png" />
     <link rel="stylesheet" href="/styles/tokens.css" />
     <link rel="stylesheet" href="/styles/app.css" />
     <script is:inline>
