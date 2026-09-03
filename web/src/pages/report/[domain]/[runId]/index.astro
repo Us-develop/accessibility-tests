@@ -80,7 +80,6 @@ for (const p of [manualProgressPath, domainManualPath]) {
   } catch {}
 }
 const manualTotal = MANUAL_TODO_GROUPS.reduce((s, g) => s + g.items.length, 0);
-const manualPercent = manualTotal === 0 ? 0 : Math.round((manualChecked.length / manualTotal) * 100);
 
 const dashboardProps = {
   primaryHost: payload.primaryHost,
@@ -112,7 +111,8 @@ const dashboardProps = {
   manualGroups: MANUAL_TODO_GROUPS,
   manualInitialChecked: manualChecked,
   manualTotal,
-  manualPercent,
+  autoPassed: payload.scoreBreakdown?.passed ?? 0,
+  autoApplicable: payload.scoreBreakdown?.applicable ?? 0,
   coveredScCount: payload.coveredScCount ?? 0,
   wcagAaCount: payload.wcagAaCount ?? 56,
 };

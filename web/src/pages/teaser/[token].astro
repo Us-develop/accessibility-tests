@@ -98,7 +98,8 @@ if (!isValidGuestToken(token)) {
             manualGroups: MANUAL_TODO_GROUPS,
             manualInitialChecked: [],
             manualTotal,
-            manualPercent: 0,
+            autoPassed: payload.scoreBreakdown?.passed ?? 0,
+            autoApplicable: payload.scoreBreakdown?.applicable ?? 0,
             coveredScCount: payload.coveredScCount ?? 0,
             locked: true,
           };

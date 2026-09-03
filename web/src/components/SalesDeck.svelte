@@ -10,6 +10,9 @@
    *   companyName: string,
    *   auditDate: string,
    *   scoreClamp: number,
+   *   combinedScore?: number,
+   *   manualChecked?: number,
+   *   manualTotal?: number,
    *   previousScore: number | null,
    *   pagesScanned: number,
    *   rulesChecked: number,
@@ -30,6 +33,9 @@
     companyName,
     auditDate,
     scoreClamp,
+    combinedScore = scoreClamp,
+    manualChecked = 0,
+    manualTotal = 0,
     previousScore = null,
     pagesScanned,
     rulesChecked,
@@ -144,24 +150,31 @@
           <div class="slide-pad score-grid">
             <div>
               <span class="eyebrow"><span class="dot"></span>The bottom line</span>
-              <h2 class="score-h2">Automated score <span class="grad-text">{scoreClamp}/100</span>.</h2>
+              <h2 class="score-h2">Two scores.</h2>
               <p class="score-p">
+                Without the checklist: <strong>{scoreClamp}/100</strong>.
+                With {manualChecked}/{manualTotal} manual items verified: <strong>{combinedScore}/100</strong>.
                 {#if delta != null}
-                  That's <strong>{delta >= 0 ? `+${delta}` : delta}</strong> {delta >= 0 ? 'points up from' : 'points below'} your last scan —
+                  Automated score is <strong>{delta >= 0 ? `+${delta}` : delta}</strong> {delta >= 0 ? 'from' : 'below'} your last scan.
                 {/if}
-                this is a ratio of automated checks, not WCAG or EAA conformance.
+                Neither is WCAG or EAA conformance.
               </p>
-              <div style="display: flex; gap: 10px;">
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                 {#if delta != null}
                   <span class="tag {delta >= 0 ? 'tag-success' : 'tag-error'}" style="font-size: 14px; padding: 8px 14px;">
-                    {delta >= 0 ? `↑ +${delta}` : `↓ ${delta}`} since last scan
+                    {delta >= 0 ? `↑ +${delta}` : `↓ ${delta}`} automated since last scan
                   </span>
                 {/if}
                 <span class="tag tag-outline" style="font-size: 14px; padding: 8px 14px;">Not a legal sign-off</span>
               </div>
             </div>
-            <div style="display: flex; justify-content: center;">
-              <ScoreDonut score={scoreClamp} size={deckDonutSize} stroke={32} threshold={80} label="Automated" />
+            <div class="score-donuts">
+              <div class="score-donut-block">
+                <ScoreDonut score={scoreClamp} size={Math.min(deckDonutSize, 240)} stroke={24} threshold={80} label="Without" />
+              </div>
+              <div class="score-donut-block">
+                <ScoreDonut score={combinedScore} size={Math.min(deckDonutSize, 240)} stroke={24} threshold={80} label="With checks" />
+              </div>
             </div>
           </div>
         </section>
@@ -461,6 +474,18 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: clamp(32px, 6vw, 80px);
+    align-items: center;
+  }
+  .score-donuts {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: clamp(16px, 4vw, 32px);
+    flex-wrap: wrap;
+  }
+  .score-donut-block {
+    display: flex;
+    flex-direction: column;
     align-items: center;
   }
   .score-h2 {

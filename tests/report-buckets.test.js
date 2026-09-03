@@ -4,6 +4,8 @@ import {
   wcagFromAxeTags,
   principleFromWcag,
   scoreFromReport,
+  scoreBreakdownFromReport,
+  combinedScoreWithManual,
   buildPrinciples,
   buildDisabilities,
   buildPlainEnglishStats,
@@ -60,6 +62,25 @@ describe('scoreFromReport', () => {
 
   it('returns null when nothing scored', () => {
     assert.equal(scoreFromReport({ urls: [], customResults: [], axeResults: {} }), null);
+  });
+});
+
+describe('combinedScoreWithManual', () => {
+  it('keeps the automated score when there are no manual items', () => {
+    const breakdown = scoreBreakdownFromReport(sampleReport);
+    assert.equal(combinedScoreWithManual(breakdown, 0, 0), 25);
+  });
+
+  it('treats unticked manual items as extra applicable checks', () => {
+    const breakdown = scoreBreakdownFromReport(sampleReport);
+    // 1 passed / (4 automated + 23 manual) = 4
+    assert.equal(combinedScoreWithManual(breakdown, 0, 23), 4);
+  });
+
+  it('raises the combined score as manual items are verified', () => {
+    const breakdown = scoreBreakdownFromReport(sampleReport);
+    // (1 + 23) / (4 + 23) = 89
+    assert.equal(combinedScoreWithManual(breakdown, 23, 23), 89);
   });
 });
 

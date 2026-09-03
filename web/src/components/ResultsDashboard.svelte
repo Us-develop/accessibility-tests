@@ -61,7 +61,8 @@
    *   manualGroups: ManualGroup[],
    *   manualInitialChecked: string[],
    *   manualTotal: number,
-   *   manualPercent: number,
+   *   autoPassed?: number,
+   *   autoApplicable?: number,
    *   coveredScCount?: number,
    *   wcagAaCount?: number,
    *   scoreAvailable?: boolean,
@@ -98,7 +99,8 @@
     manualGroups,
     manualInitialChecked = [],
     manualTotal,
-    manualPercent: manualPercentInitial = 0,
+    autoPassed = 0,
+    autoApplicable = 0,
     coveredScCount = 0,
     wcagAaCount = 56,
     scoreAvailable = true,
@@ -113,7 +115,6 @@
   let selected = $state(null);
   let showFixCode = $state(false);
   let copyState = $state('idle');
-  let manualPercent = $state(manualPercentInitial);
   let manualChecked = $state(manualInitialChecked.length);
 
   const passing = $derived(severityCounts.errors === 0);
@@ -145,6 +146,12 @@
   const totalChecks = $derived(severityCounts.errors + severityCounts.warnings + severityCounts.passed + severityCounts.notice);
   const pctPassed = $derived(totalChecks > 0 ? Math.round((severityCounts.passed / totalChecks) * 100) : 0);
   const scoreDelta = $derived(previousScore != null ? scoreClamp - previousScore : null);
+  const combinedScore = $derived.by(() => {
+    const applicable = autoApplicable + manualTotal;
+    if (applicable <= 0) return scoreClamp;
+    const checked = Math.max(0, Math.min(manualChecked, manualTotal));
+    return Math.max(0, Math.min(100, Math.round(((autoPassed + checked) / applicable) * 100)));
+  });
 
   /** Pie segments for the issue distribution donut on the Overview tab. */
   const distSegs = $derived([
@@ -219,7 +226,6 @@
   }
 
   function handleManualProgress(info) {
-    manualPercent = info.percent;
     manualChecked = info.checked.length;
   }
 
@@ -259,23 +265,26 @@
             <details class="score-info" aria-label="How is the score calculated?">
               <summary aria-label="Score formula">i</summary>
               <div class="score-info-pop">
-                <strong style="display:block; margin-bottom: 6px;">Automated score formula</strong>
-                <div style="font-family: var(--font-mono); font-size: 12px; line-height: 1.5;">
-                  score = applicable passed checks<br />
-                  &nbsp; ÷ (passed + failed + warnings + axe violations)<br />
-                  &nbsp; × 100
-                </div>
-                <p style="margin: 8px 0 0; font-size: 12px;">
-                  This is <strong>not</strong> a WCAG or EAA conformance score. Vacuous passes (for example “no meta refresh”) are excluded. Axe “needs review” items are listed separately. The <strong>Manual checks</strong> donut is checklist progress, not a human audit unless those items were actually completed.
+                <strong style="display:block; margin-bottom: 6px;">Two scores</strong>
+                <p style="margin: 0 0 8px; font-size: 12px;">
+                  <strong>Without manual checks</strong> is automated only:
+                  passed machine checks ÷ applicable machine checks × 100.
+                </p>
+                <p style="margin: 0 0 8px; font-size: 12px;">
+                  <strong>With manual checks</strong> adds the {manualTotal} human items to that pool.
+                  Ticked items count as passed; unticked items stay in the denominator.
+                </p>
+                <p style="margin: 0; font-size: 12px;">
+                  Neither figure is a WCAG or EAA conformance score. Vacuous passes are excluded. Axe “needs review” is listed separately.
                 </p>
               </div>
             </details>
           </div>
-          <div class="hero-score-label">Automated score</div>
+          <div class="hero-score-label">Without manual checks</div>
         </div>
         <div class="hero-score-block">
-          <ScoreDonut score={manualPercent} size={130} stroke={12} threshold={100} label="" />
-          <div class="hero-score-label">Checklist progress · {manualChecked}/{manualTotal}</div>
+          <ScoreDonut score={combinedScore} size={130} stroke={12} {threshold} label="" />
+          <div class="hero-score-label">With manual checks · {manualChecked}/{manualTotal}</div>
         </div>
       </div>
       <div>
@@ -283,7 +292,7 @@
           <span class="dot" style="background: {passing ? '#8DFFB7' : '#FFB985'};"></span>
           {automatedLabel} &middot; scanned {auditedDate}
         </span>
-        <h1 class="hero-title">{primaryHost} &middot; {scoreAvailable ? `${scoreClamp}/100` : 'n/a'}</h1>
+        <h1 class="hero-title">{primaryHost} &middot; {scoreAvailable ? `${scoreClamp} / ${combinedScore}` : 'n/a'}</h1>
         <div class="hero-meta">
           <span><strong style="color: #FFB985;">{severityCounts.errors}</strong> errors</span>
           <span><strong style="color: #F3AAFF;">{severityCounts.warnings}</strong> warnings</span>
@@ -296,6 +305,7 @@
         </div>
         <p class="hero-disclaimer">
           Automated scan only — not a WCAG 2.2 AA or EAA conformance claim.
+          The first score ignores the checklist; the second includes it.
           <a class="link" href="/limitations" style="color: inherit; text-decoration: underline;">What we can and cannot test</a>
           {#if !locked}
             ·
@@ -365,11 +375,16 @@
         <!-- BIG STATS -->
         <div class="stat-strip" class:compact={variant === 'compact'} class:detailed={variant === 'detailed'}>
           <div class="stat" style="background: var(--us-lilac); color: var(--us-lilac-text);">
-            <div class="stat-label">Automated score</div>
+            <div class="stat-label">Without manual checks</div>
             <div class="stat-value">{scoreClamp}<span class="stat-suffix">/100</span></div>
             {#if scoreDelta != null}
               <div class="stat-sub">{scoreDelta >= 0 ? `+${scoreDelta}` : scoreDelta} since last audit</div>
             {/if}
+          </div>
+          <div class="stat" style="background: var(--us-mint); color: var(--us-mint-text);">
+            <div class="stat-label">With manual checks</div>
+            <div class="stat-value">{combinedScore}<span class="stat-suffix">/100</span></div>
+            <div class="stat-sub">{manualChecked}/{manualTotal} verified</div>
           </div>
           <div class="stat" style="background: #FCE8E5; color: var(--us-peach-text);">
             <div class="stat-label">Errors</div>
@@ -379,7 +394,7 @@
             <div class="stat-label">Warnings</div>
             <div class="stat-value">{severityCounts.warnings}</div>
           </div>
-          <div class="stat" style="background: var(--us-mint); color: var(--us-mint-text);">
+          <div class="stat" style="background: var(--us-sky); color: var(--us-sky-text);">
             <div class="stat-label">Passed checks</div>
             <div class="stat-value">{severityCounts.passed.toLocaleString()}</div>
           </div>
@@ -626,7 +641,8 @@
         </div>
       {:else if tab === 'manual'}
         <p class="muted" style="font-size: 14px; margin-bottom: 16px; max-width: 720px;">
-          Checklist progress only — these items are <strong>not performed</strong> until someone ticks them. They do not change the automated score.
+          Checklist items are not done until someone ticks them. They do not change the automated score.
+          They <strong>do</strong> change the “with manual checks” score: each tick is an extra passed check in that pool.
           See <button type="button" class="link" style="background:none;border:0;padding:0;font:inherit;cursor:pointer;" onclick={gotoCoverage}>WCAG coverage</button> for which success criteria these checks can cover.
         </p>
         <ManualChecklist

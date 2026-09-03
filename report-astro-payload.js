@@ -16,7 +16,7 @@ import {
 } from './report-summary.js';
 import { WCAG_22_AA_COUNT } from './wcag-sc-labels.js';
 import {
-  scoreFromReport,
+  scoreBreakdownFromReport,
   countAxeIncomplete,
   buildPrinciples,
   buildDisabilities,
@@ -177,7 +177,8 @@ export function buildAstroMainReportPayload(reportData) {
   );
   const totalAxeIncomplete = countAxeIncomplete(reportData);
   const total = pass + fail + warn + info + totalAxeViolations + totalAxePasses;
-  const score = scoreFromReport(reportData);
+  const scoreBreakdown = scoreBreakdownFromReport(reportData);
+  const score = scoreBreakdown.score;
   const scoreClamp = score == null ? 0 : score;
 
   const principles = buildPrinciples(reportData);
@@ -312,6 +313,7 @@ export function buildAstroMainReportPayload(reportData) {
     primaryHost,
     auditedDate,
     scoreClamp,
+    scoreBreakdown,
     scoreAvailable: score != null,
     principles,
     disabilities,
