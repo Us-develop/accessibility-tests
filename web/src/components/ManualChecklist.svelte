@@ -28,9 +28,24 @@
 
   /** @type {ReturnType<typeof setTimeout> | null} */
   let pendingSave = null;
+  let dirty = false;
+  let saveGeneration = 0;
 
   function emitProgress() {
     onProgress?.({ checked: [...checkedSet], total, percent });
+  }
+
+  function persistChecked(checked) {
+    return fetch(
+      `/api/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/manual-progress`,
+      {
+        method: 'PUT',
+        credentials: 'same-origin',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checked }),
+      }
+    );
   }
 
   async function saveNow() {
@@ -39,24 +54,18 @@
       clearTimeout(pendingSave);
       pendingSave = null;
     }
+    const payload = [...checkedSet];
+    const gen = ++saveGeneration;
     saving = true;
     saveError = '';
     try {
-      const res = await fetch(
-        `/api/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/manual-progress`,
-        {
-          method: 'PUT',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ checked: [...checkedSet] }),
-        }
-      );
+      const res = await persistChecked(payload);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `Save failed (${res.status})`);
       }
       const data = await res.json().catch(() => null);
-      if (data && Array.isArray(data.checked)) {
+      if (!dirty && gen === saveGeneration && data && Array.isArray(data.checked)) {
         checkedSet = new Set(data.checked);
         emitProgress();
       }
@@ -80,6 +89,7 @@
 
   function toggle(id) {
     if (readOnly) return;
+    dirty = true;
     const next = new Set(checkedSet);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -90,22 +100,28 @@
   onMount(() => {
     emitProgress();
     if (readOnly || !domain || !runId) return undefined;
-    fetch(`/api/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/manual-progress`, {
-      credentials: 'same-origin',
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data && Array.isArray(data.checked) && data.checked.length > 0) {
-          checkedSet = new Set(data.checked);
-          emitProgress();
-        }
+    const loadTimer = setTimeout(() => {
+      fetch(`/api/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/manual-progress`, {
+        credentials: 'same-origin',
       })
-      .catch(() => {});
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (dirty) return;
+          if (data && Array.isArray(data.checked)) {
+            checkedSet = new Set(data.checked);
+            emitProgress();
+          }
+        })
+        .catch(() => {});
+    }, 80);
     return () => {
+      clearTimeout(loadTimer);
       if (pendingSave) {
         clearTimeout(pendingSave);
         pendingSave = null;
-        saveNow();
+      }
+      if (dirty && domain && runId) {
+        persistChecked([...checkedSet]).catch(() => {});
       }
     };
   });
