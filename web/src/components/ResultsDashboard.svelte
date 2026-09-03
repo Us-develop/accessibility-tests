@@ -265,17 +265,19 @@
             <details class="score-info" aria-label="How is the score calculated?">
               <summary aria-label="Score formula">i</summary>
               <div class="score-info-pop">
-                <strong style="display:block; margin-bottom: 6px;">Two scores</strong>
+                <strong style="display:block; margin-bottom: 6px;">When is it 100?</strong>
                 <p style="margin: 0 0 8px; font-size: 12px;">
-                  <strong>Without manual checks</strong> is automated only:
-                  passed machine checks ÷ applicable machine checks × 100.
+                  <strong>Without manual checks</strong> hits 100 only when a new scan has
+                  no automated errors, warnings, or axe violations. Fix the issues, then re-run.
                 </p>
                 <p style="margin: 0 0 8px; font-size: 12px;">
-                  <strong>With manual checks</strong> adds the {manualTotal} human items to that pool.
-                  Ticked items count as passed; unticked items stay in the denominator.
+                  <strong>With manual checks</strong> hits 100 only when that automated score is
+                  already 100 <em>and</em> all {manualTotal} human items are ticked.
+                  Ticking the list while errors remain cannot reach 100.
                 </p>
                 <p style="margin: 0; font-size: 12px;">
-                  Neither figure is a WCAG or EAA conformance score. Vacuous passes are excluded. Axe “needs review” is listed separately.
+                  100 on either donut is still not WCAG 2.2 AA or EAA conformance — automation
+                  and this checklist do not cover every success criterion.
                 </p>
               </div>
             </details>
@@ -304,8 +306,9 @@
           <span>{pagesScanned ?? urls.length} pages · automated WCAG 2.2 AA checks</span>
         </div>
         <p class="hero-disclaimer">
-          Automated scan only — not a WCAG 2.2 AA or EAA conformance claim.
-          The first score ignores the checklist; the second includes it.
+          Automated scores only — not a WCAG 2.2 AA or EAA conformance claim.
+          100 without checks = all automated issues gone on a re-scan.
+          100 with checks = that, plus every manual item ticked.
           <a class="link" href="/limitations" style="color: inherit; text-decoration: underline;">What we can and cannot test</a>
           {#if !locked}
             ·
@@ -641,8 +644,9 @@
         </div>
       {:else if tab === 'manual'}
         <p class="muted" style="font-size: 14px; margin-bottom: 16px; max-width: 720px;">
-          Checklist items are not done until someone ticks them. They do not change the automated score.
-          They <strong>do</strong> change the “with manual checks” score: each tick is an extra passed check in that pool.
+          Checklist ticks do not change the automated score. They raise the “with manual checks”
+          score. That second score reaches 100 only if a re-scan has no automated errors/warnings
+          <strong>and</strong> every item here is ticked. Ticking is not a full WCAG audit.
           See <button type="button" class="link" style="background:none;border:0;padding:0;font:inherit;cursor:pointer;" onclick={gotoCoverage}>WCAG coverage</button> for which success criteria these checks can cover.
         </p>
         <ManualChecklist
