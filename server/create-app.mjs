@@ -7,7 +7,7 @@ import express from 'express';
 import multer from 'multer';
 import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { sendRunNotificationEmail, createSmtpTransport, sendAccessRequestEmail, sendLeadEmail } from '../server-email.js';
 import { REPORTS_BASE } from './paths.js';
@@ -16,7 +16,7 @@ import { mergeReportData } from './report-data.js';
 import { readJsonIfExists, isValidReportId } from './fs-utils.js';
 import { listAuditEntries, listRunsForDomain } from './audit-list.js';
 import { getFtpConfig, ftpDownload, ftpUpload, persistReportArtifactsToFtp } from './ftp.js';
-import { normalizeManualProgress } from '../manual-checklist.js';
+import { normalizeManualProgress, resolvePersistedManualChecked } from '../manual-checklist.js';
 import { analysisCacheBody, anthropicConfigured, buildWcagAnalysisPayload } from '../anthropic-wcag-analysis.js';
 import {
   newRunId,
@@ -84,6 +84,7 @@ let APP_USERNAME = 'root';
 let APP_PASSWORD = 'root';
 let AUTH_COOKIE_SAMESITE = 'Lax';
 const AUTH_COOKIE_NAME = 'wcag_access';
+const AUTH_UI_COOKIE_NAME = 'wcag_ui';
 const AUTH_COOKIE_SECURE = parseBooleanEnv('AUTH_COOKIE_SECURE', false);
 
 // In-memory run status (running, done, error)
@@ -535,18 +536,22 @@ function credentialsValid(user, pass) {
 function setAuthCookie(res) {
   const useSecure = AUTH_COOKIE_SAMESITE === 'None' ? true : AUTH_COOKIE_SECURE;
   const securePart = useSecure ? '; Secure' : '';
-  res.setHeader(
-    'Set-Cookie',
-    `${AUTH_COOKIE_NAME}=1; Path=/; HttpOnly; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=43200${securePart}`
-  );
+  const session = `${AUTH_COOKIE_NAME}=1; Path=/; HttpOnly; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=43200${securePart}`;
+  const ui = `${AUTH_UI_COOKIE_NAME}=1; Path=/; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=43200${securePart}`;
+  res.append('Set-Cookie', session);
+  res.append('Set-Cookie', ui);
 }
 
 function clearAuthCookie(res) {
   const useSecure = AUTH_COOKIE_SAMESITE === 'None' ? true : AUTH_COOKIE_SECURE;
   const securePart = useSecure ? '; Secure' : '';
-  res.setHeader(
+  res.append(
     'Set-Cookie',
     `${AUTH_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=0${securePart}`
+  );
+  res.append(
+    'Set-Cookie',
+    `${AUTH_UI_COOKIE_NAME}=; Path=/; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=0${securePart}`
   );
 }
 
@@ -1634,6 +1639,15 @@ async function finalizeSuccessfulRun({
     }
   }
   if (existsSync(reportPath)) {
+    const runManualPath = join(reportDir, 'manual-progress.json');
+    const domainManualPath = join(domainDirOf(domain), 'manual-progress.json');
+    if (!existsSync(runManualPath) && existsSync(domainManualPath)) {
+      try {
+        copyFileSync(domainManualPath, runManualPath);
+      } catch (err) {
+        console.error(`[run ${domain}/${runId}] Could not seed manual progress:`, err.message);
+      }
+    }
     persistReportArtifactsToFtp(domain, runId, FTP_CONFIG).catch((err) => {
       console.error(`[run ${domain}/${runId}] FTP persistence failed:`, err.message);
     });
@@ -1654,30 +1668,58 @@ async function resolveLatestRunIdForDomain(domain) {
   return latestRunIdOnDisk(domain);
 }
 
+function parseManualProgressRaw(raw) {
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw);
+    return { checked: normalizeManualProgress(data.checked) };
+  } catch {
+    return null;
+  }
+}
+
+async function readManualProgressRaw(localPath, remotePath) {
+  let raw = null;
+  try {
+    raw = await ftpDownload(FTP_CONFIG, remotePath);
+  } catch {}
+  if (!raw && existsSync(localPath)) raw = readFileSync(localPath, 'utf8');
+  return { raw, exists: !!raw || existsSync(localPath) };
+}
+
 async function readManualProgress(domain, runId) {
-  if (dbPool) {
+  const runPath = join(runDirOf(domain, runId), 'manual-progress.json');
+  const domainPath = join(domainDirOf(domain), 'manual-progress.json');
+
+  const runSnap = await readManualProgressRaw(runPath, `${domain}/${runId}/manual-progress.json`);
+  const runParsed = parseManualProgressRaw(runSnap.raw);
+
+  let dbChecked = null;
+  if (!runSnap.exists && dbPool) {
     try {
       const dbRun = await dbGetRun(domain, runId);
       if (dbRun && dbRun.manualProgress && Array.isArray(dbRun.manualProgress.checked)) {
-        return { checked: normalizeManualProgress(dbRun.manualProgress.checked) };
+        dbChecked = dbRun.manualProgress.checked;
       }
     } catch (err) {
       console.error(`[run ${domain}/${runId}] DB manual-progress lookup failed:`, err.message);
     }
   }
-  const filePath = join(runDirOf(domain, runId), 'manual-progress.json');
-  let raw = null;
-  try {
-    raw = await ftpDownload(FTP_CONFIG, `${domain}/${runId}/manual-progress.json`);
-  } catch {}
-  if (!raw && existsSync(filePath)) raw = readFileSync(filePath, 'utf8');
-  if (!raw) return { checked: [] };
-  try {
-    const data = JSON.parse(raw);
-    return { checked: normalizeManualProgress(data.checked) };
-  } catch {
-    return { checked: [] };
+
+  let domainChecked = null;
+  if (!runSnap.exists) {
+    const domainSnap = await readManualProgressRaw(domainPath, `${domain}/manual-progress.json`);
+    domainChecked = parseManualProgressRaw(domainSnap.raw)?.checked ?? null;
   }
+
+  return {
+    checked: resolvePersistedManualChecked({
+      runFileExists: runSnap.exists,
+      runChecked: runParsed?.checked,
+      dbChecked,
+      domainChecked,
+    }),
+  };
 }
 
 app.get('/api/report/:domain/:runId/manual-progress', async (req, res) => {
@@ -1769,7 +1811,12 @@ async function writeManualProgress(domain, runId, checked) {
     }
     if (!existsSync(reportDir)) mkdirSync(reportDir, { recursive: true });
     writeFileSync(filePath, JSON.stringify({ checked: normalized }), 'utf8');
+    const domainFolder = domainDirOf(domain);
+    if (!existsSync(domainFolder)) mkdirSync(domainFolder, { recursive: true });
+    const domainPath = join(domainFolder, 'manual-progress.json');
+    writeFileSync(domainPath, JSON.stringify({ checked: normalized }), 'utf8');
     ftpUpload(FTP_CONFIG, filePath, `${domain}/${runId}/manual-progress.json`).catch(() => {});
+    ftpUpload(FTP_CONFIG, domainPath, `${domain}/manual-progress.json`).catch(() => {});
     return { status: 200, ok: true, checked: normalized };
   } catch (err) {
     return { status: 500, error: err.message };

@@ -112,7 +112,10 @@ export const prerender = false;
           <hr class="hr" style="margin: 0;" />
 
           <details class="statement-details" style="margin: 0; border: 0; border-radius: 0; border-top: 1px solid var(--border-subtle);">
-            <summary style="padding: 20px 32px;">Accessibility statement fields (optional)</summary>
+            <summary style="padding: 20px 32px;" title="Show optional statement fields">
+              <span class="statement-summary-icon" aria-hidden="true"></span>
+              Accessibility statement fields (optional)
+            </summary>
             <div class="statement-inner" style="padding: 0 32px 28px 56px;">
               <p class="statement-note">
                 Used to pre-fill the generated accessibility statement. All optional.
@@ -382,9 +385,43 @@ export const prerender = false;
     list-style: none;
     cursor: pointer;
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
   .statement-details summary::-webkit-details-marker {
     display: none;
+  }
+  .statement-summary-icon {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 1px solid var(--border-default);
+    background: var(--us-white);
+    display: grid;
+    place-items: center;
+    position: relative;
+  }
+  .statement-summary-icon::before,
+  .statement-summary-icon::after {
+    content: '';
+    position: absolute;
+    background: var(--fg-1);
+    border-radius: 1px;
+  }
+  .statement-summary-icon::before {
+    width: 10px;
+    height: 2px;
+  }
+  .statement-summary-icon::after {
+    width: 2px;
+    height: 10px;
+    transition: transform 0.18s ease, opacity 0.18s ease;
+  }
+  .statement-details[open] .statement-summary-icon::after {
+    transform: scaleY(0);
+    opacity: 0;
   }
   .statement-fields-grid {
     display: grid;

@@ -54,6 +54,16 @@ html, body {
   text-decoration: none;
   cursor: pointer;
 }
+.brand-logo {
+  height: 28px;
+  width: auto;
+  display: block;
+  flex-shrink: 0;
+  border-radius: 6px;
+}
+.brand-text {
+  white-space: nowrap;
+}
 .brand-dot {
   width: 28px;
   height: 28px;
@@ -475,8 +485,8 @@ html, body {
     font-size: 16px;
     min-width: 0;
   }
-  .brand small {
-    display: none;
+  .brand-text {
+    font-size: 15px;
   }
   .app-header-chrome .muted {
     display: none;

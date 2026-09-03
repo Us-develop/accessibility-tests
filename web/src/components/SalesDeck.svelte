@@ -1,4 +1,5 @@
 <script>
+  import { navigate } from 'astro:transitions/client';
   import { onMount, onDestroy } from 'svelte';
   import ScoreDonut from './ScoreDonut.svelte';
   import TrendChart from './TrendChart.svelte';
@@ -9,6 +10,9 @@
    *   companyName: string,
    *   auditDate: string,
    *   scoreClamp: number,
+   *   combinedScore?: number,
+   *   manualChecked?: number,
+   *   manualTotal?: number,
    *   previousScore: number | null,
    *   pagesScanned: number,
    *   rulesChecked: number,
@@ -21,6 +25,7 @@
    *   legalName?: string,
    *   domain: string,
    *   runId: string,
+   *   autoPrint?: boolean,
    * }}
    */
   let {
@@ -28,6 +33,9 @@
     companyName,
     auditDate,
     scoreClamp,
+    combinedScore = scoreClamp,
+    manualChecked = 0,
+    manualTotal = 0,
     previousScore = null,
     pagesScanned,
     rulesChecked,
@@ -40,6 +48,7 @@
     legalName = '',
     domain,
     runId,
+    autoPrint = false,
   } = $props();
 
   const delta = $derived(previousScore != null ? scoreClamp - previousScore : null);
@@ -70,6 +79,16 @@
     }
     resizeDeckDonut();
     window.addEventListener('resize', resizeDeckDonut);
+    if (autoPrint) {
+      const triggerPrint = () => {
+        window.setTimeout(() => window.print(), 450);
+      };
+      if (document.fonts?.ready) {
+        document.fonts.ready.then(triggerPrint).catch(triggerPrint);
+      } else {
+        triggerPrint();
+      }
+    }
     return () => window.removeEventListener('resize', resizeDeckDonut);
   });
 
@@ -78,7 +97,7 @@
   });
 
   function gotoStatement() {
-    window.location.href = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/statement`;
+    navigate(`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/statement`);
   }
 </script>
 
@@ -109,8 +128,8 @@
           <div class="slide-pad cover-grid">
             <div class="cover-row">
               <span class="cover-brand">
-                <span class="brand-dot" style="width:32px;height:32px;"></span>
-                <span style="font-size: 18px;">Us · Accessibility</span>
+                <img class="cover-logo" src="/assets/us-logo.png" width="83" height="40" alt="Us" />
+                <span style="font-size: 18px;">Accessibility</span>
               </span>
               <span style="opacity: 0.5; font-size: 14px;">{auditDate}</span>
             </div>
@@ -131,24 +150,32 @@
           <div class="slide-pad score-grid">
             <div>
               <span class="eyebrow"><span class="dot"></span>The bottom line</span>
-              <h2 class="score-h2">Automated score <span class="grad-text">{scoreClamp}/100</span>.</h2>
+              <h2 class="score-h2">Two scores.</h2>
               <p class="score-p">
+                Without the checklist: <strong>{scoreClamp}/100</strong> (100 after a re-scan with no automated errors or warnings).
+                With {manualChecked}/{manualTotal} manual items verified: <strong>{combinedScore}/100</strong>
+                (100 only if the automated score is already 100 and every item is ticked).
                 {#if delta != null}
-                  That's <strong>{delta >= 0 ? `+${delta}` : delta}</strong> {delta >= 0 ? 'points up from' : 'points below'} your last scan —
+                  Automated score is <strong>{delta >= 0 ? `+${delta}` : delta}</strong> {delta >= 0 ? 'from' : 'below'} your last scan.
                 {/if}
-                this is a ratio of automated checks, not WCAG or EAA conformance.
+                Neither is WCAG or EAA conformance.
               </p>
-              <div style="display: flex; gap: 10px;">
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                 {#if delta != null}
                   <span class="tag {delta >= 0 ? 'tag-success' : 'tag-error'}" style="font-size: 14px; padding: 8px 14px;">
-                    {delta >= 0 ? `↑ +${delta}` : `↓ ${delta}`} since last scan
+                    {delta >= 0 ? `↑ +${delta}` : `↓ ${delta}`} automated since last scan
                   </span>
                 {/if}
                 <span class="tag tag-outline" style="font-size: 14px; padding: 8px 14px;">Not a legal sign-off</span>
               </div>
             </div>
-            <div style="display: flex; justify-content: center;">
-              <ScoreDonut score={scoreClamp} size={deckDonutSize} stroke={32} threshold={80} label="Automated" />
+            <div class="score-donuts">
+              <div class="score-donut-block">
+                <ScoreDonut score={scoreClamp} size={Math.min(deckDonutSize, 240)} stroke={24} threshold={80} label="Without" />
+              </div>
+              <div class="score-donut-block">
+                <ScoreDonut score={combinedScore} size={Math.min(deckDonutSize, 240)} stroke={24} threshold={80} label="With checks" />
+              </div>
             </div>
           </div>
         </section>
@@ -260,7 +287,7 @@
         <!-- 8: closing -->
         <section data-screen-label="Slide 08 - Closing" class="slide slide-cream">
           <div class="slide-pad closing-pad">
-            <div class="brand-dot" style="width: 80px; height: 80px; margin-bottom: 32px;"></div>
+            <img class="closing-logo" src="/assets/us-logo.png" width="83" height="40" alt="Us" />
             <h2 class="closing-h2">
               Let's make it work for <em class="grad-text">everyone.</em>
             </h2>
@@ -404,6 +431,20 @@
     font-family: var(--font-display);
     font-weight: 700;
   }
+  .cover-logo {
+    height: 32px;
+    width: auto;
+    display: block;
+    border-radius: 8px;
+    background: var(--us-cream);
+  }
+  .closing-logo {
+    height: 48px;
+    width: auto;
+    display: block;
+    border-radius: 10px;
+    margin-bottom: 32px;
+  }
   .cover-title {
     color: var(--us-cream);
     font-size: clamp(36px, 8vw, 96px);
@@ -434,6 +475,18 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: clamp(32px, 6vw, 80px);
+    align-items: center;
+  }
+  .score-donuts {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: clamp(16px, 4vw, 32px);
+    flex-wrap: wrap;
+  }
+  .score-donut-block {
+    display: flex;
+    flex-direction: column;
     align-items: center;
   }
   .score-h2 {
@@ -685,6 +738,25 @@
     }
     .plain-big {
       font-size: clamp(44px, 10vw, 72px);
+    }
+  }
+
+  @media print {
+    .deck-head {
+      display: none !important;
+    }
+    .deck-shell {
+      min-height: auto !important;
+      padding: 0 !important;
+      background: none !important;
+    }
+    .deck-stage-wrap {
+      aspect-ratio: auto !important;
+      max-height: none !important;
+      height: auto !important;
+      overflow: visible !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
     }
   }
 </style>

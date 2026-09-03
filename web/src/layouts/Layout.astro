@@ -1,4 +1,5 @@
 ---
+import { ClientRouter } from 'astro:transitions';
 import LoginModal from '../components/LoginModal.astro';
 
 interface Props {
@@ -17,12 +18,16 @@ const devApiBase =
 /** In dev, prefer direct API URL so multipart POST skips Vite proxy; production still uses PUBLIC_APP_BASE. */
 const appBaseMeta =
   import.meta.env.DEV && devApiBase ? devApiBase : publicAppBase || devApiBase;
+/** Non-HttpOnly hint cookie so SSR can skip the login overlay on staff navigations. */
+const staffHint = Astro.cookies.get('wcag_ui')?.value === '1';
+const gateLocked = authMode === 'required' && !staffHint;
 ---
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class={staffHint ? 'wcag-staff' : undefined}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <ClientRouter />
     {indexable ? (
       <meta name="robots" content="index, follow" />
     ) : (
@@ -30,13 +35,19 @@ const appBaseMeta =
     )}
     <title>{title}</title>
     {appBaseMeta ? <meta name="accessibility-app-base" content={appBaseMeta} /> : null}
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%2319191B'/%3E%3C/svg%3E" />
+    <link rel="icon" href="/assets/us-logo.png" type="image/png" />
     <link rel="stylesheet" href="/styles/tokens.css" />
     <link rel="stylesheet" href="/styles/app.css" />
-  </head>
-  <body data-wcag-auth={authMode}>
     <script is:inline>
       (function () {
+        try {
+          var staff = false;
+          try { staff = sessionStorage.getItem('wcagStaff') === '1'; } catch (e) {}
+          if (!staff && typeof document.cookie === 'string' && /(^|; )wcag_ui=1(;|$)/.test(document.cookie)) {
+            staff = true;
+          }
+          if (staff) document.documentElement.classList.add('wcag-staff');
+        } catch (e) {}
         var m = document.querySelector('meta[name="accessibility-app-base"]');
         var base = (m && m.getAttribute('content')) ? m.getAttribute('content').trim().replace(/\/$/, '') : '';
         globalThis.wcagApiUrl = function (path) {
@@ -52,20 +63,40 @@ const appBaseMeta =
         };
       })();
     </script>
+  </head>
+  <body data-wcag-auth={authMode}>
     <div
       id="wcag-main"
       class="wcag-main-shell"
-      hidden={authMode === 'required'}
-      inert={authMode === 'required' ? true : undefined}
+      hidden={gateLocked}
+      inert={gateLocked ? true : undefined}
     >
       <slot />
     </div>
-    <div id="wcag-session-bar" class="wcag-session-bar" hidden>
+    <div id="wcag-session-bar" class="wcag-session-bar" hidden={!staffHint}>
       <button type="button" id="wcag-logout-btn" class="wcag-session-logout" aria-label="Log out">
         Log out
       </button>
     </div>
-    <LoginModal startLocked={authMode === 'required'} />
+    <LoginModal startLocked={gateLocked} />
+    <script is:inline>
+      (function () {
+        if (!document.documentElement.classList.contains('wcag-staff')) return;
+        var main = document.getElementById('wcag-main');
+        if (main) {
+          main.hidden = false;
+          main.removeAttribute('inert');
+        }
+        var overlay = document.getElementById('wcag-login-modal');
+        if (overlay && overlay.getAttribute('data-start-locked') === 'true') {
+          overlay.hidden = true;
+          overlay.setAttribute('aria-hidden', 'true');
+        }
+        var bar = document.getElementById('wcag-session-bar');
+        if (bar) bar.hidden = false;
+        document.body.classList.add('is-staff');
+      })();
+    </script>
     <noscript>
       <div class="wcag-noscript">
         {authMode === 'guest-ok'
@@ -74,6 +105,33 @@ const appBaseMeta =
       </div>
     </noscript>
     <style is:global>
+      html.wcag-staff #wcag-login-modal {
+        display: none !important;
+      }
+      html.wcag-staff #wcag-main.wcag-main-shell[hidden] {
+        display: block !important;
+      }
+      @keyframes wcag-fade-out {
+        to { opacity: 0; }
+      }
+      @keyframes wcag-fade-in {
+        from { opacity: 0; }
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        ::view-transition-old(root) {
+          animation: 160ms ease-out both wcag-fade-out;
+        }
+        ::view-transition-new(root) {
+          animation: 220ms ease-in both wcag-fade-in;
+        }
+      }
+      @media print {
+        .app-header,
+        .wcag-session-bar,
+        .wcag-login-overlay {
+          display: none !important;
+        }
+      }
       .wcag-session-bar {
         position: fixed;
         top: 0;

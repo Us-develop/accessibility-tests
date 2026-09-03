@@ -10,6 +10,8 @@ import { runDir, isValidRunId } from '../../../../../../server/run-ids.js';
 import { listRunsForDomain } from '../../../../../../server/audit-list.js';
 import { dbPool } from '../../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../../server/paths.js';
+import { combinedScoreWithManual } from '../../../../../../report-buckets.js';
+import { MANUAL_TODO_GROUPS, normalizeManualProgress } from '../../../../../../manual-checklist.js';
 
 export const prerender = false;
 
@@ -30,6 +32,21 @@ if (!existsSync(resultsPath)) {
 
 const json = JSON.parse(readFileSync(resultsPath, 'utf8'));
 const payload = buildAstroMainReportPayload(json);
+
+const manualProgressPath = join(reportDir, 'manual-progress.json');
+const domainManualPath = join(reportDir, '..', 'manual-progress.json');
+let manualChecked: string[] = [];
+for (const p of [manualProgressPath, domainManualPath]) {
+  if (manualChecked.length > 0) break;
+  if (!existsSync(p)) continue;
+  try {
+    const raw = JSON.parse(readFileSync(p, 'utf8'));
+    manualChecked = normalizeManualProgress(raw?.checked);
+  } catch {}
+}
+const manualTotal = MANUAL_TODO_GROUPS.reduce((s, g) => s + g.items.length, 0);
+const combinedScore =
+  combinedScoreWithManual(payload.scoreBreakdown, manualChecked.length, manualTotal) ?? payload.scoreClamp;
 
 const statementMetaPath = join(reportDir, 'statement-meta.json');
 let statementMeta: any = null;
@@ -80,6 +97,9 @@ const deckProps = {
   companyName,
   auditDate: payload.auditedDate,
   scoreClamp: payload.scoreClamp,
+  combinedScore,
+  manualChecked: manualChecked.length,
+  manualTotal,
   previousScore,
   pagesScanned: payload.urls.length,
   rulesChecked: payload.rulesTable.length,
@@ -95,13 +115,15 @@ const deckProps = {
   domain,
   runId,
 };
+
+const autoPrint = Astro.url.searchParams.get('print') === '1';
 ---
 
 <Layout title={`Sales report · ${companyName}`}>
   <div class="app-shell">
     <AppHeader domain={domain} runId={runId} active="sales" />
     <main class="app-main">
-      <SalesDeck client:only="svelte" {...deckProps} />
+      <SalesDeck client:only="svelte" {...deckProps} autoPrint={autoPrint} />
     </main>
   </div>
 </Layout>

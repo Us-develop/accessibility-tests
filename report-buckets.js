@@ -246,13 +246,14 @@ export function effortToPoints(effort) {
 }
 
 /**
- * Automated score 0–100, or null when nothing scored.
- * Excludes info rows and vacuous passes. Axe incomplete is not treated as a pass.
+ * Passed / applicable counts for the automated score (same rules as scoreFromReport).
  * @param {object} reportData
- * @returns {number | null}
+ * @returns {{ passed: number, applicable: number, score: number | null }}
  */
-export function scoreFromReport(reportData) {
-  if (!reportData || typeof reportData !== 'object') return null;
+export function scoreBreakdownFromReport(reportData) {
+  if (!reportData || typeof reportData !== 'object') {
+    return { passed: 0, applicable: 0, score: null };
+  }
   let pass = 0;
   let fail = 0;
   let warn = 0;
@@ -269,9 +270,42 @@ export function scoreFromReport(reportData) {
     axeViolations += Number((data && data.violations && data.violations.length) || 0);
     axePasses += Number((data && data.passes && data.passes.length) || 0);
   }
-  const den = pass + fail + warn + axeViolations + axePasses;
-  if (den === 0) return null;
-  return Math.max(0, Math.min(100, Math.round(((pass + axePasses) / den) * 100)));
+  const passed = pass + axePasses;
+  const applicable = pass + fail + warn + axeViolations + axePasses;
+  if (applicable === 0) return { passed: 0, applicable: 0, score: null };
+  return {
+    passed,
+    applicable,
+    score: Math.max(0, Math.min(100, Math.round((passed / applicable) * 100))),
+  };
+}
+
+/**
+ * Automated score 0–100, or null when nothing scored.
+ * Excludes info rows and vacuous passes. Axe incomplete is not treated as a pass.
+ * @param {object} reportData
+ * @returns {number | null}
+ */
+export function scoreFromReport(reportData) {
+  return scoreBreakdownFromReport(reportData).score;
+}
+
+/**
+ * Score that treats each manual checklist item as an extra applicable check.
+ * Ticked items count as passed; unticked items stay in the denominator.
+ * @param {{ passed?: number, applicable?: number } | null | undefined} breakdown
+ * @param {number} manualChecked
+ * @param {number} manualTotal
+ * @returns {number | null}
+ */
+export function combinedScoreWithManual(breakdown, manualChecked, manualTotal) {
+  const autoPassed = Number(breakdown?.passed) || 0;
+  const autoApplicable = Number(breakdown?.applicable) || 0;
+  const total = Math.max(0, Number(manualTotal) || 0);
+  const checked = Math.max(0, Math.min(Number(manualChecked) || 0, total));
+  const applicable = autoApplicable + total;
+  if (applicable === 0) return null;
+  return Math.max(0, Math.min(100, Math.round(((autoPassed + checked) / applicable) * 100)));
 }
 
 export function countAxeIncomplete(reportData) {
