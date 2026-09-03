@@ -111,7 +111,10 @@ export function formatOccurrenceDescriptor(occ) {
     const classMatch = html.match(/\bclass=["']([^"']*)["']/i);
     const rawClass = classMatch ? classMatch[1] : '';
     const classPart = rawClass ? '.' + rawClass.trim().split(/\s+/).filter(Boolean).join('.') : '';
-    return tag + (id ? '#' + id : '') + classPart;
+    const compact = tag + (id ? '#' + id : '') + classPart;
+    const sel = occ.selector || (Array.isArray(occ.target) ? occ.target[0] : occ.target);
+    if (sel && !id && !rawClass.trim()) return `${compact} — ${sel}`;
+    return compact;
   }
   const sel = occ.selector || (Array.isArray(occ.target) ? occ.target[0] : occ.target);
   return sel != null ? String(sel) : '—';

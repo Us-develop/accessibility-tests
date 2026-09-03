@@ -549,6 +549,14 @@
                     {#if item.url} · {item.url}{/if}
                   {/if}
                 </div>
+                {#if item.occurrenceDetails && item.occurrenceDetails.length > 0}
+                  <div class="mono muted" style="font-size: 11px; margin-top: 4px;">
+                    {item.occurrenceDetails.slice(0, 2).join(' · ')}
+                    {#if item.occurrenceDetails.length > 2}
+                      · +{item.occurrenceDetails.length - 2} more
+                    {/if}
+                  </div>
+                {/if}
               </div>
               {#if variant !== 'compact'}
                 <span class="tag tag-outline" style="font-size: 11px;">{urlsForFix(item).length || 1} page{urlsForFix(item).length === 1 ? '' : 's'}</span>
@@ -762,7 +770,7 @@
           {/if}
 
           {#if selected.occurrenceDetails && selected.occurrenceDetails.length > 0}
-            <h4 class="drawer-h4">Where they appear</h4>
+            <h4 class="drawer-h4">Where they appear ({selected.occurrenceDetails.length})</h4>
             <div class="affected-pages" style="margin-bottom: 24px;">
               {#each selected.occurrenceDetails as desc, i (`${desc}-${i}`)}
                 <span class="mono affected-page">{desc}</span>

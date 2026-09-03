@@ -2,6 +2,8 @@
  * Chapter 4: Responsive Design and Zoom
  * Based on: module-responsive-zoom-checklist.pdf
  */
+import { pageCollect } from './describe-els.js';
+
 export const chapterId = 'responsive';
 
 export async function runResponsiveChecks(page, viewport = { width: 320, height: 568 }) {
@@ -10,13 +12,26 @@ export async function runResponsiveChecks(page, viewport = { width: 320, height:
   // Test at 320px width (WCAG 2.1 reflow requirement)
   await page.setViewportSize(viewport);
 
-  const overflowChecks = await page.evaluate(() => {
+  const overflowChecks = await pageCollect(page, function collector(describeEls, limit) {
     const body = document.body;
     const html = document.documentElement;
     const docWidth = Math.max(body.scrollWidth, html.scrollWidth);
     const viewWidth = window.innerWidth;
     const hasHorizontalScroll = docWidth > viewWidth + 10;
-    return { docWidth, viewWidth, hasHorizontalScroll };
+    const overflowing = [];
+    if (hasHorizontalScroll) {
+      const nodes = document.querySelectorAll('body *');
+      for (const el of nodes) {
+        if (overflowing.length >= limit) break;
+        if (el.scrollWidth > viewWidth + 10) overflowing.push(el);
+      }
+    }
+    return {
+      docWidth,
+      viewWidth,
+      hasHorizontalScroll,
+      occurrences: describeEls(overflowing, limit),
+    };
   });
 
   results.push({
@@ -27,6 +42,7 @@ export async function runResponsiveChecks(page, viewport = { width: 320, height:
       ? `Horizontal overflow: content ${overflowChecks.docWidth}px vs viewport ${overflowChecks.viewWidth}px (more than 10px)`
       : 'No meaningful horizontal overflow at 320px',
     chapter: chapterId,
+    occurrences: overflowChecks.hasHorizontalScroll ? overflowChecks.occurrences : [],
   });
 
   // Viewport meta (mobile zoom)
@@ -50,6 +66,7 @@ export async function runResponsiveChecks(page, viewport = { width: 320, height:
         : `Viewport may restrict zoom: ${viewportMeta.content}`
       : 'No viewport meta tag',
     chapter: chapterId,
+    occurrences: viewportMeta.present && viewportMeta.allowsZoom ? [] : [{ tag: 'meta', id: '', className: '' }],
   });
 
   return results;

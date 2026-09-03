@@ -27,9 +27,9 @@ import {
   idsFromCustomResult,
   idsFromAxeViolation,
   formatDuplicateIdList,
-  formatOccurrenceDescriptor,
   duplicateIdSnippet,
 } from './duplicate-ids.js';
+import { occurrenceDetailsFromCustom, occurrenceDetailsFromAxe } from './occurrence-details.js';
 
 
 function severityRank(level) {
@@ -152,7 +152,7 @@ export function buildAstroMainReportPayload(reportData) {
         message: r.message || '',
         duplicateIds,
         duplicateIdLabel: formatDuplicateIdList(duplicateIds),
-        occurrenceDetails: (r.occurrences || []).map((occ) => formatOccurrenceDescriptor(occ)),
+        occurrenceDetails: occurrenceDetailsFromCustom(r),
       }));
     }
   });
@@ -172,6 +172,7 @@ export function buildAstroMainReportPayload(reportData) {
         message: v.help || '',
         duplicateIds,
         duplicateIdLabel: formatDuplicateIdList(duplicateIds),
+        occurrenceDetails: occurrenceDetailsFromAxe(v),
       }));
     });
   });

@@ -2,6 +2,8 @@
  * Chapter 1: Semantic Structure and Navigation
  * Based on: module-semantic-checklist.pdf
  */
+import { pageCollect } from './describe-els.js';
+
 export const chapterId = 'semantics';
 
 export async function runSemanticChecks(page) {
@@ -15,6 +17,7 @@ export async function runSemanticChecks(page) {
     status: title && title.trim().length > 0 ? 'pass' : 'fail',
     message: title ? `Title: "${title.substring(0, 80)}${title.length > 80 ? '...' : ''}"` : 'Page has no title',
     chapter: chapterId,
+    occurrences: title && title.trim().length > 0 ? [] : [{ tag: 'title', id: '', className: '' }],
   });
 
   // Primary language
@@ -28,6 +31,7 @@ export async function runSemanticChecks(page) {
     status: htmlLang && htmlLang.trim().length > 0 ? 'pass' : 'fail',
     message: htmlLang ? `lang="${htmlLang}"` : 'Missing or empty lang attribute on <html>',
     chapter: chapterId,
+    occurrences: htmlLang && htmlLang.trim().length > 0 ? [] : [{ tag: 'html', id: '', className: '' }],
   });
 
   // Landmarks
@@ -47,32 +51,37 @@ export async function runSemanticChecks(page) {
   });
 
   // Single main landmark
-  const mainCount = await page.evaluate(() => {
-    return document.querySelectorAll('main, [role="main"]').length;
+  const mainData = await pageCollect(page, function collector(describeEls, limit) {
+    const mains = Array.from(document.querySelectorAll('main, [role="main"]'));
+    return { count: mains.length, occurrences: describeEls(mains, limit) };
   });
   results.push({
     id: 'single-main',
     rule: 'Page SHOULD have only one main landmark',
-    status: mainCount === 1 ? 'pass' : mainCount === 0 ? 'warn' : 'fail',
-    message: `Found ${mainCount} main landmark(s)`,
+    status: mainData.count === 1 ? 'pass' : mainData.count === 0 ? 'warn' : 'fail',
+    message: `Found ${mainData.count} main landmark(s)`,
     chapter: chapterId,
+    occurrences: mainData.count === 1 ? [] : mainData.occurrences,
   });
 
   // Headings
-  const headingStructure = await page.evaluate(() => {
+  const headingStructure = await pageCollect(page, function collector(describeEls, limit) {
     const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
-    const levels = headings.map((h) => parseInt(h.tagName.charAt(1)));
-    const skips = levels.filter((lev, i) => i > 0 && lev - levels[i - 1] > 1);
-    const h1Count = levels.filter((l) => l === 1).length;
+    const levels = headings.map((h) => parseInt(h.tagName.charAt(1), 10));
+    const skipEls = headings.filter((h, i) => i > 0 && levels[i] - levels[i - 1] > 1);
+    const h1s = headings.filter((h) => h.tagName === 'H1');
     const main = document.querySelector('main, [role="main"]');
     const firstInMain = main ? main.querySelector('h1, h2, h3, h4, h5, h6') : null;
     const firstInMainIsH1 = !firstInMain || firstInMain.tagName === 'H1';
     return {
       total: headings.length,
-      skips: skips.length,
-      h1Count,
+      skips: skipEls.length,
+      h1Count: h1s.length,
       firstInMainIsH1,
       hasHeadingInMain: !!firstInMain,
+      skipOccurrences: describeEls(skipEls, limit),
+      h1Occurrences: describeEls(h1s, limit),
+      firstInMainOccurrences: firstInMain && !firstInMainIsH1 ? describeEls([firstInMain], limit) : [],
     };
   });
   results.push({
@@ -81,6 +90,12 @@ export async function runSemanticChecks(page) {
     status: headingStructure.skips === 0 && headingStructure.h1Count >= 1 ? 'pass' : 'warn',
     message: `Headings: ${headingStructure.total} total, ${headingStructure.h1Count} h1(s), ${headingStructure.skips} level skip(s)`,
     chapter: chapterId,
+    occurrences:
+      headingStructure.skips > 0
+        ? headingStructure.skipOccurrences
+        : headingStructure.h1Count === 0
+          ? []
+          : [],
   });
   if (headingStructure.hasHeadingInMain) {
     results.push({
@@ -91,11 +106,12 @@ export async function runSemanticChecks(page) {
         ? 'First heading in main is h1'
         : 'First heading in main is not h1',
       chapter: chapterId,
+      occurrences: headingStructure.firstInMainOccurrences || [],
     });
   }
 
   // Links (accessible name: aria-labelledby, aria-label, content incl. img alt)
-  const linkChecks = await page.evaluate(() => {
+  const linkChecks = await pageCollect(page, function collector(describeEls, limit) {
     function accNameForLink(el) {
       const labelledBy = el.getAttribute('aria-labelledby');
       if (labelledBy) {
@@ -136,15 +152,21 @@ export async function runSemanticChecks(page) {
       }
       return walk(el).replace(/\s+/g, ' ').trim();
     }
-    const links = document.querySelectorAll('a[href]');
+    const links = Array.from(document.querySelectorAll('a[href]'));
     const emptyText = [];
     const genericText = [];
-    links.forEach((link, i) => {
+    links.forEach((link) => {
       const accessibleName = accNameForLink(link);
-      if (!accessibleName) emptyText.push(i + 1);
-      if (/^(click here|read more|link|here|learn more)$/i.test(accessibleName)) genericText.push(accessibleName);
+      if (!accessibleName) emptyText.push(link);
+      if (/^(click here|read more|link|here|learn more)$/i.test(accessibleName)) genericText.push(link);
     });
-    return { total: links.length, emptyText: emptyText.length, genericText: genericText.length };
+    return {
+      total: links.length,
+      emptyText: emptyText.length,
+      genericText: genericText.length,
+      emptyOccurrences: describeEls(emptyText, limit),
+      genericOccurrences: describeEls(genericText, limit),
+    };
   });
   results.push({
     id: 'link-text',
@@ -154,6 +176,7 @@ export async function runSemanticChecks(page) {
       ? `${linkChecks.emptyText} link(s) with no accessible text`
       : `${linkChecks.total} links checked`,
     chapter: chapterId,
+    occurrences: linkChecks.emptyText > 0 ? linkChecks.emptyOccurrences : [],
   });
 
   if (linkChecks.genericText > 0) {
@@ -163,6 +186,7 @@ export async function runSemanticChecks(page) {
       status: 'warn',
       message: `${linkChecks.genericText} link(s) with generic text (e.g. "click here")`,
       chapter: chapterId,
+      occurrences: linkChecks.genericOccurrences,
     });
   }
 
@@ -180,15 +204,19 @@ export async function runSemanticChecks(page) {
   });
 
   // Tables
-  const tableChecks = await page.evaluate(() => {
-    const tables = document.querySelectorAll('table');
-    let noTh = 0;
-    let noCaption = 0;
-    tables.forEach((table) => {
-      if (!table.querySelector('th')) noTh++;
-      if (!table.querySelector('caption') && !table.getAttribute('aria-label') && !table.getAttribute('summary')) noCaption++;
-    });
-    return { total: tables.length, noTh, noCaption };
+  const tableChecks = await pageCollect(page, function collector(describeEls, limit) {
+    const tables = Array.from(document.querySelectorAll('table'));
+    const noTh = tables.filter((table) => !table.querySelector('th'));
+    const noCaption = tables.filter(
+      (table) =>
+        !table.querySelector('caption') && !table.getAttribute('aria-label') && !table.getAttribute('summary')
+    );
+    return {
+      total: tables.length,
+      noTh: noTh.length,
+      noCaption: noCaption.length,
+      noThOccurrences: describeEls(noTh, limit),
+    };
   });
   if (tableChecks.total > 0) {
     results.push({
@@ -197,14 +225,15 @@ export async function runSemanticChecks(page) {
       status: tableChecks.noTh === 0 ? 'pass' : 'fail',
       message: tableChecks.noTh > 0 ? `${tableChecks.noTh} table(s) without th` : 'All tables have headers',
       chapter: chapterId,
+      occurrences: tableChecks.noTh > 0 ? tableChecks.noThOccurrences : [],
     });
   }
 
   // Lists
-  const listChecks = await page.evaluate(() => {
+  const listChecks = await pageCollect(page, function collector(describeEls, limit) {
     const listItems = document.querySelectorAll('li');
-    const orphanLi = document.querySelectorAll('li:not(ul li):not(ol li)');
-    return { total: listItems.length, orphanLi: orphanLi.length };
+    const orphanLi = Array.from(document.querySelectorAll('li:not(ul li):not(ol li)'));
+    return { total: listItems.length, orphanLi: orphanLi.length, occurrences: describeEls(orphanLi, limit) };
   });
   if (listChecks.orphanLi > 0) {
     results.push({
@@ -213,18 +242,18 @@ export async function runSemanticChecks(page) {
       status: 'fail',
       message: `${listChecks.orphanLi} orphan li element(s) found`,
       chapter: chapterId,
+      occurrences: listChecks.occurrences,
     });
   }
 
   // Iframes
-  const iframeChecks = await page.evaluate(() => {
-    const iframes = document.querySelectorAll('iframe');
-    const noTitle = [];
-    iframes.forEach((iframe, i) => {
+  const iframeChecks = await pageCollect(page, function collector(describeEls, limit) {
+    const iframes = Array.from(document.querySelectorAll('iframe'));
+    const noTitle = iframes.filter((iframe) => {
       const title = iframe.getAttribute('title');
-      if (!title || title.trim() === '') noTitle.push(i + 1);
+      return !title || title.trim() === '';
     });
-    return { total: iframes.length, noTitle: noTitle.length };
+    return { total: iframes.length, noTitle: noTitle.length, occurrences: describeEls(noTitle, limit) };
   });
   if (iframeChecks.total > 0) {
     results.push({
@@ -233,6 +262,7 @@ export async function runSemanticChecks(page) {
       status: iframeChecks.noTitle === 0 ? 'pass' : 'fail',
       message: iframeChecks.noTitle > 0 ? `${iframeChecks.noTitle} iframe(s) without title` : 'All iframes have titles',
       chapter: chapterId,
+      occurrences: iframeChecks.noTitle > 0 ? iframeChecks.occurrences : [],
     });
   }
 

@@ -111,6 +111,9 @@ export function generateDeveloperAdvice(data, outputDir) {
           ${i.duplicateIdLabel ? `<p class="issue-desc"><strong>Duplicated IDs:</strong> <span class="mono">${escapeHtml(i.duplicateIdLabel)}</span></p>` : ''}
           ${!i.duplicateIdLabel && i.message && i.message !== i.rule ? `<p class="issue-desc">${escapeHtml(i.message)}</p>` : ''}
           ${i.snippet ? `<p class="issue-desc">${escapeHtml(i.snippet)}</p>` : ''}
+          ${(i.occurrenceDetails || []).length
+            ? `<p class="issue-desc"><strong>Where they appear</strong></p><ul class="occ-list">${i.occurrenceDetails.map((d) => `<li class="mono">${escapeHtml(d)}</li>`).join('')}</ul>`
+            : ''}
           ${i.url ? `<p class="muted issue-url">Found on <span class="mono">${escapeHtml(i.url)}</span></p>` : ''}
         </details>`;
     }).join('');
@@ -234,6 +237,8 @@ export function generateDeveloperAdvice(data, outputDir) {
     .summary-meta { font-size: 12px; }
     .summary-effort { font-size: 13px; }
     .issue-desc { font-size: 14px; color: var(--fg-2); margin: 10px 0 6px; line-height: 1.6; }
+    .occ-list { margin: 0 0 10px; padding-left: 18px; font-size: 12px; color: var(--fg-2); }
+    .occ-list li { margin: 2px 0; word-break: break-all; }
     .issue-url { font-size: 13px; }
 
     /* Modal styles */

@@ -30,6 +30,7 @@ import {
   formatDuplicateIdList,
   duplicateIdSnippet,
 } from './duplicate-ids.js';
+import { occurrenceDetailsFromCustom, occurrenceDetailsFromAxe } from './occurrence-details.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUTPUT_DIR = join(__dirname, 'reports');
@@ -254,7 +255,7 @@ export function generateReport(reportData, options = {}) {
         message: r.message || '',
         duplicateIds,
         duplicateIdLabel: formatDuplicateIdList(duplicateIds),
-        occurrenceDetails: (r.occurrences || []).map((occ) => formatOccurrenceDescriptor(occ)),
+        occurrenceDetails: occurrenceDetailsFromCustom(r),
       });
     }
   });
@@ -274,6 +275,7 @@ export function generateReport(reportData, options = {}) {
         message: v.help || '',
         duplicateIds,
         duplicateIdLabel: formatDuplicateIdList(duplicateIds),
+        occurrenceDetails: occurrenceDetailsFromAxe(v),
       });
     });
   });
