@@ -33,15 +33,12 @@
     onProgress?.({ checked: [...checkedSet], total, percent });
   }
 
-  function scheduleSave() {
-    emitProgress();
-    if (readOnly) return;
-    if (pendingSave) clearTimeout(pendingSave);
-    pendingSave = setTimeout(saveNow, 500);
-  }
-
   async function saveNow() {
     if (readOnly || !domain || !runId) return;
+    if (pendingSave) {
+      clearTimeout(pendingSave);
+      pendingSave = null;
+    }
     saving = true;
     saveError = '';
     try {
@@ -71,6 +68,16 @@
     }
   }
 
+  function scheduleSave() {
+    emitProgress();
+    if (readOnly) return;
+    if (pendingSave) clearTimeout(pendingSave);
+    pendingSave = setTimeout(() => {
+      pendingSave = null;
+      saveNow();
+    }, 250);
+  }
+
   function toggle(id) {
     if (readOnly) return;
     const next = new Set(checkedSet);
@@ -81,19 +88,26 @@
   }
 
   onMount(() => {
-    if (readOnly || !domain || !runId) return;
-    if (initialChecked.length > 0) return;
+    emitProgress();
+    if (readOnly || !domain || !runId) return undefined;
     fetch(`/api/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/manual-progress`, {
       credentials: 'same-origin',
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data && Array.isArray(data.checked)) {
+        if (data && Array.isArray(data.checked) && data.checked.length > 0) {
           checkedSet = new Set(data.checked);
           emitProgress();
         }
       })
       .catch(() => {});
+    return () => {
+      if (pendingSave) {
+        clearTimeout(pendingSave);
+        pendingSave = null;
+        saveNow();
+      }
+    };
   });
 
   function formatTime(d) {
@@ -109,7 +123,7 @@
       <h2 style="font-size: 28px; margin-top: 6px;">Manual &amp; assistive-tech checklist</h2>
       <p class="muted" style="max-width: 640px; font-size: 15px;">
         Automated tests can't catch everything. Walk through each item with a real assistive technology and tick when verified.
-        {readOnly ? 'Preview only — progress is not saved on a free snapshot.' : 'Progress is saved per audit run.'}
+        {readOnly ? 'Preview only — progress is not saved on a free snapshot.' : 'Ticks are saved for this domain and restored when you open a scan again.'}
       </p>
     </div>
     <div class="manual-progress-card">

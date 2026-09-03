@@ -87,3 +87,23 @@ export function normalizeManualProgress(checked) {
   }
   return [...out];
 }
+
+/**
+ * Prefer a run-specific snapshot when it exists (including an explicit empty list).
+ * Otherwise keep ticks from the latest DB row, then from the domain-level file
+ * so checks survive new scans and page switches.
+ *
+ * @param {{
+ *   runFileExists?: boolean,
+ *   runChecked?: unknown,
+ *   dbChecked?: unknown,
+ *   domainChecked?: unknown,
+ * }} source
+ * @returns {string[]}
+ */
+export function resolvePersistedManualChecked(source = {}) {
+  if (source.runFileExists) return normalizeManualProgress(source.runChecked);
+  const fromDb = normalizeManualProgress(source.dbChecked);
+  if (fromDb.length > 0) return fromDb;
+  return normalizeManualProgress(source.domainChecked);
+}

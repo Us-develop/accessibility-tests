@@ -1,4 +1,5 @@
 <script>
+  import { navigate } from 'astro:transitions/client';
   import ScoreDonut from './ScoreDonut.svelte';
   import TrendChart from './TrendChart.svelte';
   import SeverityBadge from './SeverityBadge.svelte';
@@ -223,13 +224,16 @@
   }
 
   function gotoCoverage() {
-    window.location.href = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/coverage`;
+    navigate(`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/coverage`);
   }
   function gotoSales() {
-    window.location.href = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/sales`;
+    navigate(`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/sales`);
+  }
+  function exportSalesPdf() {
+    navigate(`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/sales?print=1`);
   }
   function gotoStatement() {
-    window.location.href = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/statement`;
+    navigate(`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/statement`);
   }
   function gotoDeveloper() {
     window.location.href = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/accessibility-developers.html`;
@@ -301,7 +305,7 @@
       </div>
       {#if !locked}
         <div style="display: flex; gap: 8px;">
-          <button class="btn btn-ghost btn-sm hero-btn" onclick={() => window.print()}>
+          <button class="btn btn-ghost btn-sm hero-btn" onclick={exportSalesPdf}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
