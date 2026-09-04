@@ -86,7 +86,7 @@ describe('formatOccurrenceDescriptor', () => {
     );
   });
 
-  it('uses the element html when there is no id or class', () => {
+  it('uses the element html when there is no class', () => {
     assert.equal(
       formatOccurrenceDescriptor({
         tag: 'svg',
@@ -95,6 +95,18 @@ describe('formatOccurrenceDescriptor', () => {
         html: '<svg viewBox="0 0 24 24"><path d="M1 1"/></svg>',
       }),
       '<svg viewBox="0 0 24 24"><path d="M1 1"/></svg>'
+    );
+  });
+
+  it('prefers full markup over svg#id when the element has no class', () => {
+    assert.equal(
+      formatOccurrenceDescriptor({
+        tag: 'svg',
+        id: 'menu',
+        className: '',
+        html: '<svg id="menu" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 15 80"><path d="M1 1"/></svg>',
+      }),
+      '<svg id="menu" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 15 80"><path d="M1 1"/></svg>'
     );
   });
 });
