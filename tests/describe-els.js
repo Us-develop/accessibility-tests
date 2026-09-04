@@ -2,15 +2,15 @@ import { OCCURRENCE_LIMIT } from '../occurrence-details.js';
 
 export { OCCURRENCE_LIMIT };
 
-const HTML_MAX = 400;
-
 /**
  * Compact locators plus markup for DOM elements. Safe to serialize into page.evaluate.
+ * All helpers must stay inside this function: pageCollect ships it with Function.toString().
  * @param {Iterable<Element> | ArrayLike<Element> | null | undefined} list
  * @param {number} [limit]
  * @returns {Array<{ tag: string, id: string, className: string, html: string, selector: string, occurrenceLabel: string }>}
  */
 export function describeEls(list, limit = 40) {
+  const htmlMax = 400;
   const cap = Number.isFinite(limit) ? limit : 40;
   const arr = Array.from(list || []).filter(Boolean);
   const total = arr.length;
@@ -18,7 +18,7 @@ export function describeEls(list, limit = 40) {
   function clip(value) {
     const snippet = String(value || '').replace(/\s+/g, ' ').trim();
     if (!snippet) return '';
-    return snippet.length > HTML_MAX ? `${snippet.slice(0, HTML_MAX - 1)}…` : snippet;
+    return snippet.length > htmlMax ? `${snippet.slice(0, htmlMax - 1)}…` : snippet;
   }
 
   function attrNames(el) {

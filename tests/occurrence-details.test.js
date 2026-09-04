@@ -51,6 +51,22 @@ describe('describeEls', () => {
       '<svg viewBox="0 0 24 24" width="32" aria-hidden="true"><path d="M1 2"/></svg>'
     );
   });
+
+  it('still serializes after Function.toString() (page.evaluate has no module bindings)', () => {
+    const fn = new Function(`return (${describeEls.toString()})`)();
+    const rows = fn([
+      {
+        tagName: 'SVG',
+        id: '',
+        className: '',
+        getAttributeNames: () => ['viewBox', 'width'],
+        getAttribute: (name) => ({ viewBox: '0 0 24 24', width: '32' }[name]),
+        innerHTML: '<path d="M1 2"/>',
+      },
+    ]);
+    assert.match(rows[0].html, /viewBox="0 0 24 24"/);
+    assert.match(rows[0].html, /<path d="M1 2"\/>/);
+  });
 });
 
 describe('occurrenceDetailsFromCustom', () => {
