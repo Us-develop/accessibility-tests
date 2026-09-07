@@ -1,0 +1,75 @@
+---
+description: >-
+  Strict Us design system enforcement. Web profile by default. Only us-tokens.css
+  and us-design-system.md may define styling. Stop and ask if undefined.
+alwaysApply: true
+---
+
+# Us design system — token-only enforcement
+
+This project uses the **Us Design System 3.0**. Treat it as the only source of
+visual styling.
+
+## Default profile: Web (digital)
+
+**Unless the user explicitly asks for a presentation, deck, or `.pptx`:**
+
+- Use the **Web profile**: Owners, IvyPresto Display, Public Sans
+- Load Adobe Fonts kits `dbo7deg` and `rgx8kmt` + `us-tokens.css`
+- Do **not** set `data-us-fonts="presentation"`
+- Do **not** load Archivo / presentation Google Fonts stacks
+- Do **not** apply presentation-only rules from `us-design-system.md` §9
+
+Presentation profile applies **only when the user clearly specifies** that
+deliverable type.
+
+## Source files (required)
+
+- **Values:** `us-tokens.css` (or `design-system/us-tokens.css`) — CSS custom properties from Figma
+- **Rules:** `us-design-system.md` — typography, layout, components, non-negotiables
+- **Figma:** [Us - Design System](https://www.figma.com/design/ObyTQ40kofwt9Ve44lzAQv) — if repo and Figma disagree, Figma wins
+
+If these files are not present in the project, **stop** and ask the user to add
+them from https://github.com/Us-develop/us-design-system before writing UI code.
+
+## Hard rules
+
+1. **Tokens only.** Every colour, spacing, radius, shadow, font size, line height,
+   and font family must come from `us-tokens.css`. Use semantic 02 tokens for UI
+   (`--content-body`, `--button-default-state-*`), not primitive palette entries.
+
+2. **Web fonts by default.** Owners + IvyPresto Display + Public Sans (+ Material
+   Symbols Outlined for UI icons, Font Awesome 6 Brands for social marks only).
+   Never substitute Inter, Roboto, Arial, or other faces as a design choice.
+
+3. **No invented styling.** No raw hex/px, no ad-hoc Tailwind colours, no custom
+   shadows or gradients unless they exist as tokens. No letter-spacing.
+
+4. **One profile per deliverable.** Web for digital products. Presentation (Archivo)
+   only when explicitly requested — never mixed in the same deliverable.
+
+5. **UI icons:** Material Symbols Outlined at weight 300 only. Use the documented
+   icon tokens and sizes. No emoji for status or actions. Font Awesome Brands for
+   social marks only.
+
+6. **Feedback:** Success, error, warning, and info UI must use `--color-system-*`
+   tokens and documented feedback patterns. Do not invent alert colours or emoji
+   status indicators.
+
+## When something is not defined — STOP
+
+If you need a value, component pattern, or style that is **not** in the tokens or
+rules:
+
+- **Do not guess** or pick a “close” token
+- **Do not continue** building that UI until resolved
+- **Ask the user explicitly:** what is missing, why it blocks progress, and whether
+  to update Figma/regenerate tokens, get designer input, or descope
+
+Undefined = blocker. Improvisation is off-brand and not allowed.
+
+## Before shipping UI
+
+Verify: Web profile fonts loaded; no hard-coded colours/fonts/spacing outside
+tokens; `data-us-mode` / `data-us-theme` used where needed; buttons are Shark not
+purple; UI icons are Material Symbols (no emoji); feedback uses `--color-system-*`.

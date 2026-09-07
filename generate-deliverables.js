@@ -134,9 +134,10 @@ export function generateDeveloperAdvice(data, outputDir) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Developer guide · ${escapeHtml(reportData.urls?.[0] || 'Accessibility')}</title>
+  ${REPORT_BRAND_HEAD}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Public+Sans:ital,wght@0,300..900;1,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,300..900;1,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
       --us-cream: #F5F4E5; --us-ink: #19191B; --us-white: #FFFFFF;
@@ -152,10 +153,13 @@ export function generateDeveloperAdvice(data, outputDir) {
       --r-md: 16px; --r-lg: 24px; --r-pill: 500px;
       --shadow-card: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
       --shadow-pop: 0 4px 12px rgba(0,0,0,0.08), 0 16px 40px rgba(0,0,0,0.10);
-      --font-display: "Bricolage Grotesque", system-ui, sans-serif;
-      --font-body: "Public Sans", system-ui, sans-serif;
+      --font-display: var(--typography-font-headings-default-h2-wide, "owners-wide", "Archivo", system-ui, sans-serif);
+      --font-body: var(--typography-font-body, "Public Sans", system-ui, sans-serif);
       --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+      --focus-ring: #6257E8;
     }
+    a:focus-visible, button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+    h1, h2, h3 { text-transform: uppercase; letter-spacing: normal; }
     * { box-sizing: border-box; }
     body {
       margin: 0; padding: 0; background: var(--us-cream); color: var(--fg-1);

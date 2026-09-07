@@ -1,0 +1,40 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { orgIdentity } from '../../../server/legal.mjs';
+
+export const prerender = false;
+const cookieHeader = Astro.request.headers.get('cookie') || '';
+const lang = /(?:^|;\s*)lang=nl(?:;|$)/.test(cookieHeader) ? 'nl' : 'en';
+const nl = lang === 'nl';
+const org = orgIdentity();
+---
+<Layout title="Privacy · Us" indexable={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb="Privacy" />
+    <main class="app-main">
+      <article class="container-narrow legal-prose page-article">
+        <h1>{nl ? 'Privacybeleid' : 'Privacy policy'}</h1>
+        <p>{nl ? 'Verwerkingsverantwoordelijke' : 'Controller'}: {org.name} · {org.email}{org.kbo ? ` · KBO/BCE ${org.kbo}` : ''}</p>
+        <p>
+          {nl
+            ? 'We verwerken accountgegevens (e-mail, wachtwoordhash), scanresultaten van de URL’s die je indient, gebruiksmeters, en als je betaalt: Stripe-klant- en factuurgegevens. Gasten: IP voor rate limits, de gescande URL, en optioneel leadgegevens.'
+            : 'We process account data (email, password hash), scan results for URLs you submit, usage meters, and if you pay: Stripe customer and invoice data. Guests: IP for rate limits, the scanned URL, and optional lead details.'}
+        </p>
+        <p>
+          {nl
+            ? 'Doelen: de scanner leveren, misbruik voorkomen, factureren, leads voor Us-diensten. Bewaartermijn rapporten: standaard 12 maanden, tenzij je verwijdert. Je kunt je gegevens exporteren of je account wissen via Account.'
+            : 'Purposes: delivering the scanner, preventing abuse, billing, and Us-services leads. Report retention: 12 months by default unless you delete. You can export or delete your account in Account.'}
+        </p>
+        <p>
+          {nl
+            ? 'Verwerkers: hosting (OVH), e-mail (SMTP), betalingen (Stripe). Geen verkoop van persoonsgegevens. Vragen of klachten: e-mail ons; je mag ook de Belgische Gegevensbeschermingsautoriteit contacteren.'
+            : 'Processors: hosting (OVH), email (SMTP), payments (Stripe). We do not sell personal data. Questions or complaints: email us; you may also contact the Belgian Data Protection Authority.'}
+        </p>
+        <p class="muted">{nl ? 'Werkversie voor closed beta — laat een advocaat de finale tekst nakijken.' : 'Working draft for closed beta — have a lawyer review the final text.'}</p>
+      </article>
+    </main>
+    <SiteFooter lang={lang} />
+  </div>
+</Layout>

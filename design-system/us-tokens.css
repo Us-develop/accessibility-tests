@@ -1,0 +1,602 @@
+/* =============================================================
+   Us Design System — design tokens
+   Generated from Figma: Us - Design System (ObyTQ40kofwt9Ve44lzAQv)
+
+   NAMING: variable names mirror the Figma token path.
+     lowercase, "/" and spaces become "-", underscores preserved.
+     Figma  Button/Default State/Button-Bg-Default
+     CSS    --button-default-state-button-bg-default
+
+   DO NOT hand-edit. Change the variable in Figma, regenerate.
+   Breakpoint assumption: 768px. Adjust if the build uses another.
+   ============================================================= */
+
+:root {
+
+  /* =========================================================
+     01. PRIMITIVE TOKENS — colour
+     Palette entries. Do not use directly in components,
+     use the semantic tokens in section 02.
+     ========================================================= */
+
+  --color-primary-lavender: #BDB4FF;
+  --color-primary-perfume: #F3AAFF;
+  --color-primary-mint-green: #8DFFB7;
+  --color-primary-rajah: #FFB985;
+  --color-primary-shark: #191A1B;
+
+  --color-secondary-light-titan-white: #F2F0FF;
+  --color-secondary-light-selago: #FBE3FF;
+  --color-secondary-light-hint-of-green: #E6FFEF;
+  --color-secondary-light-seashell-peach: #FFF3EB;
+  --color-secondary-medium-royal: #6257E8;
+  --color-secondary-medium-electric-violet: #B20CCC;
+  --color-secondary-medium-watercourse: #048255;
+  --color-secondary-medium-hawaiian-tan: #B35610;
+  --color-secondary-dark-east-bay: #423A75;
+  --color-secondary-dark-disco: #7E1C74;
+  --color-secondary-dark-green-pea: #1E625A;
+  --color-secondary-dark-pablo: #872012;
+  --color-secondary-spring-wood: #FCFCF8;
+  --color-secondary-ecru: #F5F4E5;
+
+  --color-neutrals-00: #FFFFFF;
+  --color-neutrals-10: #FCFCFC;
+  --color-neutrals-20: #F9F9F9;
+  --color-neutrals-30: #F3F3F3;
+  --color-neutrals-40: #EAEAEA;
+  --color-neutrals-50: #D9D9D9;
+  --color-neutrals-60: #A7A7A7;
+  --color-neutrals-70: #707070;
+  --color-neutrals-80: #494949;
+  --color-neutrals-90: #2E2E2E;
+  --color-neutrals-100: #000000;
+
+  /* System colours — feedback states ONLY (see us-design-system.md §5, §7).
+     Do not use for brand UI, buttons, or decorative accents. */
+  --color-system-error: #DF2020;
+  --color-system-info: #3C81E7;
+  --color-system-success: #41BD73;
+  --color-system-warning: #EB8916;
+
+  /* =========================================================
+     01. PRIMITIVE TOKENS — spacing scale
+     ========================================================= */
+
+  --spacing-0-25-rem: 4px;
+  --spacing-0-5-rem: 8px;
+  --spacing-0-75-rem: 12px;
+  --spacing-1-rem: 16px;
+  --spacing-1-25-rem: 20px;
+  --spacing-1-5-rem: 24px;
+  --spacing-2-rem: 32px;
+  --spacing-2-5-rem: 40px;
+  --spacing-3-rem: 48px;
+  --spacing-3-5-rem: 56px;
+  --spacing-4-rem: 64px;
+  --spacing-5-rem: 80px;
+  --spacing-6-rem: 96px;
+  --spacing-7-rem: 112px;
+
+  /* =========================================================
+     01. PRIMITIVE TOKENS — font families
+
+     PROFILE: WEB / DIGITAL PRODUCT (default)
+
+     Owners and IvyPresto come from two Adobe Fonts kits.
+     Load both before this file:
+       <link rel="stylesheet" href="https://use.typekit.net/dbo7deg.css">
+       <link rel="stylesheet" href="https://use.typekit.net/rgx8kmt.css">
+
+     Family names are Adobe's, lowercase and hyphenated:
+     "owners", "owners-narrow", "owners-xnarrow",
+     "owners-xxnarrow", "owners-wide", "owners-xwide",
+     "owners-xxwide", "ivypresto-display".
+     Not "Owners Wide".
+
+     Owners: seven widths, weights 200/300/400/500/700/800/900
+     in roman and italic. No 100, no 600.
+     IvyPresto Display: weights 100/300/400/600/700 in roman
+     and italic. No 200, 500, 800 or 900.
+
+     Together these cover the whole type ramp. Nothing falls
+     back to Archivo on web.
+
+     The kits serve STATIC faces, not variable ones. Every
+     @font-face declares a single weight and font-stretch:normal.
+     So do NOT apply font-stretch in this profile — width comes
+     from the family name. The --font-stretch-* helpers are for
+     the presentation profile only.
+
+     For presentations use [data-us-fonts="presentation"] below.
+     ========================================================= */
+
+  --typography-font-headings-default-h1-xwide: "owners-xwide", "Archivo", system-ui, sans-serif;
+  --typography-font-headings-default-h1-wide: "owners-wide", "Archivo", system-ui, sans-serif;
+  --typography-font-headings-default-h1-regular: "owners", "Archivo", system-ui, sans-serif;
+  --typography-font-headings-default-h1-narrow: "owners-narrow", "Archivo Narrow", system-ui, sans-serif;
+  --typography-font-headings-default-h1-xnarrow: "owners-xnarrow", "Archivo Narrow", system-ui, sans-serif;
+
+  --typography-font-headings-default-h2-wide: "owners-wide", "Archivo", system-ui, sans-serif;
+  --typography-font-headings-default-h2-regular: "owners", "Archivo", system-ui, sans-serif;
+  --typography-font-headings-default-h2-narrow: "owners-narrow", "Archivo Narrow", system-ui, sans-serif;
+
+  --typography-font-headings-default-h3: "owners-wide", "Archivo", system-ui, sans-serif;
+  --typography-font-headings-default-h4: "owners", "Archivo", system-ui, sans-serif;
+  --typography-font-headings-default-h5: "owners", "Archivo", system-ui, sans-serif;
+  --typography-font-headings-default-h6: "owners", "Archivo", system-ui, sans-serif;
+
+  --typography-font-headings-alt-h1: "ivypresto-display", "Archivo", Georgia, serif;
+  --typography-font-headings-alt-h2: "ivypresto-display", "Archivo", Georgia, serif;
+  --typography-font-headings-alt-h3: "ivypresto-display", "Archivo", Georgia, serif;
+  --typography-font-headings-alt-h4: "ivypresto-display", "Archivo", Georgia, serif;
+  --typography-font-headings-alt-h5: "ivypresto-display", "Archivo", Georgia, serif;
+  --typography-font-headings-alt-h6: "ivypresto-display", "Archivo", Georgia, serif;
+
+  --typography-font-body: "Public Sans", system-ui, sans-serif;
+  --typography-font-quote: "ivypresto-display", "Archivo", Georgia, serif;
+  --typography-font-navigation: "owners", "Archivo", system-ui, sans-serif;
+  --typography-font-button: "owners", "Archivo", system-ui, sans-serif;
+  --typography-font-card-title: "owners", "Archivo", system-ui, sans-serif;
+  --typography-font-banner-title: "owners-wide", "Archivo", system-ui, sans-serif;
+
+  /* =========================================================
+     TRACKING
+
+     There is none. All 46 Figma text styles are letter-spacing
+     0. Do not set letter-spacing anywhere; if a reset or a
+     component library adds it, override with `normal`.
+     No token is provided because the correct value is "do not
+     set this property".
+     ========================================================= */
+
+  /* =========================================================
+     01. PRIMITIVE TOKENS — font weights
+     Figma stores these as style names, mapped to numeric here.
+     ========================================================= */
+
+  --typography-font-weight-headings-default-h1-weight: 700; /* Bold */
+  --typography-font-weight-headings-default-h2-weight: 700; /* Bold */
+  --typography-font-weight-headings-default-h3-weight: 700; /* Bold */
+  --typography-font-weight-headings-default-h4-weight: 500; /* Medium */
+  --typography-font-weight-headings-default-h5-weight: 500; /* Medium */
+  --typography-font-weight-headings-default-h6-weight: 300; /* Light */
+
+  --typography-font-weight-headings-alt-h1-weight: 100; /* Thin */
+  --typography-font-weight-headings-alt-h2-weight: 300; /* Light */
+  --typography-font-weight-headings-alt-h3-weight: 300; /* Light */
+  --typography-font-weight-headings-alt-h4-weight: 300; /* Light */
+  --typography-font-weight-headings-alt-h5-weight: 300; /* Light */
+  --typography-font-weight-headings-alt-h6-weight: 300; /* Light */
+
+  --typography-font-weight-body_default-weight: 300;  /* Light */
+  --typography-font-weight-body_bold-weight: 600;     /* Semibold */
+  --typography-font-weight-link-weight: 300;          /* Light */
+  --typography-font-weight-quote-weight: 100;         /* Thin */
+  --typography-font-weight-nav-weight: 500;           /* Medium */
+  --typography-font-weight-button-label-default: 500; /* Medium */
+  --typography-font-weight-button-label-small: 500;   /* Medium */
+  --typography-font-weight-card-title: 500;           /* Medium */
+  --typography-font-weight-banner-title: 700;         /* Bold */
+
+  /* =========================================================
+     ICONS — Material Symbols (see us-design-system.md §3, §7)
+
+     "Material Icons" (legacy) is a static font with no axes.
+     Weight 300 requires "Material Symbols", the variable
+     version. Style is Outlined — confirmed, not an assumption.
+     Never mix in Rounded or Sharp.
+
+     Four axes: FILL 0-1, wght 100-700, GRAD -50..200,
+     opsz 20-48. Set them together with font-variation-settings.
+     ========================================================= */
+
+  --typography-font-icons: "Material Symbols Outlined", sans-serif;
+
+  --typography-icon-weight: 300;
+  --typography-icon-fill: 0;   /* 1 for active / selected states */
+  --typography-icon-grade: 0;  /* -50 on dark backgrounds */
+  --typography-icon-opsz: 24;
+
+  --typography-font-size-icons-12: 12px;
+  --typography-font-size-icons-16: 16px;
+  --typography-font-size-icons-24: 24px;
+  --typography-font-size-icons-32: 32px;
+
+  /* Brand and social marks are NOT in Material Symbols.
+     They still come from Font Awesome 6 Brands, matching the
+     Brand/ text styles in Figma. */
+  --typography-font-brand-icons: "Font Awesome 6 Brands", sans-serif;
+
+  /* =========================================================
+     02. COLOR TOKENS — mode: Light (default)
+     These are what components use.
+     ========================================================= */
+
+  --page-page-background: #FFFFFF;
+
+  --content-heading: #191A1B;
+  --content-body: #191A1B;
+  --content-placeholder: #707070;
+  --content-quote: #191A1B;
+  --content-link-content: #4F72CD;
+
+  --navigation-nav_item-default: #191A1B;
+  --navigation-nav_item-hover: #191A1B;
+
+  --button-default-state-button-bg-default: #191A1B;
+  --button-default-state-button-prim_label: #FFFFFF;
+  --button-default-state-button-prim_icon: #FFFFFF;
+  --button-default-state-button-sec_label: #191A1B;
+  --button-default-state-button-sec_icon: #191A1B;
+  --button-default-state-button-stroke: #191A1B;
+
+  --button-hover-state-button-bg-hover: #494949;
+  --button-hover-state-button-prim_label: #FFFFFF;
+  --button-hover-state-button-prim_icon: #FFFFFF;
+  --button-hover-state-button-sec_label: #FFFFFF;
+  --button-hover-state-button-sec_icon: #FFFFFF;
+  --button-hover-state-button-tert_label: #494949;
+  --button-hover-state-button-tert_icon: #494949;
+  --button-hover-state-button-stroke: #494949;
+
+  --button-disabled-state-button-bg-disabled: #EAEAEA;
+  --button-disabled-state-button-prim_label: #707070;
+  --button-disabled-state-button-prim_icon: #707070;
+  --button-disabled-state-button-sec_label: #707070;
+  --button-disabled-state-button-sec_icon: #707070;
+  --button-disabled-state-button-stroke: #707070;
+
+  --borders-separator: #EAEAEA;
+  --borders-border-01: #EAEAEA;
+  --borders-border-02: #494949;
+
+  --icon-icon-00: #FFFFFF;
+  --icon-icon-10: #2E2E2E;
+  --icon-icon-50: #494949;
+
+  /* =========================================================
+     RESPONSIVE MODEL
+
+     Figma defines two modes, Mobile (360) and Desktop (1440).
+     Rather than switching between them at a breakpoint, every
+     dimensional token below interpolates fluidly across that
+     range with clamp().
+
+     At exactly 360px wide each token equals its Figma Mobile
+     value. At 1440px and above it equals its Figma Desktop
+     value. Between the two it scales linearly. Below 360 and
+     above 1440 it is clamped.
+
+     Consequence: the numbers here no longer read as the plain
+     Figma values. The endpoints are still exact — that is what
+     the clamp bounds are — but a mid-range viewport lands
+     somewhere between. Regenerate rather than hand-edit.
+
+     One thing cannot be fluid: grid column count. That stays a
+     discrete switch at the bottom of this file.
+     ========================================================= */
+
+  /* Design canvas widths. Used as maximums, not as a layout
+     switch. The standard container is:
+       width: 100%;
+       max-width: var(--page-content-width);
+       padding-inline: var(--margins-page-margin);          */
+  --page-page-width: 1440px;
+  --page-content-width: 1180px;
+
+  /* ========== 03. DOCUMENT TOKENS (fluid) ========== */
+  --margins-page-margin: clamp(20px, -16.667px + 10.185vw, 130px);
+  --margins-footer-margin: clamp(64px, 48px + 4.444vw, 112px);
+  --margins-row_indent-small: clamp(24px, 21.333px + 0.741vw, 32px);
+  --margins-row_indent-medium: clamp(48px, 42.667px + 1.482vw, 64px);
+  --margins-row_indent-large-default: clamp(64px, 53.333px + 2.963vw, 96px);
+  --margins-row_indent-xlarge: clamp(112px, 106.667px + 1.482vw, 128px);
+  /* Layout helper: column boundary / right-margin guide in Figma.
+     NOT for paragraph max-width — use .prose-width or a future
+     --content-prose-max-width token (see us-design-system.md §6). */
+  --margins-maxcols: clamp(320px, 316.667px + 0.926vw, 330px);
+  --grid-grid-width: clamp(40px, 26.667px + 3.704vw, 80px);
+  --grid-grid-gutter: clamp(16px, 14.667px + 0.37vw, 20px);
+  --navigation-margin-top_bottom: clamp(8px, 6.667px + 0.37vw, 12px);
+
+  /* ========== 04. NUMBER TOKENS - spacing (fluid) ========== */
+  --spacing-content-h-content-large: clamp(24px, 21.333px + 0.741vw, 32px);
+  --spacing-content-h-content-medium: clamp(16px, 26.667px - 0.741vw, 24px);
+  --spacing-content-h-content-small: 8px;
+  --spacing-content-h-content-xsmall: 4px;
+  --spacing-content-content-button-large: clamp(32px, 26.667px + 1.482vw, 48px);
+  --spacing-content-content-button-medium: 32px;
+  --spacing-content-content-button-small: clamp(16px, 21.333px - 0.37vw, 20px);
+  --spacing-content-nav-content-default: clamp(64px, 53.333px + 2.963vw, 96px);
+  --spacing-content-nav-content-large: clamp(64px, 32px + 8.889vw, 160px);
+  --spacing-content-2-buttons: clamp(16px, 14.667px + 0.37vw, 20px);
+
+  /* ========== 04. NUMBER TOKENS - radius ========== */
+  --radius-radius-none: 0px;
+  --radius-radius-xs: 2px;
+  --radius-radius-s: 4px;
+  --radius-radius-m: 8px;
+  --radius-radius-l: 24px;
+  --radius-radius-xl: 32px;
+  --radius-radius-round: 500px;
+  --radius-radius-image: 12px;
+  --radius-radius-cards-lg: 24px;
+  --radius-radius-cards-sm: clamp(12px, 28px - 1.111vw, 24px);
+
+  /* ========== 04. NUMBER TOKENS - font size (fluid) ========== */
+  --typography-font-size-h1-s: clamp(40px, 37.333px + 0.741vw, 48px);
+  --typography-font-size-h1-default: clamp(40px, 34.667px + 1.482vw, 56px);
+  --typography-font-size-h1-xl: clamp(64px, 48px + 4.444vw, 112px);
+  --typography-font-size-h2: clamp(32px, 29.333px + 0.741vw, 40px);
+  --typography-font-size-h3: clamp(20px, 18.667px + 0.37vw, 24px);
+  --typography-font-size-h4: clamp(20px, 18.667px + 0.37vw, 24px);
+  --typography-font-size-h5: 20px;
+  --typography-font-size-h6: 20px;
+  --typography-font-size-paragraph-default: 16px;
+  --typography-font-size-paragraph-small: clamp(14px, 16.667px - 0.185vw, 16px);
+  --typography-font-size-paragraph-large: 20px;
+  --typography-font-size-quote-small: clamp(24px, 21.333px + 0.741vw, 32px);
+  --typography-font-size-quote-large: clamp(40px, 32px + 2.222vw, 64px);
+  --typography-font-size-nav: 16px;
+  --typography-font-size-button: clamp(16px, 15.333px + 0.185vw, 18px);
+  --typography-font-size-card-title-l: 24px;
+  --typography-font-size-card-title-s: 20px;
+  --typography-font-size-banner-title-medium: clamp(24px, 34.667px - 0.741vw, 32px);
+  --typography-font-size-banner-title-large: 32px;
+
+  /* ========== 04. NUMBER TOKENS - line height (fluid) ========== */
+  --typography-line-height-h1-default: clamp(64px, 58.667px + 1.482vw, 80px);
+  --typography-line-height-h1-s: clamp(56px, 53.333px + 0.741vw, 64px);
+  --typography-line-height-h1-xl: clamp(80px, 61.333px + 5.185vw, 136px);
+  --typography-line-height-h2: 56px;
+  --typography-line-height-h3: clamp(32px, 29.333px + 0.741vw, 40px);
+  --typography-line-height-h4: 32px;
+  --typography-line-height-h5: 32px;
+  --typography-line-height-h6: 32px;
+  --typography-line-height-body_default: clamp(24px, 22.667px + 0.37vw, 28px);
+  --typography-line-height-body_small: 24px;
+  --typography-line-height-body_large: 32px;
+  --typography-line-height-quote-small: clamp(32px, 26.667px + 1.482vw, 48px);
+  --typography-line-height-quote-large: clamp(48px, 37.333px + 2.963vw, 80px);
+  --typography-line-height-nav_labels: 24px;
+  --typography-line-height-button: clamp(20px, 18.667px + 0.37vw, 24px);
+  --typography-line-height-card-title-l: 38px;
+  --typography-line-height-card-title-s: 32px;
+  --typography-line-height-banner-title-medium: 32px;
+  --typography-line-height-banner-title-large: 48px;
+
+  /* =========================================================
+     GRADIENTS (Figma paint styles) — read from the file
+
+     Note: the four tint gradients fade the SAME colour from
+     full opacity to 10% alpha. They do not fade to white.
+     That means they layer over whatever sits behind them.
+     Angles derived from the Figma gradient transforms.
+     ========================================================= */
+
+  --gradient-titan_white: linear-gradient(225deg, #F2F0FF 0%, rgba(242,240,255,0.1) 100%);
+  --gradient-selago: linear-gradient(225deg, #FBE3FF 0%, rgba(251,227,255,0.1) 100%);
+  --gradient-hint_of_green: linear-gradient(225deg, #E6FFEF 0%, rgba(230,255,239,0.1) 100%);
+  --gradient-seashell_peach: linear-gradient(225deg, #FFF3EB 0%, rgba(255,243,235,0.1) 100%);
+  --gradient-green-purple: linear-gradient(142deg, #8DFFB7 0%, #F3AAFF 100%);
+
+  /* =========================================================
+     EFFECTS (Figma effect styles) — read from the file
+     Dropshadow/Soft: blur 20, no offset, no spread,
+     black at 8%.
+     ========================================================= */
+
+  --dropshadow-soft: 0 0 20px rgba(0, 0, 0, 0.08);
+
+  /* =========================================================
+     SUBSTITUTION HELPERS — not Figma tokens
+
+     Archivo has a width axis (62-125). Owners has seven named
+     widths. These percentages are an UNVERIFIED approximate
+     mapping between the two, not a Figma value — a designer
+     should compare them side by side and correct. Apply with
+     font-stretch alongside the family token:
+
+       h1 { font-family: var(--typography-font-headings-default-h1-wide);
+            font-stretch: var(--font-stretch-wide);
+            font-weight: var(--typography-font-weight-headings-default-h1-weight); }
+     ========================================================= */
+
+  --font-stretch-xwide: 125%;
+  --font-stretch-wide: 112%;
+  --font-stretch-regular: 100%;
+  --font-stretch-narrow: 75%;
+  --font-stretch-xnarrow: 62%;
+
+  /* Static fallbacks for environments that cannot render
+     variable font axes: PowerPoint, Word, some PDF pipelines,
+     older email clients. Wide and XWide are unavailable there,
+     fall back to regular width. */
+
+  --typography-font-static-display: "Archivo Black", "Archivo", system-ui, sans-serif;
+  --typography-font-static-narrow: "Archivo Narrow", "Archivo", system-ui, sans-serif;
+  --typography-font-static-regular: "Archivo", system-ui, sans-serif;
+}
+
+/* ===========================================================
+   PROFILE: PRESENTATION
+
+   Owners and IvyPresto cannot be relied on outside a
+   controlled environment, so decks, slide exports and any
+   HTML that will be opened on an unknown machine use Archivo.
+
+   Set data-us-fonts="presentation" on the root element.
+   Sizes, line heights, colours and spacing are unchanged.
+
+   Archivo has no serif, so the alt headings and quotes lose
+   the serif-against-sans contrast they have on web. In this
+   profile that contrast comes from weight instead: alt and
+   quote styles run Thin 100 or Light 300 against Bold 700.
+   =========================================================== */
+
+[data-us-fonts="presentation"] {
+  /* Office fallbacks after Archivo: Franklin Gothic for display,
+     Aptos then Calibri for body. See the PowerPoint notes in
+     us-design-system.md — a .pptx cannot store a fallback chain,
+     so there these are a choice of which font to write, not a
+     stack. This stack applies to HTML-rendered decks. */
+  --typography-font-headings-default-h1-xwide: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-default-h1-wide: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-default-h1-regular: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-default-h1-narrow: "Archivo Narrow", "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-default-h1-xnarrow: "Archivo Narrow", "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+
+  --typography-font-headings-default-h2-wide: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-default-h2-regular: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-default-h2-narrow: "Archivo Narrow", "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+
+  --typography-font-headings-default-h3: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-default-h4: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-default-h5: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-default-h6: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+
+  --typography-font-headings-alt-h1: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-alt-h2: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-alt-h3: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-alt-h4: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-alt-h5: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-headings-alt-h6: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+
+  --typography-font-quote: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-navigation: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-button: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-card-title: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+  --typography-font-banner-title: "Archivo", "Franklin Gothic Medium", system-ui, sans-serif;
+
+  --typography-font-body: "Public Sans", "Aptos", "Calibri", system-ui, sans-serif;
+}
+
+/* ===========================================================
+   02. COLOR TOKENS — other modes
+   Apply with data-us-mode on a page or section wrapper.
+   =========================================================== */
+
+[data-us-mode="dark"] {
+  --page-page-background: #191A1B;
+  --content-heading: #FFFFFF;
+  --content-body: #FFFFFF;
+  --content-placeholder: #F9F9F9;
+  --content-quote: #FFFFFF;
+  --content-link-content: #CAD9F5;
+  --navigation-nav_item-default: #FFFFFF;
+  --navigation-nav_item-hover: #FFFFFF;
+  --button-default-state-button-bg-default: #FFFFFF;
+  --button-default-state-button-prim_label: #191A1B;
+  --button-default-state-button-prim_icon: #191A1B;
+  --button-default-state-button-sec_label: #FFFFFF;
+  --button-default-state-button-sec_icon: #FFFFFF;
+  --button-default-state-button-stroke: #FFFFFF;
+  --button-hover-state-button-bg-hover: #EAEAEA;
+  --button-hover-state-button-prim_label: #191A1B;
+  --button-hover-state-button-prim_icon: #191A1B;
+  --button-hover-state-button-sec_label: #191A1B;
+  --button-hover-state-button-sec_icon: #191A1B;
+  --button-hover-state-button-tert_label: #EAEAEA;
+  --button-hover-state-button-tert_icon: #EAEAEA;
+  --button-hover-state-button-stroke: #FFFFFF;
+  --button-disabled-state-button-bg-disabled: #A7A7A7;
+  --button-disabled-state-button-prim_label: #F3F3F3;
+  --button-disabled-state-button-prim_icon: #F3F3F3;
+  --button-disabled-state-button-sec_label: #A7A7A7;
+  --button-disabled-state-button-sec_icon: #A7A7A7;
+  --button-disabled-state-button-stroke: #A7A7A7;
+  --borders-separator: #D9D9D9;
+  --icon-icon-00: #2E2E2E;
+  --icon-icon-10: #FFFFFF;
+  --icon-icon-50: #FFFFFF;
+  --typography-icon-grade: -50; /* reversed contrast on dark */
+}
+
+[data-us-mode="grey"] {
+  --page-page-background: #F9F9F9;
+  --borders-separator: #707070;
+  --borders-border-01: #707070;
+}
+
+[data-us-mode="color-light"] {
+  --page-page-background: #E6FFEF;
+  --icon-icon-00: #E6FFEF;
+  --icon-icon-10: #048255;
+  --icon-icon-50: #048255;
+}
+
+[data-us-mode="color-dark"] {
+  --page-page-background: #1E625A;
+  --content-heading: #FFFFFF;
+  --content-body: #FFFFFF;
+  --content-placeholder: #F9F9F9;
+  --content-quote: #FFFFFF;
+  --content-link-content: #CAD9F5;
+  --navigation-nav_item-default: #FFFFFF;
+  --navigation-nav_item-hover: #FFFFFF;
+  --button-default-state-button-bg-default: #FFFFFF;
+  --button-default-state-button-prim_label: #191A1B;
+  --button-default-state-button-prim_icon: #191A1B;
+  --button-default-state-button-sec_label: #FFFFFF;
+  --button-default-state-button-sec_icon: #FFFFFF;
+  --button-default-state-button-stroke: #FFFFFF;
+  --button-hover-state-button-bg-hover: #EAEAEA;
+  --button-hover-state-button-prim_label: #191A1B;
+  --button-hover-state-button-prim_icon: #191A1B;
+  --button-hover-state-button-sec_label: #191A1B;
+  --button-hover-state-button-sec_icon: #191A1B;
+  --button-hover-state-button-tert_label: #EAEAEA;
+  --button-hover-state-button-tert_icon: #EAEAEA;
+  --button-hover-state-button-stroke: #FFFFFF;
+  --button-disabled-state-button-bg-disabled: #A7A7A7;
+  --button-disabled-state-button-prim_label: #F3F3F3;
+  --button-disabled-state-button-prim_icon: #F3F3F3;
+  --button-disabled-state-button-sec_label: #A7A7A7;
+  --button-disabled-state-button-sec_icon: #A7A7A7;
+  --button-disabled-state-button-stroke: #A7A7A7;
+  --icon-icon-00: #048255;
+  --icon-icon-10: #E6FFEF;
+  --icon-icon-50: #E6FFEF;
+  --typography-icon-grade: -50; /* reversed contrast on dark */
+}
+
+/* ===========================================================
+   06. THEME — other modes
+   Apply with data-us-theme on a page or section wrapper.
+   =========================================================== */
+
+[data-us-theme="pink"] {
+  --theme-light: #FBE3FF;    /* Selago */
+  --theme-primary: #F3AAFF;  /* Perfume */
+  --theme-medium: #B20CCC;   /* Electric Violet */
+  --theme-dark: #7E1C74;     /* Disco */
+}
+
+[data-us-theme="green"] {
+  --theme-light: #E6FFEF;    /* Hint of Green */
+  --theme-primary: #8DFFB7;  /* Mint Green */
+  --theme-medium: #048255;   /* Watercourse */
+  --theme-dark: #1E625A;     /* Green Pea */
+}
+
+[data-us-theme="orange"] {
+  --theme-light: #FFF3EB;    /* Seashell Peach */
+  --theme-primary: #FFB985;  /* Rajah */
+  --theme-medium: #B35610;   /* Hawaiian Tan */
+  --theme-dark: #872012;     /* Pablo */
+}
+
+/* ===========================================================
+   The one discrete switch
+
+   Column count cannot interpolate — a grid is 12 columns or
+   6, never 9.4. Everything else above is fluid, so this is
+   the only breakpoint in the system.
+   =========================================================== */
+
+@media (max-width: 768px) {
+  :root {
+    --grid-grid-column_count: 6;
+  }
+}

@@ -74,10 +74,10 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
             Close
           </button>
           <h2 id="wcag-login-title" class="wcag-login-title">Sign in</h2>
-          <p class="wcag-login-lead">Enter your username and password to use the app.</p>
+          <p class="wcag-login-lead">Customers use email. Us staff use the agency username.</p>
           <p id="wcag-login-err" class="wcag-login-err" role="alert" hidden></p>
           <form id="wcag-login-form" class="wcag-login-form">
-            <label class="wcag-login-label" for="wcag-login-user">Username</label>
+            <label class="wcag-login-label" for="wcag-login-user">Email or staff username</label>
             <input
               class="wcag-login-input"
               id="wcag-login-user"
@@ -98,8 +98,13 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
             <button type="submit" class="wcag-login-submit">Continue</button>
           </form>
           <p class="wcag-login-footer-request">
+            <a class="wcag-login-linklike" href="/signup">Create an account</a>
+            ·
+            <a class="wcag-login-linklike" href="/forgot">Forgot password</a>
+          </p>
+          <p class="wcag-login-footer-request">
             <button type="button" class="wcag-login-linklike" id="wcag-flip-to-request">
-              Interested? Request access
+              Interested? Request Us services
             </button>
           </p>
         </div>

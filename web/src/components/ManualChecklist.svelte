@@ -36,13 +36,16 @@
   }
 
   function persistChecked(checked) {
+    const csrfHeaders = typeof globalThis.wcagHeaders === 'function'
+      ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' })
+      : { 'Content-Type': 'application/json' };
     return fetch(
       `/api/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/manual-progress`,
       {
         method: 'PUT',
         credentials: 'same-origin',
         keepalive: true,
-        headers: { 'Content-Type': 'application/json' },
+        headers: csrfHeaders,
         body: JSON.stringify({ checked }),
       }
     );

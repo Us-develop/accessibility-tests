@@ -1,0 +1,48 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { orgIdentity } from '../../../server/legal.mjs';
+
+export const prerender = false;
+const cookieHeader = Astro.request.headers.get('cookie') || '';
+const lang = /(?:^|;\s*)lang=nl(?:;|$)/.test(cookieHeader) ? 'nl' : 'en';
+const nl = lang === 'nl';
+const org = orgIdentity();
+---
+<Layout title={nl ? 'Algemene voorwaarden · Us' : 'Terms of service · Us'} indexable={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb={nl ? 'Voorwaarden' : 'Terms'} />
+    <main class="app-main">
+      <article class="container-narrow legal-prose page-article">
+        <h1>{nl ? 'Algemene voorwaarden' : 'Terms of service'}</h1>
+        <p class="muted">{org.name}{org.kbo ? ` · KBO/BCE ${org.kbo}` : ''}{org.address ? ` · ${org.address}` : ''} · {org.email}</p>
+        <p>
+          {nl
+            ? 'Deze tool is een geassisteerde automatische scanner. Ze vervangt geen WCAG 2.2 AA-audit, geen EN 301 549-certificatie en geen EAA-juridische goedkeuring. Je mag alleen sites scannen waarvoor je toestemming hebt.'
+            : 'This product is an assisted automated scanner. It does not replace a WCAG 2.2 AA audit, EN 301 549 certification, or an EAA legal sign-off. You may only scan sites you are allowed to test.'}
+        </p>
+        <h2>{nl ? 'Abonnement' : 'Subscription'}</h2>
+        <p>
+          {nl
+            ? 'Pro kost €49 per maand of €490 per jaar, met een founding-prijs van €39 per maand (12 maanden vast) voor de eerste 50 abonnees. Je krijgt 300 paginascans per maand, max 50 URL’s per run en 1 gelijktijdige scan. Ongebruikte credits vervallen aan het einde van de kalendermaand (UTC).'
+            : 'Pro is €49 per month or €490 per year, with a founding price of €39 per month (locked 12 months) for the first 50 subscribers. You get 300 page-scans per month, max 50 URLs per run, and 1 concurrent scan. Unused credits expire at the end of the UTC calendar month.'}
+        </p>
+        <h2>{nl ? 'Herroeping' : 'Withdrawal'}</h2>
+        <p>
+          {nl
+            ? 'Consumenten in de EU hebben 14 dagen herroepingsrecht. Als je vraagt dat de dienst onmiddellijk start, erken je dat je dat recht kunt verliezen voor het deel dat al geleverd is. Annuleren kan in Account via het Stripe-klantenportaal.'
+            : 'EU consumers have a 14-day withdrawal right. If you ask the service to start immediately, you acknowledge that this right may be lost for the part already delivered. Cancel in Account via the Stripe customer portal.'}
+        </p>
+        <h2>{nl ? 'Aanvaardbaar gebruik' : 'Acceptable use'}</h2>
+        <p>
+          {nl
+            ? 'Geen scans van interne netwerken, geen misbruik van quota, geen wederverkoop van Deque-checklists als eigen certificatie. Wij mogen accounts schorsen bij misbruik.'
+            : 'No scans of internal networks, no quota abuse, and no reselling Deque checklists as your own certification. We may suspend accounts for abuse.'}
+        </p>
+        <p class="muted">{nl ? 'Laatst bijgewerkt' : 'Last updated'}: 2026-09-07. {nl ? 'Dit is een werkversie voor closed beta — laat een advocaat de finale tekst nakijken.' : 'This is a working draft for closed beta — have a lawyer review the final text.'}</p>
+      </article>
+    </main>
+    <SiteFooter lang={lang} />
+  </div>
+</Layout>
