@@ -82,6 +82,16 @@ const nl = pageLang === 'nl';
           if (token) headers['X-CSRF-Token'] = token;
           return headers;
         };
+        if (!globalThis.__wcagCookieBound) {
+          globalThis.__wcagCookieBound = true;
+          document.addEventListener('click', function (event) {
+            var target = event.target;
+            if (!(target && target.closest && target.closest('#wcag-cookie-accept'))) return;
+            document.cookie = 'wcag_cookie_ok=1; Path=/; Max-Age=31536000; SameSite=Lax';
+            var banner = document.getElementById('wcag-cookie-banner');
+            if (banner) banner.remove();
+          });
+        }
       })();
     </script>
   </head>
@@ -142,17 +152,6 @@ const nl = pageLang === 'nl';
         </div>
       </div>
     )}
-    <script is:inline>
-      (function () {
-        var btn = document.getElementById('wcag-cookie-accept');
-        if (!btn) return;
-        btn.addEventListener('click', function () {
-          document.cookie = 'wcag_cookie_ok=1; Path=/; Max-Age=31536000; SameSite=Lax';
-          var banner = document.getElementById('wcag-cookie-banner');
-          if (banner) banner.remove();
-        });
-      })();
-    </script>
     <style is:global>
       html.wcag-staff #wcag-login-modal {
         display: none !important;

@@ -544,7 +544,7 @@ a.btn:focus-visible {
 
 .wcag-cookie-banner {
   position: fixed;
-  z-index: 99800;
+  z-index: 100050;
   left: var(--margins-page-margin);
   right: var(--margins-page-margin);
   bottom: calc(var(--spacing-1-rem) + env(safe-area-inset-bottom, 0px));
