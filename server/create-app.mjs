@@ -44,6 +44,26 @@ import {
   readLeadFileRows,
 } from './guest.mjs';
 import { buildTeaserPayload } from './teaser-payload.mjs';
+import {
+  clearSessionCookies,
+  csrfOk,
+  readAccessFromCookies,
+  setSessionCookies,
+} from './session.mjs';
+import { authenticateUser, getUserById, hasActiveSubscription } from './users.mjs';
+import { attachRunToUser, canAccessDomain, domainsForUser } from './projects.mjs';
+import {
+  assertCanSpend,
+  commitCredits,
+  creditSnapshot,
+  CUSTOMER_MAX_URLS_PER_RUN,
+  customerHasRunningScan,
+  releaseCredits,
+  reserveCredits,
+} from './credits.mjs';
+import { enqueueScanJob, finishJob, kickQueue, recoverInterruptedJobs, setQueueExecutor } from './queue.mjs';
+import { registerSaasRoutes } from './saas-routes.mjs';
+import { pricingPublic } from './billing.mjs';
 
 const DELIVERABLE_FILES = [
   'accessibility-developers.html',
@@ -115,21 +135,45 @@ function isValidEmail(email) {
 
 function isIndexablePath(pathname) {
   if (pathname === '/' || pathname === '') return true;
-  if (pathname === '/limitations') return true;
+  if (pathname === '/limitations' || pathname === '/pricing') return true;
+  if (pathname === '/terms' || pathname === '/privacy' || pathname === '/cookies' || pathname === '/accessibility') return true;
+  if (pathname === '/signup' || pathname === '/forgot' || pathname === '/reset') return true;
   if (pathname === '/teaser' || pathname.startsWith('/teaser/')) return true;
   return false;
 }
 
+const PUBLIC_GET_PREFIXES = ['/assets/', '/styles/', '/_astro/', '/teaser/', '/api/guest/', '/api/auth/verify'];
+const PUBLIC_GET_PATHS = new Set([
+  '/',
+  '/loading',
+  '/limitations',
+  '/pricing',
+  '/terms',
+  '/privacy',
+  '/cookies',
+  '/accessibility',
+  '/signup',
+  '/forgot',
+  '/reset',
+  '/teaser',
+  '/api/config',
+  '/api/pricing',
+  '/robots.txt',
+  '/favicon.png',
+  '/design-system.css',
+]);
+
 function isGuestOpenPath(req) {
   const p = req.path;
   if (req.method === 'GET') {
-    if (p === '/' || p === '/loading' || p === '/limitations') return true;
-    if (p === '/teaser' || p.startsWith('/teaser/')) return true;
-    if (p === '/api/config') return true;
-    if (p.startsWith('/api/guest/')) return true;
-    if (p.startsWith('/assets/') || p.startsWith('/styles/') || p.startsWith('/_astro/')) return true;
+    if (PUBLIC_GET_PATHS.has(p)) return true;
+    if (PUBLIC_GET_PREFIXES.some((prefix) => p.startsWith(prefix))) return true;
   }
-  if (req.method === 'POST' && (p === '/api/run' || p === '/api/lead')) return true;
+  if (req.method === 'POST') {
+    if (p === '/api/run' || p === '/api/lead' || p === '/api/access-request') return true;
+    if (p.startsWith('/api/auth/')) return true;
+    if (p === '/api/billing/webhook') return true;
+  }
   return false;
 }
 
@@ -456,14 +500,28 @@ app.use((req, res, next) => {
   } else {
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Username, X-App-Password');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-App-Username, X-App-Password, X-CSRF-Token, Stripe-Signature'
+  );
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
 
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use((req, res, next) => {
+  if (req.path === '/api/billing/webhook') return next();
+  return express.json()(req, res, next);
+});
+app.use((req, res, next) => {
+  const q = req.query?.lang;
+  if (q === 'nl' || q === 'en') {
+    res.append('Set-Cookie', `lang=${q}; Path=/; Max-Age=31536000; SameSite=Lax`);
+  }
+  next();
+});
 
 /** Safe post-login redirect: relative path, or absolute URL matching ALLOWED_ORIGIN. */
 function safeNextAfterLogin(raw) {
@@ -522,9 +580,7 @@ function credentialsFromRequest(req) {
   }
   const qp = req.query?.password;
   if (typeof qp === 'string' && qp) {
-    const qu = req.query?.username;
-    const user = typeof qu === 'string' && qu.trim() ? qu.trim() : APP_USERNAME;
-    return { user, pass: qp };
+    return null;
   }
   return null;
 }
@@ -533,26 +589,12 @@ function credentialsValid(user, pass) {
   return String(user || '') === String(APP_USERNAME) && String(pass || '') === String(APP_PASSWORD);
 }
 
-function setAuthCookie(res) {
-  const useSecure = AUTH_COOKIE_SAMESITE === 'None' ? true : AUTH_COOKIE_SECURE;
-  const securePart = useSecure ? '; Secure' : '';
-  const session = `${AUTH_COOKIE_NAME}=1; Path=/; HttpOnly; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=43200${securePart}`;
-  const ui = `${AUTH_UI_COOKIE_NAME}=1; Path=/; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=43200${securePart}`;
-  res.append('Set-Cookie', session);
-  res.append('Set-Cookie', ui);
+function setAuthCookie(res, session = { userId: 'staff', role: 'staff', email: '' }) {
+  setSessionCookies(res, session, AUTH_COOKIE_SAMESITE);
 }
 
 function clearAuthCookie(res) {
-  const useSecure = AUTH_COOKIE_SAMESITE === 'None' ? true : AUTH_COOKIE_SECURE;
-  const securePart = useSecure ? '; Secure' : '';
-  res.append(
-    'Set-Cookie',
-    `${AUTH_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=0${securePart}`
-  );
-  res.append(
-    'Set-Cookie',
-    `${AUTH_UI_COOKIE_NAME}=; Path=/; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=0${securePart}`
-  );
+  clearSessionCookies(res, AUTH_COOKIE_SAMESITE);
 }
 
 function loginPageHtml(nextPath = '', errorMessage = '') {
@@ -749,15 +791,20 @@ app.get('/auth/login', (req, res) => {
   return res.status(200).send(loginPageHtml(nextPath));
 });
 
-app.post('/auth/login', (req, res) => {
+app.post('/auth/login', async (req, res) => {
   if (!AUTH_ENABLED) return res.redirect('/');
   const nextPath = safeNextAfterLogin(typeof req.body?.next === 'string' ? req.body.next : '/');
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '');
-  if (!credentialsValid(username, password)) {
+  if (credentialsValid(username, password)) {
+    setAuthCookie(res, { userId: 'staff', role: 'staff', email: username });
+    return res.redirect(nextPath);
+  }
+  const user = await authenticateUser(username, password);
+  if (!user || !user.emailVerified) {
     return res.status(401).send(loginPageHtml(nextPath, 'Invalid username or password. Try again.'));
   }
-  setAuthCookie(res);
+  setAuthCookie(res, { userId: user.id, role: user.role, email: user.email });
   return res.redirect(nextPath);
 });
 
@@ -828,13 +875,37 @@ app.get('/auth/jira/callback', async (req, res) => {
 });
 
 app.get('/api/auth/status', (req, res) => {
-  if (!AUTH_ENABLED) return res.json({ authEnabled: false, authenticated: true, role: 'staff' });
-  const cookies = parseCookies(req);
-  const authenticated = cookies[AUTH_COOKIE_NAME] === '1';
+  if (!AUTH_ENABLED) {
+    return res.json({
+      authEnabled: false,
+      authenticated: true,
+      role: 'staff',
+      csrf: '',
+      credits: creditSnapshot({ role: 'staff' }),
+      pricing: pricingPublic(),
+    });
+  }
+  const access = readAccessFromCookies(req);
+  if (access) {
+    const user = access.role === 'customer' ? getUserById(access.userId) : { role: 'staff' };
+    return res.json({
+      authEnabled: true,
+      authenticated: true,
+      role: access.role,
+      email: access.email || user?.email || '',
+      csrf: access.csrf || '',
+      credits: creditSnapshot(user),
+      subscribed: access.role === 'staff' || hasActiveSubscription(user),
+      pricing: pricingPublic(),
+    });
+  }
   return res.json({
     authEnabled: true,
-    authenticated,
-    role: authenticated ? 'staff' : 'guest',
+    authenticated: false,
+    role: 'guest',
+    csrf: '',
+    credits: null,
+    pricing: pricingPublic(),
   });
 });
 
@@ -845,15 +916,23 @@ app.get('/api/config', (_req, res) => {
   });
 });
 
-app.post('/api/auth/login', (req, res) => {
-  if (!AUTH_ENABLED) return res.json({ ok: true });
-  const username = String(req.body?.username ?? '').trim();
+app.post('/api/auth/login', async (req, res) => {
+  if (!AUTH_ENABLED) return res.json({ ok: true, role: 'staff' });
+  const username = String(req.body?.username ?? req.body?.email ?? '').trim();
   const password = String(req.body?.password ?? '');
-  if (!credentialsValid(username, password)) {
+  if (credentialsValid(username, password)) {
+    setAuthCookie(res, { userId: 'staff', role: 'staff', email: username });
+    return res.json({ ok: true, role: 'staff' });
+  }
+  const user = await authenticateUser(username, password);
+  if (!user) {
     return res.status(401).json({ error: 'Invalid username or password.' });
   }
-  setAuthCookie(res);
-  return res.json({ ok: true });
+  if (!user.emailVerified) {
+    return res.status(403).json({ error: 'Verify your email before signing in.' });
+  }
+  setAuthCookie(res, { userId: user.id, role: user.role, email: user.email });
+  return res.json({ ok: true, role: user.role });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -884,15 +963,14 @@ app.post('/api/access-request', async (req, res) => {
 
 app.use((req, res, next) => {
   if (!AUTH_ENABLED) {
-    req.access = { role: 'staff' };
+    req.access = { role: 'staff', userId: 'staff', email: '', csrf: '' };
     return next();
   }
   if (req.path === '/robots.txt') return next();
-  if (req.path === '/auth/login') return next();
-  if (req.path === '/auth/logout') return next();
+  if (req.path === '/auth/login' || req.path === '/auth/logout') return next();
   if (req.path.startsWith('/auth/jira/')) return next();
-  if (req.path === '/api/config') return next();
-  /** Public GETs: loading shell + static assets (styles/scripts while session cookie is set). */
+  if (req.path === '/api/billing/webhook') return next();
+  if (req.path === '/api/config' || req.path === '/api/pricing') return next();
   if (
     req.method === 'GET' &&
     (req.path === '/loading' ||
@@ -903,27 +981,19 @@ app.use((req, res, next) => {
     return next();
   }
 
-  const cookies = parseCookies(req);
-  const hasSession = cookies[AUTH_COOKIE_NAME] === '1';
-  const creds = credentialsFromRequest(req);
-  let authed = hasSession;
-  if (!authed && creds && credentialsValid(creds.user, creds.pass)) {
-    setAuthCookie(res);
-    authed = true;
-    if (
-      !req.path.startsWith('/api/') &&
-      (typeof req.query?.password === 'string' || typeof req.query?.username === 'string')
-    ) {
-      const cleanQuery = { ...req.query };
-      delete cleanQuery.password;
-      delete cleanQuery.username;
-      const qs = new URLSearchParams(cleanQuery).toString();
-      const target = `${req.path}${qs ? `?${qs}` : ''}`;
-      return res.redirect(target);
+  const cookieAccess = readAccessFromCookies(req);
+  if (cookieAccess) {
+    req.access = cookieAccess;
+    if (!csrfOk(req) && req.path.startsWith('/api/')) {
+      return res.status(403).json({ error: 'Missing or invalid CSRF token.' });
     }
+    return next();
   }
-  if (authed) {
-    req.access = { role: 'staff' };
+
+  const creds = credentialsFromRequest(req);
+  if (creds && credentialsValid(creds.user, creds.pass)) {
+    setAuthCookie(res, { userId: 'staff', role: 'staff', email: creds.user });
+    req.access = { role: 'staff', userId: 'staff', email: creds.user, csrf: '' };
     return next();
   }
 
@@ -948,12 +1018,36 @@ app.use((req, res, next) => {
   return res.redirect(`/auth/login?next=${encodeURIComponent(nextPath)}`);
 });
 
+function settleScanAccounting(domain, runId, ok) {
+  const key = runKey(domain, runId);
+  const cur = runStatus.get(key);
+  if (cur?.tier === 'guest' && cur.guestIp) {
+    trackGuestRunEnd(cur.guestIp);
+    cur.guestIp = null;
+  }
+  if (cur?.userId && cur.userId !== 'staff' && cur.creditsSettled !== true) {
+    cur.creditsSettled = true;
+    const pages = Number(cur.processedUrls || cur.urls || 1);
+    if (ok) commitCredits(cur.userId, pages);
+    else releaseCredits(cur.userId, pages);
+  }
+  finishJob(cur?.jobId || `${domain}__${runId}`, { status: ok ? 'done' : 'error' });
+}
+
+registerSaasRoutes(app, { AUTH_ENABLED, credentialsValid, readGuestTokenRecord });
+
 app.post('/api/run', upload.single('file'), async (req, res) => {
   const staff = requestIsStaff(req);
+  const customer = req.access?.role === 'customer';
+  const customerUser = customer ? getUserById(req.access.userId) : null;
+  const paid = staff || (customer && hasActiveSubscription(customerUser));
   const ip = clientIp(req);
   let urls = [];
 
-  if (!staff) {
+  if (!paid) {
+    if (customer && !hasActiveSubscription(customerUser)) {
+      return res.status(402).json({ error: 'A Pro subscription is required to run full audits.', upgrade: '/pricing' });
+    }
     if (req.file) {
       return res.status(400).json({ error: 'File uploads are available after you sign in.' });
     }
@@ -977,9 +1071,13 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     }
   }
 
-  const maxUrls = staff ? (process.env.MAX_URLS_PER_RUN ? parseInt(process.env.MAX_URLS_PER_RUN, 10) : 0) : 1;
+  const maxUrls = staff
+    ? (process.env.MAX_URLS_PER_RUN ? parseInt(process.env.MAX_URLS_PER_RUN, 10) : 0)
+    : paid
+      ? CUSTOMER_MAX_URLS_PER_RUN
+      : 1;
 
-  if (staff && req.file) {
+  if (paid && req.file) {
     const buf = req.file.buffer;
     const name = (req.file.originalname || '').toLowerCase();
     if (name.endsWith('.csv')) {
@@ -987,7 +1085,7 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     } else if (name.endsWith('.xml')) {
       try {
         const fromSitemap = await parseSitemapBuffer(buf, {
-          maxUrls: maxUrls > 0 ? maxUrls * 2 : 5000,
+          maxUrls: maxUrls > 0 ? Math.min(maxUrls, 50) : 50,
         });
         urls = [...urls, ...fromSitemap];
       } catch (err) {
@@ -999,11 +1097,20 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   }
 
   urls = [...new Set(urls)].filter((u) => u.startsWith('http'));
+  const allowPrivate = staff && String(process.env.STAFF_ALLOW_PRIVATE_URLS || '').toLowerCase() === 'true';
+  if (!allowPrivate) {
+    try {
+      urls = await Promise.all(urls.map((u) => assertPublicHttpUrl(u)));
+    } catch (err) {
+      const status = Number(err?.status) || 400;
+      return res.status(status).json({ error: err.message || 'That host cannot be scanned.' });
+    }
+  }
   const requestedUrls = urls.length;
 
   if (urls.length === 0) {
     return res.status(400).json({
-      error: staff
+      error: paid
         ? 'No valid URLs provided. Add URLs in the text area or upload a CSV/XML file.'
         : 'Enter one public http(s) URL to scan.',
     });
@@ -1015,17 +1122,29 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   const processedUrls = urls.length;
   const truncated = processedUrls < requestedUrls;
 
-  const { notifyOnComplete, notifyEmail } = staff
+  const { notifyOnComplete, notifyEmail } = paid
     ? parseNotifyFields(req.body || {})
     : { notifyOnComplete: false, notifyEmail: '' };
-  if (staff && notifyOnComplete && !isValidEmail(notifyEmail)) {
+  if (paid && notifyOnComplete && !isValidEmail(notifyEmail)) {
     return res.status(400).json({
       error:
         'Enter a valid e-mail address to receive a notification when tests finish (or uncheck that option).',
     });
   }
 
-  if (scanPoolFull(runStatus)) {
+  if (customer) {
+    try {
+      assertCanSpend(customerUser, processedUrls);
+    } catch (err) {
+      return res.status(Number(err.status) || 402).json({ error: err.message });
+    }
+    if (customerHasRunningScan(runStatus, customerUser.id)) {
+      return res.status(409).json({ error: 'You already have a scan running or queued. Wait for it to finish.' });
+    }
+  }
+
+  const poolBusy = scanPoolFull(runStatus);
+  if (poolBusy && !customer) {
     return res.status(429).json({ error: 'The scanner is busy. Try again in a few minutes.' });
   }
 
@@ -1046,22 +1165,28 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   }
   const runId = newRunId();
   const key = runKey(domain, runId);
-  const guestToken = staff ? null : newGuestToken();
+  const guestToken = paid ? null : newGuestToken();
+  const jobId = `${domain}__${runId}`;
 
   const reportDir = runDirOf(domain, runId);
   if (!existsSync(reportDir)) mkdirSync(reportDir, { recursive: true });
 
-  const statementMeta = staff ? parseStatementMeta(req.body || {}) : {};
+  const statementMeta = paid ? parseStatementMeta(req.body || {}) : {};
   try {
     writeFileSync(join(reportDir, 'statement-meta.json'), JSON.stringify(statementMeta, null, 2), 'utf8');
   } catch (err) {
     console.error('statement-meta write failed:', err.message);
   }
 
+  if (customer && customerUser) {
+    attachRunToUser(customerUser.id, domain, runId);
+    reserveCredits(customerUser.id, processedUrls);
+  }
+
   const initialState = {
     domain,
     runId,
-    status: 'running',
+    status: poolBusy && customer ? 'queued' : 'running',
     urls: processedUrls,
     requestedUrls,
     processedUrls,
@@ -1069,14 +1194,16 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     error: null,
     notifyRequested: !!(notifyOnComplete && notifyEmail),
     notifyEmail: notifyOnComplete && notifyEmail ? notifyEmail : null,
-    tier: staff ? 'staff' : 'guest',
+    tier: staff ? 'staff' : customer ? 'customer' : 'guest',
+    userId: customerUser?.id || (staff ? 'staff' : null),
     guestToken,
-    guestIp: staff ? null : ip,
-    guestUrl: staff ? null : urls[0],
+    guestIp: paid ? null : ip,
+    guestUrl: paid ? null : urls[0],
+    jobId,
   };
   notificationAttempted.delete(key);
   runStatus.set(key, initialState);
-  if (!staff) {
+  if (!paid) {
     trackGuestRunStart(ip);
     persistGuestToken(guestToken, { domain, runId, url: urls[0], ip });
   }
@@ -1084,6 +1211,38 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     console.error(`[run ${domain}/${runId}] DB initial write failed:`, err.message);
   });
 
+  const jobPayload = {
+    id: jobId,
+    domain,
+    runId,
+    key,
+    urls,
+    processedUrls,
+    requestedUrls,
+    truncated,
+    reportDir,
+    userId: customerUser?.id || null,
+    notifyOnComplete,
+    notifyEmail,
+  };
+
+  if (poolBusy && customer) {
+    enqueueScanJob({ ...jobPayload, status: 'queued' });
+    return res.json({
+      domain,
+      runId,
+      id: domain,
+      reportId: domain,
+      urls: processedUrls,
+      processedUrls,
+      requestedUrls,
+      truncated,
+      maxUrls: maxUrls > 0 ? maxUrls : null,
+      queued: true,
+    });
+  }
+
+  enqueueScanJob({ ...jobPayload, status: 'running' });
   const urlsArg = urls.join('\n');
   const child = spawn(
     process.execPath,
@@ -1124,17 +1283,14 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   });
 
   child.on('close', (code) => {
-    const cur = runStatus.get(key);
-    if (cur?.tier === 'guest' && cur.guestIp) {
-      trackGuestRunEnd(cur.guestIp);
-      cur.guestIp = null;
-    }
     const reportPath = join(reportDir, 'accessibility-report.html');
     const resultsPath = join(reportDir, 'accessibility-results.json');
+    const markDone = (ok) => settleScanAccounting(domain, runId, ok);
 
     if (code === 0 && existsSync(reportPath)) {
       finalizeSuccessfulRun({ domain, runId, reportDir, processedUrls, requestedUrls, truncated })
         .then((ok) => {
+          markDone(ok);
           if (!ok) {
             runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
           }
@@ -1149,11 +1305,13 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
         if (existsSync(reportPath)) {
           finalizeSuccessfulRun({ domain, runId, reportDir, processedUrls, requestedUrls, truncated })
             .then((ok) => {
+              markDone(ok);
               if (!ok) {
                 runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
               }
             })
             .catch((err) => {
+              markDone(false);
               runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: err.message });
             });
           return;
@@ -1167,17 +1325,21 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
               generateReport(null, { outputDir: reportDir });
               if (existsSync(reportPath)) {
                 const ok = await finalizeSuccessfulRun({ domain, runId, reportDir, processedUrls, requestedUrls, truncated });
+                markDone(ok);
                 if (!ok) {
                   runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
                 }
               } else {
+                markDone(false);
                 runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
               }
             } catch (err) {
+              markDone(false);
               runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: err.message });
             }
           })();
         } else {
+          markDone(false);
           runStatePatch(domain, runId, {
             status: 'error',
             urls: processedUrls,
@@ -1199,14 +1361,10 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
       truncated,
       error: stderr || `Process exited with code ${code}`,
     });
+    markDone(false);
   });
 
   child.on('error', (err) => {
-    const cur = runStatus.get(key);
-    if (cur?.tier === 'guest' && cur.guestIp) {
-      trackGuestRunEnd(cur.guestIp);
-      cur.guestIp = null;
-    }
     runStatePatch(domain, runId, {
       status: 'error',
       urls: processedUrls,
@@ -1215,6 +1373,7 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
       truncated,
       error: err.message,
     });
+    settleScanAccounting(domain, runId, false);
   });
 
   res.json({
@@ -1228,7 +1387,8 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     truncated,
     maxUrls: maxUrls > 0 ? maxUrls : null,
     guestToken: guestToken || undefined,
-    teaser: !staff,
+    teaser: !paid,
+    queued: false,
   });
 });
 
@@ -1265,6 +1425,18 @@ async function resolveStatus({ domain, runId }) {
     error: status.error,
   };
 }
+
+app.use((req, res, next) => {
+  const match = req.path.match(/^\/(?:api\/status|api\/report|api\/audits|report)\/([^/]+)/);
+  if (!match) return next();
+  const domain = match[1];
+  if (domain === 'leads' || !isValidDomain(domain)) return next();
+  if (canAccessDomain(req.access, domain)) return next();
+  if (req.path.startsWith('/api/')) {
+    return res.status(403).json({ error: 'You do not have access to this project.' });
+  }
+  return res.status(403).send('You do not have access to this project.');
+});
 
 app.get('/api/status/:domain/:runId', async (req, res) => {
   const { domain, runId } = req.params;
@@ -1590,9 +1762,13 @@ app.post('/api/jira/sprint', async (req, res) => {
   return res.json({ ok: true, createdCount: created.length, issues: created });
 });
 
-app.get('/api/audits', async (_req, res) => {
+app.get('/api/audits', async (req, res) => {
   try {
-    const audits = await listAuditEntries(dbPool, REPORTS_BASE);
+    let audits = await listAuditEntries(dbPool, REPORTS_BASE);
+    if (req.access?.role === 'customer') {
+      const allowed = new Set(domainsForUser(req.access.userId));
+      audits = audits.filter((row) => allowed.has(row.domain));
+    }
     return res.json({ audits });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1602,6 +1778,9 @@ app.get('/api/audits', async (_req, res) => {
 app.get('/api/audits/:domain/runs', async (req, res) => {
   const domain = req.params.domain;
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
+  if (!canAccessDomain(req.access, domain)) {
+    return res.status(403).json({ error: 'You do not have access to this project.' });
+  }
   try {
     const runs = await listRunsForDomain(dbPool, REPORTS_BASE, domain);
     return res.json({ domain, runs });
@@ -2182,6 +2361,47 @@ app.get('/report/:domain/:runId/statement/', (req, res, next) => next());
    * When using `node server.js` alone, `server.js` registers a second handler to redirect to /audits.
    */
   app.get('/', (req, res, next) => next());
+
+  setQueueExecutor(async (job) => {
+    const urlsArg = (job.urls || []).join('\n');
+    const child = spawn(
+      process.execPath,
+      [join(repoRoot, 'run-tests.js'), '--report', `--urls=${urlsArg}`, `--output-id=${job.domain}/${job.runId}`],
+      { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+    const key = runKey(job.domain, job.runId);
+    runStatePatch(job.domain, job.runId, { status: 'running' });
+    let stderr = '';
+    child.stderr?.on('data', (d) => {
+      stderr += d.toString();
+    });
+    child.on('close', (code) => {
+      const reportDir = job.reportDir || runDirOf(job.domain, job.runId);
+      const reportPath = join(reportDir, 'accessibility-report.html');
+      if (code === 0 && existsSync(reportPath)) {
+        finalizeSuccessfulRun({
+          domain: job.domain,
+          runId: job.runId,
+          reportDir,
+          processedUrls: job.processedUrls,
+          requestedUrls: job.requestedUrls,
+          truncated: job.truncated,
+        })
+          .then((ok) => settleScanAccounting(job.domain, job.runId, ok))
+          .catch(() => settleScanAccounting(job.domain, job.runId, false));
+        return;
+      }
+      runStatePatch(job.domain, job.runId, { status: 'error', error: stderr || `Process exited with code ${code}` });
+      settleScanAccounting(job.domain, job.runId, false);
+    });
+    child.on('error', (err) => {
+      runStatePatch(job.domain, job.runId, { status: 'error', error: err.message });
+      settleScanAccounting(job.domain, job.runId, false);
+    });
+    void key;
+  });
+  recoverInterruptedJobs();
+  kickQueue();
 
   return app;
 }

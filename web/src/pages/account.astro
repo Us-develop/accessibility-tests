@@ -1,0 +1,69 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { langFromAstro } from '../lib/page-lang.mjs';
+
+export const prerender = false;
+const lang = langFromAstro(Astro);
+const nl = lang === 'nl';
+---
+<Layout title="Account · Us" authMode="required">
+  <div class="app-shell">
+    <AppHeader crumb="Account" />
+    <main class="app-main">
+      <article class="container-narrow page-article">
+        <h1>Account</h1>
+        <p id="account-status" class="muted mt-1">Loading…</p>
+        <div id="usage" class="us-card usage-card"></div>
+        <div class="account-actions">
+          <a class="btn btn-primary" href="/pricing">{nl ? 'Naar prijzen' : 'Go to pricing'}</a>
+          <button type="button" class="btn btn-secondary" id="portal-btn">{nl ? 'Facturen en opzeggen' : 'Invoices and cancel'}</button>
+          <a class="btn btn-ghost" href="/api/account/export">{nl ? 'Exporteer mijn gegevens' : 'Export my data'}</a>
+          <button type="button" class="btn btn-ghost" id="delete-btn">{nl ? 'Account wissen' : 'Delete account'}</button>
+        </div>
+        <p id="account-msg" class="muted" role="status"></p>
+      </article>
+    </main>
+    <SiteFooter lang={lang} />
+  </div>
+</Layout>
+<script>
+  const api = (p) => (typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(p) : p);
+  const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
+  const headers = () => (typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' });
+
+  async function load() {
+    const res = await fetch(api('/api/account'), { credentials: creds });
+    const data = await res.json().catch(() => ({}));
+    const status = document.getElementById('account-status');
+    const usage = document.getElementById('usage');
+    if (!res.ok) {
+      if (status) status.textContent = data.error || 'Sign in first.';
+      return;
+    }
+    if (status) status.textContent = `${data.user?.email || ''} · ${data.role}${data.subscribed ? ' · Pro' : ''}`;
+    const c = data.credits || {};
+    if (usage) {
+      usage.innerHTML = c.unlimited
+        ? '<p>Staff accounts have no page-scan quota.</p>'
+        : `<p>Page credits this month: <strong>${c.remaining} / ${c.limit}</strong> remaining (${c.used} used${c.reserved ? `, ${c.reserved} reserved` : ''}). Period ${c.period}.</p>`;
+    }
+  }
+  document.getElementById('portal-btn')?.addEventListener('click', async () => {
+    const res = await fetch(api('/api/billing/portal'), { method: 'POST', credentials: creds, headers: headers() });
+    const data = await res.json().catch(() => ({}));
+    const msg = document.getElementById('account-msg');
+    if (!res.ok) {
+      if (msg) msg.textContent = data.error || 'Could not open the billing portal.';
+      return;
+    }
+    if (data.url) window.location.href = data.url;
+  });
+  document.getElementById('delete-btn')?.addEventListener('click', async () => {
+    if (!confirm('Delete your account and project links? This cannot be undone.')) return;
+    const res = await fetch(api('/api/account/delete'), { method: 'POST', credentials: creds, headers: headers() });
+    if (res.ok) window.location.href = '/';
+  });
+  load();
+</script>

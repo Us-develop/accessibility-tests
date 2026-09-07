@@ -1,9 +1,16 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { t } from '../../../server/i18n.mjs';
+import { langFromAstro } from '../lib/page-lang.mjs';
 
 const cookieHeader = Astro.request.headers.get('cookie') || '';
-const ssrStaff = /(?:^|;\s*)wcag_access=1(?:;|$)/.test(cookieHeader);
+const ssrStaff = /(?:^|;\s*)wcag_access=1(?:;|$)/.test(cookieHeader) || /(?:^|;\s*)wcag_ui=1(?:;|$)/.test(cookieHeader);
+const ssrCustomer = /(?:^|;\s*)wcag_ui=c(?:;|$)/.test(cookieHeader);
+const ssrSignedIn = ssrStaff || ssrCustomer;
+const lang = langFromAstro(Astro);
+const copy = t(lang);
 
 export const prerender = false;
 ---
@@ -17,22 +24,20 @@ export const prerender = false;
           style="position: absolute; top: -120px; right: -100px; width: 460px; height: 460px; border-radius: 50%; background: var(--us-grad-iridescent); opacity: 0.5; filter: blur(40px); pointer-events: none; animation: drift 22s ease-in-out infinite;"
         >
         </div>
-        <div class="fade-up guest-only" hidden={ssrStaff} style="text-align: left; margin-bottom: 40px;">
-          <span class="eyebrow"><span class="dot"></span>Free snapshot · 1 page · automated WCAG 2.2 AA checks</span>
+        <div class="fade-up guest-only" hidden={ssrSignedIn} style="text-align: left; margin-bottom: 40px;">
+          <span class="eyebrow"><span class="dot"></span>{copy.home.guestEyebrow}</span>
           <h1 style="font-size: clamp(40px, 5.4vw, 68px); margin-top: 14px; margin-bottom: 12px;">
-            Check a page for accessibility — <em
+            {copy.home.guestTitleBefore}<em
               style="font-style: normal; background: var(--us-grad-iridescent); -webkit-background-clip: text; background-clip: text; color: transparent;"
-              >in plain English.</em
+              >{copy.home.guestTitleEm}</em
             >
           </h1>
           <p class="p-large muted" style="max-width: 620px;">
-            Paste a public URL. We run automated checks aligned with WCAG 2.2 AA and show a score plus the top issues.
-            This is not a full audit or legal sign-off.
-            Need a human audit and remediation? Ask Us for WCAG services after the scan.
+            {copy.home.guestLead}
           </p>
         </div>
 
-        <form id="guest-run-form" class="card guest-only" hidden={ssrStaff} style="padding: 0; overflow: hidden;">
+        <form id="guest-run-form" class="card guest-only" hidden={ssrSignedIn} style="padding: 0; overflow: hidden;">
           <div style="padding: 32px 32px 28px;">
             <label class="field-label" for="guest-url">Page URL</label>
             <input
@@ -60,12 +65,20 @@ export const prerender = false;
               <div style="opacity: 0.7; font-size: 13px; margin-top: 4px;">Sign in for sitemaps, history, and full reports</div>
             </div>
             <button type="submit" class="btn btn-grad btn-lg" style="min-width: 200px;" id="guest-submit-btn">
-              Check this page
+              {copy.home.checkPage}
             </button>
           </div>
         </form>
+        <div class="guest-only guest-cta-row" hidden={ssrSignedIn}>
+          <a class="btn btn-primary" href="/pricing">{copy.home.subscribe}</a>
+          <a class="btn btn-secondary" href="#lead-cta">{copy.home.services}</a>
+          <a class="btn btn-ghost" href="/signup">{copy.nav.signup}</a>
+        </div>
+        <p id="lead-cta" class="muted guest-only guest-cta-note" hidden={ssrSignedIn}>
+          After the snapshot you can subscribe for full reports or ask Us for a human audit.
+        </p>
 
-        <div class="fade-up staff-only" hidden={!ssrStaff} style="text-align: left; margin-bottom: 40px;">
+        <div class="fade-up staff-only" hidden={!ssrSignedIn} style="text-align: left; margin-bottom: 40px;">
           <span class="eyebrow"><span class="dot"></span>Automated · WCAG 2.2 AA aligned · EN 301 549 informed</span>
           <h1 style="font-size: clamp(40px, 5.4vw, 68px); margin-top: 14px; margin-bottom: 12px;">
             Audit a site for accessibility — <em
@@ -77,9 +90,10 @@ export const prerender = false;
             Drop in URLs or a sitemap. We run axe-core plus custom chapter tests and deliver HTML reports.
             Results are automated findings, not a conformance certificate.
           </p>
+          <p id="credits-meter" class="muted credits-meter" hidden></p>
         </div>
 
-        <form id="run-form" class="card staff-only" hidden={!ssrStaff} style="padding: 0; overflow: hidden;">
+        <form id="run-form" class="card staff-only" hidden={!ssrSignedIn} style="padding: 0; overflow: hidden;">
           <div style="padding: 32px 32px 36px;">
             <div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px;">
               <span style="font-family: var(--font-mono); font-size: 12px; color: var(--fg-3); letter-spacing: 0.04em;"
@@ -196,13 +210,22 @@ export const prerender = false;
           <a href="/limitations" class="link">What this scan can and cannot test</a>
         </p>
 
-        <p class="muted staff-only" hidden={!ssrStaff} style="font-size: 12px; margin-top: 14px; text-align: center;">
+        <p class="muted staff-only" hidden={!ssrSignedIn} style="font-size: 12px; margin-top: 14px; text-align: center;">
           <a href="/audits" class="link">All domain audits</a>
+          {ssrStaff ? (
+            <>
+              ·
+              <a href="/admin/leads" class="link">Leads</a>
+            </>
+          ) : null}
           ·
-          <a href="/admin/leads" class="link">Leads</a>
+          <a href="/account" class="link">Account</a>
+          ·
+          <a href="/pricing" class="link">Pricing</a>
         </p>
       </div>
     </main>
+    <SiteFooter lang={lang} />
   </div>
 </Layout>
 
@@ -303,7 +326,30 @@ export const prerender = false;
 
   refreshMode();
   maybeLoadTurnstile();
-  document.addEventListener('wcag:logged-in', () => setStaffMode(true));
+  document.addEventListener('wcag:logged-in', () => {
+    setStaffMode(true);
+    loadCreditsMeter();
+  });
+  loadCreditsMeter();
+
+  async function loadCreditsMeter() {
+    const el = document.getElementById('credits-meter');
+    if (!el) return;
+    try {
+      const res = await fetch(wcUrl('/api/auth/status'), { credentials: wcCreds() });
+      const data = await res.json().catch(() => ({}));
+      const c = data.credits;
+      if (!c) return;
+      el.hidden = false;
+      if (c.unlimited) {
+        el.textContent = 'Staff accounts have no page-scan quota.';
+        return;
+      }
+      el.textContent = `Page credits this month: ${c.remaining} / ${c.limit} remaining (${c.used} used). Max ${data.pricing?.maxUrlsPerRun || 50} URLs per run.`;
+    } catch {
+      /* meter is optional */
+    }
+  }
 
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -311,8 +357,14 @@ export const prerender = false;
     errEl.style.display = 'none';
     const fd = new FormData(form);
     try {
-      const res = await fetch(wcUrl('/api/run'), { method: 'POST', body: fd, credentials: wcCreds() });
+      const headers = typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders() : {};
+      const res = await fetch(wcUrl('/api/run'), { method: 'POST', body: fd, credentials: wcCreds(), headers });
       const data = await parseJsonResponse(res);
+      if (res.status === 402) {
+        errEl.textContent = data.error || 'A Pro subscription is required.';
+        errEl.style.display = 'block';
+        return;
+      }
       if (res.status === 401) {
         document.dispatchEvent(new CustomEvent('wcag:login-required'));
         errEl.textContent = data.error || 'Sign in to run an audit.';
@@ -379,8 +431,11 @@ export const prerender = false;
     }
   });
 </script>
-
 <style>
+  .guest-cta-note,
+  .credits-meter {
+    margin-top: var(--spacing-1-rem);
+  }
   .statement-details summary {
     list-style: none;
     cursor: pointer;

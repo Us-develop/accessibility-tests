@@ -1,0 +1,31 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { langFromAstro } from '../lib/page-lang.mjs';
+
+export const prerender = false;
+const lang = langFromAstro(Astro);
+const nl = lang === 'nl';
+---
+<Layout title="Cookies · Us" indexable={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb="Cookies" />
+    <main class="app-main">
+      <article class="container-narrow legal-prose page-article">
+        <h1>Cookies</h1>
+        <p>
+          {nl
+            ? 'We gebruiken noodzakelijke cookies: sessie (HttpOnly), CSRF, een UI-hint zodat de login-overlay niet flitst, taalvoorkeur, en optioneel een gast-token na een gratis scan. Stripe gebruikt eigen cookies op checkout. Geen tracking-advertenties.'
+            : 'We use necessary cookies: session (HttpOnly), CSRF, a UI hint so the login overlay does not flash, language preference, and optionally a guest token after a free scan. Stripe sets its own cookies on checkout. No advertising trackers.'}
+        </p>
+        <p>
+          {nl
+            ? 'Door de app te gebruiken aanvaard je deze noodzakelijke cookies. Taal kun je wisselen in de header.'
+            : 'Using the app means you accept these necessary cookies. You can switch language in the header.'}
+        </p>
+      </article>
+    </main>
+    <SiteFooter lang={lang} />
+  </div>
+</Layout>

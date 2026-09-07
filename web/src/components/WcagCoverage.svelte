@@ -96,7 +96,11 @@
       const res = await fetch(apiPath, {
         method: kind === 'post' ? 'POST' : 'GET',
         credentials: 'same-origin',
-        headers: kind === 'post' ? { 'Content-Type': 'application/json' } : undefined,
+        headers: kind === 'post'
+          ? (typeof globalThis.wcagHeaders === 'function'
+            ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' })
+            : { 'Content-Type': 'application/json' })
+          : undefined,
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);

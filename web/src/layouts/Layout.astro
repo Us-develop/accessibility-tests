@@ -10,6 +10,11 @@ interface Props {
   authMode?: 'required' | 'guest-ok';
 }
 const { title = 'Accessibility audit · Us', indexable = false, authMode = 'required' } = Astro.props;
+const langParam = Astro.url.searchParams.get('lang');
+if (langParam === 'nl' || langParam === 'en') {
+  Astro.cookies.set('lang', langParam, { path: '/', maxAge: 31536000, sameSite: 'lax' });
+}
+const pageLang = langParam === 'nl' || langParam === 'en' ? langParam : (Astro.cookies.get('lang')?.value === 'nl' ? 'nl' : 'en');
 const publicAppBase = import.meta.env.PUBLIC_APP_BASE?.trim() ?? '';
 const devApiBase =
   import.meta.env.DEV && (import.meta.env.PUBLIC_DEV_API_URL?.trim() ?? '')
@@ -18,12 +23,15 @@ const devApiBase =
 /** In dev, prefer direct API URL so multipart POST skips Vite proxy; production still uses PUBLIC_APP_BASE. */
 const appBaseMeta =
   import.meta.env.DEV && devApiBase ? devApiBase : publicAppBase || devApiBase;
-/** Non-HttpOnly hint cookie so SSR can skip the login overlay on staff navigations. */
-const staffHint = Astro.cookies.get('wcag_ui')?.value === '1';
+/** Non-HttpOnly hint cookie so SSR can skip the login overlay on signed-in navigations. */
+const uiHint = Astro.cookies.get('wcag_ui')?.value;
+const staffHint = uiHint === '1' || uiHint === 'c';
 const gateLocked = authMode === 'required' && !staffHint;
+const cookieOk = Astro.cookies.get('wcag_cookie_ok')?.value === '1';
+const nl = pageLang === 'nl';
 ---
 <!DOCTYPE html>
-<html lang="en" class={staffHint ? 'wcag-staff' : undefined}>
+<html lang={pageLang} class={staffHint ? 'wcag-staff' : undefined}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -37,6 +45,8 @@ const gateLocked = authMode === 'required' && !staffHint;
     {appBaseMeta ? <meta name="accessibility-app-base" content={appBaseMeta} /> : null}
     <link rel="icon" href="/assets/us-favicon.png" type="image/png" sizes="88x88" />
     <link rel="apple-touch-icon" href="/assets/us-favicon.png" />
+    <link rel="stylesheet" href="https://use.typekit.net/dbo7deg.css" />
+    <link rel="stylesheet" href="https://use.typekit.net/rgx8kmt.css" />
     <link rel="stylesheet" href="/styles/tokens.css" />
     <link rel="stylesheet" href="/styles/app.css" />
     <script is:inline>
@@ -62,6 +72,26 @@ const gateLocked = authMode === 'required' && !staffHint;
           if (/^https?:\/\//i.test(base)) return 'include';
           return 'same-origin';
         };
+        globalThis.wcagCsrfToken = function () {
+          var match = typeof document.cookie === 'string' ? document.cookie.match(/(?:^|; )wcag_csrf=([^;]*)/) : null;
+          return match ? decodeURIComponent(match[1]) : '';
+        };
+        globalThis.wcagHeaders = function (extra) {
+          var headers = extra ? Object.assign({}, extra) : {};
+          var token = globalThis.wcagCsrfToken();
+          if (token) headers['X-CSRF-Token'] = token;
+          return headers;
+        };
+        if (!globalThis.__wcagCookieBound) {
+          globalThis.__wcagCookieBound = true;
+          document.addEventListener('click', function (event) {
+            var target = event.target;
+            if (!(target && target.closest && target.closest('#wcag-cookie-accept'))) return;
+            document.cookie = 'wcag_cookie_ok=1; Path=/; Max-Age=31536000; SameSite=Lax';
+            var banner = document.getElementById('wcag-cookie-banner');
+            if (banner) banner.remove();
+          });
+        }
       })();
     </script>
   </head>
@@ -105,6 +135,23 @@ const gateLocked = authMode === 'required' && !staffHint;
           : 'Enable JavaScript to sign in and use this app.'}
       </div>
     </noscript>
+    {cookieOk ? null : (
+      <div id="wcag-cookie-banner" class="wcag-cookie-banner" role="dialog" aria-labelledby="wcag-cookie-title" aria-describedby="wcag-cookie-copy">
+        <div>
+          <p id="wcag-cookie-title" class="eyebrow"><span class="dot"></span>Cookies</p>
+          <p id="wcag-cookie-copy">
+            {nl
+              ? 'We gebruiken alleen noodzakelijke cookies (sessie, CSRF, taal, UI-hint). Geen advertentietrackers.'
+              : 'We use necessary cookies only (session, CSRF, language, UI hint). No advertising trackers.'}
+            {' '}
+            <a class="link" href="/cookies">{nl ? 'Cookiebeleid' : 'Cookie policy'}</a>
+          </p>
+        </div>
+        <div class="wcag-cookie-actions">
+          <button type="button" class="btn btn-primary" id="wcag-cookie-accept">{nl ? 'Akkoord' : 'Accept'}</button>
+        </div>
+      </div>
+    )}
     <style is:global>
       html.wcag-staff #wcag-login-modal {
         display: none !important;
@@ -129,7 +176,8 @@ const gateLocked = authMode === 'required' && !staffHint;
       @media print {
         .app-header,
         .wcag-session-bar,
-        .wcag-login-overlay {
+        .wcag-login-overlay,
+        .wcag-cookie-banner {
           display: none !important;
         }
       }

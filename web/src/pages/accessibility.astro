@@ -1,0 +1,34 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { orgIdentity } from '../../../server/legal.mjs';
+import { langFromAstro } from '../lib/page-lang.mjs';
+
+export const prerender = false;
+const lang = langFromAstro(Astro);
+const nl = lang === 'nl';
+const org = orgIdentity();
+---
+<Layout title={nl ? 'Toegankelijkheidsverklaring · Us' : 'Accessibility statement · Us'} indexable={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb={nl ? 'Toegankelijkheid' : 'Accessibility'} />
+    <main class="app-main">
+      <article class="container-narrow legal-prose page-article">
+        <h1>{nl ? 'Toegankelijkheidsverklaring van dit product' : 'Accessibility statement for this product'}</h1>
+        <p>
+          {nl
+            ? `${org.name} wil dat deze scanner zelf bruikbaar is. We volgen WCAG 2.2 AA als doel, met toetsenbordtoegang, zichtbare focus, en contrast op primaire UI. Dit is geen conforme verklaring voor sites die je scant.`
+            : `${org.name} wants this scanner itself to be usable. We aim for WCAG 2.2 AA, with keyboard access, visible focus, and contrast on primary UI. This is not a conformance claim for the sites you scan.`}
+        </p>
+        <p>
+          {nl
+            ? `Feedback: ${org.email}. We antwoorden zo snel mogelijk. Bekende beperkingen staan op de pagina Beperkingen.`
+            : `Feedback: ${org.email}. We reply as soon as we can. Known limitations are listed on the Limitations page.`}
+        </p>
+        <p><a class="link" href="/limitations">{nl ? 'Wat de scanner wel en niet test' : 'What the scanner can and cannot test'}</a></p>
+      </article>
+    </main>
+    <SiteFooter lang={lang} />
+  </div>
+</Layout>

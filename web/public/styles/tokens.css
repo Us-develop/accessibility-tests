@@ -1,184 +1,201 @@
-/* ──────────────────────────────────────────────────────────────────
- * Us — Color & Type tokens
- * Source of truth for every product surface, slide, mock, and prototype.
- * Pulled from the Figma styleguide ("Us – Design System").
- * ──────────────────────────────────────────────────────────────────*/
+/* Accessibility product tokens.
+   Official Us Design System 3.0 values live in us-tokens.css.
+   --us-* aliases keep existing screens on the same palette without duplicating hex. */
 
-@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700&family=Public+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap");
+@import url("./us-tokens.css");
+@import url("https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,300,0,0&display=swap");
 
 :root {
-  /* ─────────  PRIMARY (the only big-fill brand color besides B&W)  ───────── */
-  --us-cream:           #F5F4E5;   /* Soft off-white, the warm background */
-  --us-ink:             #19191B;   /* Brand black, used for fills + text  */
-  --us-white:           #FFFFFF;
+  --us-cream: var(--color-secondary-ecru);
+  --us-ink: var(--color-primary-shark);
+  --us-white: var(--color-neutrals-00);
 
-  /* ─────────  SECONDARY  (text-on-tint accent dots — never large fills)  ─── */
-  --us-peach:           #FFB985;
-  --us-peach-text:      #872012;   /* deep terracotta, for text on peach */
+  --us-peach: var(--color-primary-rajah);
+  --us-peach-text: var(--color-secondary-dark-pablo);
 
-  --us-mint:            #8DFFB7;
-  --us-mint-text:       #1E625A;   /* deep teal text on mint            */
+  --us-mint: var(--color-primary-mint-green);
+  --us-mint-text: var(--color-secondary-dark-green-pea);
 
-  --us-sky:             #A7F0FB;
-  --us-sky-text:        #0D4F6E;
+  --us-sky: var(--color-primary-lavender);
+  --us-sky-text: var(--color-secondary-dark-east-bay);
 
-  --us-pink:            #F3AAFF;
-  --us-pink-text:       #7E1C74;
+  --us-pink: var(--color-primary-perfume);
+  --us-pink-text: var(--color-secondary-dark-disco);
 
-  --us-lilac:           #BDB4FF;   /* the holographic lilac (used a LOT) */
-  --us-lilac-deep:      #6257E8;
-  --us-lilac-text:      #423A75;
+  --us-lilac: var(--color-primary-lavender);
+  --us-lilac-deep: var(--color-secondary-medium-royal);
+  --us-lilac-text: var(--color-secondary-dark-east-bay);
 
-  /* ─────────  GRADIENTS  (used on CTA bars and big graphic moments)  ────── */
-  --us-grad-warm:       linear-gradient(135deg, #FFB985 0%, #F3AAFF 50%, #BDB4FF 100%);
-  --us-grad-cool:       linear-gradient(135deg, #A7F0FB 0%, #8DFFB7 50%, #BDB4FF 100%);
-  --us-grad-iridescent: linear-gradient(135deg, #FFB985 0%, #F3AAFF 25%, #BDB4FF 55%, #A7F0FB 80%, #8DFFB7 100%);
+  --us-grad-warm: var(--gradient-seashell_peach);
+  --us-grad-cool: var(--gradient-hint_of_green);
+  --us-grad-iridescent: var(--gradient-green-purple);
 
-  /* ─────────  NEUTRAL SCALE  (the workhorses)  ───────────────────────── */
-  --us-n-00:            #FFFFFF;
-  --us-n-10:            #FCFCFC;
-  --us-n-20:            #F9F9F9;
-  --us-n-30:            #F3F3F3;
-  --us-n-40:            #EAEAEA;
-  --us-n-50:            #D9D9D9;
-  --us-n-60:            #A7A7A7;
-  --us-n-70:            #707070;
-  --us-n-80:            #494949;
-  --us-n-90:            #2E2E2E;
-  --us-n-100:           #000000;
+  --us-n-00: var(--color-neutrals-00);
+  --us-n-10: var(--color-neutrals-10);
+  --us-n-20: var(--color-neutrals-20);
+  --us-n-30: var(--color-neutrals-30);
+  --us-n-40: var(--color-neutrals-40);
+  --us-n-50: var(--color-neutrals-50);
+  --us-n-60: var(--color-neutrals-60);
+  --us-n-70: var(--color-neutrals-70);
+  --us-n-80: var(--color-neutrals-80);
+  --us-n-90: var(--color-neutrals-90);
+  --us-n-100: var(--color-neutrals-100);
 
-  /* ─────────  SEMANTIC (text, surface, border, focus)  ──────────────── */
-  --fg-1:               #19191B;   /* primary text */
-  --fg-2:               #2E2E2E;   /* secondary text */
-  --fg-3:               #707070;   /* tertiary/muted text */
-  --fg-on-dark:         #FFFFFF;
-  --fg-link:            #19191B;
-  --fg-disabled:        #A7A7A7;
+  --fg-1: var(--content-heading);
+  --fg-2: var(--color-neutrals-90);
+  --fg-3: var(--content-placeholder);
+  --fg-on-dark: var(--color-neutrals-00);
+  --fg-link: var(--content-link-content);
+  --fg-disabled: var(--color-neutrals-60);
 
-  --bg-page:            #FFFFFF;
-  --bg-page-alt:        #F5F4E5;   /* the cream alt page bg            */
-  --bg-surface:         #FFFFFF;
-  --bg-surface-2:       #F9F9F9;
-  --bg-surface-3:       #F3F3F3;
-  --bg-dark:            #19191B;   /* footer / hero dark surface       */
+  --bg-page: var(--color-secondary-ecru);
+  --bg-page-alt: var(--color-secondary-ecru);
+  --bg-surface: var(--page-page-background);
+  --bg-surface-2: var(--color-neutrals-20);
+  --bg-surface-3: var(--color-neutrals-30);
+  --bg-dark: var(--color-primary-shark);
 
-  --border-subtle:      #EAEAEA;
-  --border-default:     #D9D9D9;
-  --border-strong:      #19191B;
+  --border-subtle: var(--borders-separator);
+  --border-default: var(--borders-border-01);
+  --border-strong: var(--button-default-state-button-stroke);
 
-  --focus-ring:         #6257E8;
-  --shadow-card:        0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
-  --shadow-pop:         0 4px 12px rgba(0,0,0,0.08), 0 16px 40px rgba(0,0,0,0.10);
+  --focus-ring: var(--color-secondary-medium-royal);
+  --shadow-card: var(--dropshadow-soft);
+  --shadow-pop: var(--dropshadow-soft);
 
-  /* ─────────  STATUS  (sparingly used)  ────────────────────────────── */
-  --status-success:     #41BD73;
-  --status-warning:     #FFB985;
-  --status-error:       #872012;
-  --status-info:        #6257E8;
+  --status-success: var(--color-system-success);
+  --status-warning: var(--color-system-warning);
+  --status-error: var(--color-system-error);
+  --status-info: var(--color-system-info);
 
-  /* ─────────  TYPE  ───────────────────────────────────────────────── */
-  --font-display:       "Bricolage Grotesque", "Owners", system-ui, sans-serif;
-  --font-body:          "Public Sans", "Helvetica", system-ui, sans-serif;
-  --font-mono:          "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  --font-display: var(--typography-font-headings-default-h2-wide);
+  --font-body: var(--typography-font-body);
+  --font-mono: ui-monospace, "SF Mono", monospace;
 
-  /* fluid heading clamps – mobile → desktop  */
-  --fs-h1:              clamp(40px, 6vw, 80px);
-  --fs-h2:              clamp(32px, 4.5vw, 56px);
-  --fs-h3:              clamp(28px, 3vw, 40px);
-  --fs-h4:              clamp(24px, 2.4vw, 32px);
-  --fs-h5:              22px;
-  --fs-h6:              18px;
-  --fs-quote:           clamp(28px, 3vw, 40px);
-  --fs-lead:            20px;
-  --fs-body:            16px;
-  --fs-small:           14px;
-  --fs-micro:           12px;
+  --fs-h1: var(--typography-font-size-h1-default);
+  --fs-h2: var(--typography-font-size-h2);
+  --fs-h3: var(--typography-font-size-h3);
+  --fs-h4: var(--typography-font-size-h4);
+  --fs-h5: var(--typography-font-size-h5);
+  --fs-h6: var(--typography-font-size-h6);
+  --fs-quote: var(--typography-font-size-quote-small);
+  --fs-lead: var(--typography-font-size-paragraph-large);
+  --fs-body: var(--typography-font-size-paragraph-default);
+  --fs-small: var(--typography-font-size-paragraph-small);
+  --fs-micro: var(--typography-font-size-paragraph-small);
 
-  --lh-tight:           1.05;
-  --lh-snug:            1.2;
-  --lh-normal:          1.5;
-  --lh-relaxed:         1.65;
+  --lh-tight: var(--typography-line-height-h1-s);
+  --lh-snug: var(--typography-line-height-h3);
+  --lh-normal: var(--typography-line-height-body_default);
+  --lh-relaxed: var(--typography-line-height-body_default);
 
-  --tracking-display:   -0.02em;   /* Bricolage feels best slightly tight */
-  --tracking-body:      0;
+  --tracking-display: normal;
+  --tracking-body: normal;
 
-  /* ─────────  SHAPE  ──────────────────────────────────────────────── */
-  --r-xs:               4px;
-  --r-sm:               8px;
-  --r-md:               16px;
-  --r-lg:               24px;
-  --r-xl:               32px;
-  --r-pill:             500px;
+  --r-xs: var(--radius-radius-xs);
+  --r-sm: var(--radius-radius-s);
+  --r-md: var(--radius-radius-m);
+  --r-lg: var(--radius-radius-cards-lg);
+  --r-xl: var(--radius-radius-xl);
+  --r-pill: var(--radius-radius-round);
 
-  --space-1:            4px;
-  --space-2:            8px;
-  --space-3:            12px;
-  --space-4:            16px;
-  --space-5:            24px;
-  --space-6:            32px;
-  --space-7:            48px;
-  --space-8:            64px;
-  --space-9:            96px;
-  --space-10:           128px;
+  --space-1: var(--spacing-0-25-rem);
+  --space-2: var(--spacing-0-5-rem);
+  --space-3: var(--spacing-0-75-rem);
+  --space-4: var(--spacing-1-rem);
+  --space-5: var(--spacing-1-5-rem);
+  --space-6: var(--spacing-2-rem);
+  --space-7: var(--spacing-3-rem);
+  --space-8: var(--spacing-4-rem);
+  --space-9: var(--spacing-6-rem);
+  --space-10: var(--spacing-7-rem);
 
-  --container-max:      1280px;
-  --container-pad:      130px;     /* desktop side gutter from the figma */
+  --container-max: var(--page-content-width);
+  --container-pad: var(--margins-page-margin);
 }
 
-/* ─────────  Element defaults  ──────────────────────────────────── */
 html, body {
-  font-family: var(--font-body);
-  font-weight: 300;
-  font-size: var(--fs-body);
-  line-height: var(--lh-relaxed);
-  color: var(--fg-1);
-  background: var(--bg-page);
+  font-family: var(--typography-font-body);
+  font-weight: var(--typography-font-weight-body_default-weight);
+  font-size: var(--typography-font-size-paragraph-default);
+  line-height: var(--typography-line-height-body_default);
+  color: var(--content-body);
+  background: var(--color-secondary-ecru);
+  letter-spacing: normal;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: var(--tracking-display);
-  line-height: var(--lh-tight);
-  color: var(--fg-1);
+  font-family: var(--typography-font-headings-default-h2-wide);
+  font-weight: var(--typography-font-weight-headings-default-h1-weight);
+  letter-spacing: normal;
+  color: var(--content-heading);
   margin: 0;
   text-wrap: balance;
 }
 
-h1 { font-size: var(--fs-h1); line-height: 0.95; }
-h2 { font-size: var(--fs-h2); line-height: 1.0;  }
-h3 { font-size: var(--fs-h3); line-height: 1.1;  }
-h4 { font-size: var(--fs-h4); line-height: 1.15; }
-h5 { font-size: var(--fs-h5); }
-h6 { font-size: var(--fs-h6); }
+h1 {
+  font-size: var(--typography-font-size-h1-default);
+  line-height: var(--typography-line-height-h1-default);
+  text-transform: uppercase;
+}
+h2 {
+  font-size: var(--typography-font-size-h2);
+  line-height: var(--typography-line-height-h2);
+  text-transform: uppercase;
+}
+h3 {
+  font-size: var(--typography-font-size-h3);
+  line-height: var(--typography-line-height-h3);
+  text-transform: uppercase;
+}
+h4 {
+  font-size: var(--typography-font-size-h4);
+  line-height: var(--typography-line-height-h4);
+  font-weight: var(--typography-font-weight-headings-default-h4-weight);
+}
+h5 {
+  font-size: var(--typography-font-size-h5);
+  line-height: var(--typography-line-height-h5);
+  font-weight: var(--typography-font-weight-headings-default-h5-weight);
+}
+h6 {
+  font-size: var(--typography-font-size-h6);
+  line-height: var(--typography-line-height-h6);
+  font-weight: var(--typography-font-weight-headings-default-h6-weight);
+}
 
 p  { margin: 0; text-wrap: pretty; }
-.p-large  { font-size: var(--fs-lead); line-height: 1.6; }
-.p-small  { font-size: var(--fs-small); line-height: 1.5; color: var(--fg-2); }
+.p-large  { font-size: var(--typography-font-size-paragraph-large); line-height: var(--typography-line-height-body_large); }
+.p-small  { font-size: var(--typography-font-size-paragraph-small); line-height: var(--typography-line-height-body_small); color: var(--fg-2); }
 .eyebrow  {
-  font-family: var(--font-body);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--fg-3);
+  font-family: var(--typography-font-body);
+  font-size: var(--typography-font-size-paragraph-small);
+  font-weight: var(--typography-font-weight-nav-weight);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--content-placeholder);
 }
 .quote {
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: var(--fs-quote);
-  line-height: 1.2;
+  font-family: var(--typography-font-quote);
+  font-weight: var(--typography-font-weight-quote-weight);
+  font-size: var(--typography-font-size-quote-small);
+  line-height: var(--typography-line-height-quote-small);
 }
 .link {
-  color: var(--fg-link);
+  color: var(--content-link-content);
   text-decoration: underline;
-  text-underline-offset: 4px;
+  text-underline-offset: var(--spacing-0-25-rem);
   text-decoration-thickness: 1px;
 }
 .link:hover { text-decoration-thickness: 2px; }
 
-/* utility */
-.us-pill { border-radius: var(--r-pill); }
-.us-card { background: var(--bg-surface); border-radius: var(--r-lg); box-shadow: var(--shadow-card); }
+.prose-width {
+  max-width: min(100%, calc(var(--page-content-width) * 0.62));
+}
+
+.us-pill { border-radius: var(--radius-radius-round); }
+.us-card { background: var(--page-page-background); border-radius: var(--radius-radius-cards-lg); box-shadow: var(--dropshadow-soft); }

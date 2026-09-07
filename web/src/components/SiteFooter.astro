@@ -1,0 +1,54 @@
+---
+interface Props {
+  lang?: 'en' | 'nl';
+}
+const { lang = 'en' } = Astro.props;
+const nl = lang === 'nl';
+---
+<footer class="site-footer">
+  <div class="container site-footer-inner">
+    <p>
+      {nl ? 'Geassisteerde automatische scanner — geen WCAG- of EAA-certificaat.' : 'Assisted automated scanner — not a WCAG or EAA certificate.'}
+    </p>
+    <nav class="site-footer-nav" aria-label={nl ? 'Juridisch' : 'Legal'}>
+      <a href="/pricing">{nl ? 'Prijzen' : 'Pricing'}</a>
+      <a href="/limitations">{nl ? 'Beperkingen' : 'Limitations'}</a>
+      <a href="/terms">{nl ? 'Voorwaarden' : 'Terms'}</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/cookies">Cookies</a>
+      <a href="/accessibility">{nl ? 'Toegankelijkheid' : 'Accessibility'}</a>
+    </nav>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    margin-top: var(--margins-row_indent-large-default);
+    padding-block: var(--spacing-2-rem);
+    border-top: 1px solid var(--borders-separator);
+    background: var(--page-page-background);
+  }
+  .site-footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-1-rem);
+    justify-content: space-between;
+    align-items: center;
+    color: var(--content-placeholder);
+    font-size: var(--typography-font-size-paragraph-small);
+  }
+  .site-footer-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-1-rem);
+  }
+  .site-footer-nav a {
+    color: var(--content-body);
+    text-decoration: none;
+  }
+  .site-footer-nav a:hover { text-decoration: underline; }
+  .site-footer-nav a:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+</style>

@@ -1,0 +1,121 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { langFromAstro } from '../lib/page-lang.mjs';
+
+export const prerender = false;
+
+const lang = langFromAstro(Astro);
+const nl = lang === 'nl';
+---
+<Layout title={nl ? 'Prijzen · Us' : 'Pricing · Us'} indexable={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb={nl ? 'Prijzen' : 'Pricing'} />
+    <main class="app-main">
+      <article class="container-narrow page-article">
+        <span class="eyebrow"><span class="dot"></span>{nl ? 'Pro · 300 paginascans / maand' : 'Pro · 300 page-scans / month'}</span>
+        <h1 class="mt-1">{nl ? 'Pro-toegang voor de volledige scanner' : 'Pro access for the full scanner'}</h1>
+        <p class="p-large muted prose-width mt-1">
+          {nl
+            ? 'De gratis snapshot toont wat automatisering op één publieke pagina kan vinden. Pro opent geschiedenis, sitemaps, de developer guide, de statement-draft en 300 paginascans per maand. Dit is geen WCAG 2.2 AA- of EAA-certificaat.'
+            : 'The free snapshot shows what automation can find on one public page. Pro unlocks history, sitemaps, the developer guide, the statement draft, and 300 page-scans each month. This is not a WCAG 2.2 AA or EAA certificate.'}
+        </p>
+
+        <div class="pricing-grid">
+          <section class="us-card pricing-card">
+            <h2>{nl ? 'Gratis snapshot' : 'Free snapshot'}</h2>
+            <p class="stat-value">€0</p>
+            <ul>
+              <li>{nl ? '1 publieke URL' : '1 public URL'}</li>
+              <li>{nl ? 'Score + top 3 issues' : 'Score + top 3 issues'}</li>
+              <li>{nl ? '3 scans / uur, 10 / dag' : '3 scans / hour, 10 / day'}</li>
+            </ul>
+            <a class="btn btn-secondary" href="/">{nl ? 'Check een pagina' : 'Check a page'}</a>
+          </section>
+          <section class="us-card pricing-card" data-us-theme="green">
+            <h2>Pro</h2>
+            <p class="stat-value">€49</p>
+            <p class="muted">{nl ? 'per maand, of €490 / jaar' : 'per month, or €490 / year'}</p>
+            <ul>
+              <li>{nl ? '300 paginascans / maand' : '300 page-scans / month'}</li>
+              <li>{nl ? 'Max 50 URL’s per run' : 'Max 50 URLs per run'}</li>
+              <li>{nl ? '1 scan tegelijk' : '1 concurrent scan'}</li>
+              <li>{nl ? 'Eigen projecten en geschiedenis' : 'Own projects and history'}</li>
+              <li>{nl ? 'Founding €39 / maand, 12 maanden, eerste 50' : 'Founding €39 / month, locked 12 months, first 50'}</li>
+            </ul>
+            <div class="pricing-actions">
+              <button type="button" class="btn btn-primary" id="checkout-month">{nl ? 'Maandelijks' : 'Monthly'}</button>
+              <button type="button" class="btn btn-secondary" id="checkout-year">{nl ? 'Jaarlijks' : 'Yearly'}</button>
+            </div>
+            <p class="muted" id="pricing-msg"></p>
+          </section>
+          <section class="us-card pricing-card">
+            <h2>{nl ? 'Us-diensten' : 'Us services'}</h2>
+            <p class="p-large">{nl ? 'Op offerte' : 'Quoted'}</p>
+            <ul>
+              <li>{nl ? 'Manuele audit met assistieve technologie' : 'Manual audit with assistive technology'}</li>
+              <li>{nl ? 'Remediatie' : 'Remediation'}</li>
+              <li>{nl ? 'Juridisch gerichte statement' : 'Legal-oriented statement'}</li>
+            </ul>
+            <a class="btn btn-secondary" href="/#lead-cta">{nl ? 'Vraag een offerte' : 'Request a quote'}</a>
+          </section>
+        </div>
+        <p class="muted mt-2">
+          {nl
+            ? 'Abonnement gaat onmiddellijk in. Je hebt 14 dagen herroepingsrecht; als de dienst al gestart is, bevestig je dat bij checkout. Annuleren kan in Account.'
+            : 'The subscription starts immediately. You have a 14-day withdrawal right; if the service has already started, you confirm that at checkout. Cancel in Account.'}
+        </p>
+      </article>
+    </main>
+    <SiteFooter lang={lang} />
+  </div>
+</Layout>
+
+<script>
+  async function startCheckout(interval) {
+    const msg = document.getElementById('pricing-msg');
+    if (msg) msg.textContent = '';
+    const headers = typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' };
+    const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
+    const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
+    const res = await fetch(api('/api/billing/checkout'), {
+      method: 'POST',
+      credentials: creds,
+      headers,
+      body: JSON.stringify({ interval }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      window.location.href = '/signup?next=/pricing';
+      return;
+    }
+    if (!res.ok) {
+      if (msg) msg.textContent = data.error || 'Could not start checkout.';
+      return;
+    }
+    if (data.url) window.location.href = data.url;
+  }
+  document.getElementById('checkout-month')?.addEventListener('click', () => startCheckout('month'));
+  document.getElementById('checkout-year')?.addEventListener('click', () => startCheckout('year'));
+</script>
+
+<style>
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--spacing-1-5-rem);
+    margin-top: var(--margins-row_indent-medium);
+  }
+  .pricing-card {
+    padding: var(--spacing-2-rem);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1-rem);
+  }
+  .pricing-card ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: var(--spacing-0-5-rem); }
+  .pricing-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-content-2-buttons); }
+  @media (max-width: 768px) {
+    .pricing-grid { grid-template-columns: 1fr; }
+  }
+</style>

@@ -34,6 +34,34 @@ The server defaults to `AUTH_ENABLED=true` and **requires** `APP_PASSWORD`; it e
 AUTH_ENABLED=false npm start
 ```
 
+Staff can still sign in with `APP_USERNAME` / `APP_PASSWORD`. Customers sign up at `/signup`. Set `SESSION_SECRET` in production (defaults to a dev-only value derived from `APP_PASSWORD`).
+
+### Phase 2 SaaS (accounts, quotas, Stripe)
+
+Public pages: `/pricing`, `/signup`, `/account`, `/terms`, `/privacy`, `/cookies`, `/accessibility`, plus EN/NL via `?lang=nl`.
+
+| Variable | Purpose |
+|----------|---------|
+| `SESSION_SECRET` | HMAC key for signed session cookies |
+| `PAGE_CREDITS_PER_MONTH` | Default `300` page-scans per subscriber per UTC month |
+| `CUSTOMER_MAX_URLS_PER_RUN` | Default `50` |
+| `SCAN_MAX_CONCURRENT` | Global Chromium pool (default `3`; use `2` once paying users exist) |
+| `STAFF_ALLOW_PRIVATE_URLS` | `true` only for local staff scans of localhost |
+| `STRIPE_SECRET_KEY` | Stripe secret |
+| `STRIPE_WEBHOOK_SECRET` | Webhook signing secret |
+| `STRIPE_PRICE_MONTHLY` | €49/month Price id |
+| `STRIPE_PRICE_YEARLY` | €490/year Price id |
+| `STRIPE_PRICE_FOUNDING_MONTHLY` | Optional €39 founding Price id |
+| `STRIPE_AUTOMATIC_TAX` | Default on; set `false` to disable Stripe Tax |
+| `LEGAL_ORG_NAME`, `LEGAL_KBO`, `LEGAL_ADDRESS`, `LEGAL_EMAIL` | Shown on legal pages |
+| `AUTH_EMAIL_VERIFY` | `auto` (default, skip email verify) or `required` |
+
+Point Stripe webhooks at `POST /api/billing/webhook`. Checkout is not live until the Stripe keys exist; the UI then explains that.
+
+**OVH backups:** the current 1-day backup is too short for paying customers. Enable **7-day** (or longer) backups on the VPS, keep report disk under `REPORTS_BASE`, and alert on RAM when more than two Chromium scans overlap. Stay on this OVH VPS; do not migrate this product to Combell shared Node.
+
+Closed beta: invite 5–10 Us clients before turning the teaser CTA into a public Subscribe push. Have a lawyer review Terms (including Deque checklist licensing) and an accountant confirm Belgian VAT/OSS + Stripe Tax.
+
 ### How scans work (and limitations)
 
 - **Page load:** URLs open with `domcontentloaded` (see `PAGE_GOTO_TIMEOUT_MS`, optional `WAIT_FOR_NETWORKIDLE` in the test runner and server-spawned runs).

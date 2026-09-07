@@ -156,6 +156,25 @@ export async function sendLeadEmail(payload) {
   return { emailed: true };
 }
 
+/**
+ * @param {{ to: string; subject: string; text: string }} opts
+ */
+export async function sendAccountEmail(opts) {
+  const transport = createSmtpTransport();
+  const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@localhost';
+  const to = String(opts?.to || '').trim();
+  const subject = String(opts?.subject || '').trim();
+  const text = String(opts?.text || '').trim();
+  if (!to || !subject) return { emailed: false };
+  if (!transport) {
+    console.warn('[account-email]', { to, subject, textPreview: text.slice(0, 400) });
+    return { emailed: false };
+  }
+  const html = `<p>${escapeHtml(text).replace(/\n/g, '<br/>')}</p>`;
+  await transport.sendMail({ from, to, subject, text, html });
+  return { emailed: true };
+}
+
 function escapeHtml(s) {
   return String(s || '')
     .replace(/&/g, '&amp;')

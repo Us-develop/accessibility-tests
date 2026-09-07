@@ -1,64 +1,101 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { langFromAstro } from '../lib/page-lang.mjs';
 
 export const prerender = false;
+const lang = langFromAstro(Astro);
+const nl = lang === 'nl';
 ---
 
-<Layout title="What this scan can and cannot test · Us" indexable={true} authMode="guest-ok">
+<Layout title={nl ? 'Wat deze scan wel en niet test · Us' : 'What this scan can and cannot test · Us'} indexable={true} authMode="guest-ok">
   <div class="app-shell">
-    <AppHeader crumb="Limitations" />
+    <AppHeader crumb={nl ? 'Beperkingen' : 'Limitations'} />
     <main class="app-main">
-      <article class="container-narrow" style="padding: clamp(32px, 5vw, 56px) 0 clamp(48px, 8vw, 96px);">
+      <article class="container-narrow page-article">
         <span class="eyebrow"><span class="dot"></span>Honesty · WCAG 2.2 AA · EN 301 549</span>
-        <h1 style="font-size: clamp(32px, 4.5vw, 48px); margin: 12px 0 16px;">What this tool can and cannot claim</h1>
-        <p class="p-large muted" style="max-width: 640px;">
-          This product is an <strong>assisted automated scanner</strong>. It finds many issues that machines can find.
-          It is <strong>not</strong> a complete WCAG 2.2 AA audit, not EN 301 549 certification, and not an EAA legal sign-off.
+        <h1 class="mt-1">{nl ? 'Wat deze tool wel en niet mag beweren' : 'What this tool can and cannot claim'}</h1>
+        <p class="p-large muted prose-width mt-1">
+          {nl ? (
+            <>
+              Dit product is een <strong>geassisteerde automatische scanner</strong>. Hij vindt veel issues die machines kunnen vinden.
+              Het is <strong>geen</strong> volledige WCAG 2.2 AA-audit, geen EN 301 549-certificatie en geen EAA-juridische goedkeuring.
+            </>
+          ) : (
+            <>
+              This product is an <strong>assisted automated scanner</strong>. It finds many issues that machines can find.
+              It is <strong>not</strong> a complete WCAG 2.2 AA audit, not EN 301 549 certification, and not an EAA legal sign-off.
+            </>
+          )}
         </p>
 
-        <section style="margin-top: 40px;">
-          <h2 style="font-size: 22px; margin-bottom: 10px;">What we run</h2>
-          <ul class="muted" style="padding-left: 20px; display: flex; flex-direction: column; gap: 8px; max-width: 640px;">
-            <li>axe-core rules tagged WCAG 2.0 / 2.1 / 2.2 Level A and AA (not best-practice-as-AA).</li>
-            <li>Custom checks for structure, images, contrast, 320px reflow, forms, names, and a few dynamic-content heuristics.</li>
-            <li>Axe “incomplete” items as <em>needs review</em>, not as passes.</li>
+        <section class="mt-2">
+          <h2>{nl ? 'Wat we draaien' : 'What we run'}</h2>
+          <ul class="muted prose-width">
+            {nl ? (
+              <>
+                <li>axe-core-regels tagged WCAG 2.0 / 2.1 / 2.2 niveau A en AA (geen best-practice-als-AA).</li>
+                <li>Eigen checks voor structuur, beelden, contrast, 320px reflow, formulieren, namen, en enkele dynamische heuristieken.</li>
+                <li>Axe “incomplete” items als <em>needs review</em>, niet als geslaagd.</li>
+              </>
+            ) : (
+              <>
+                <li>axe-core rules tagged WCAG 2.0 / 2.1 / 2.2 Level A and AA (not best-practice-as-AA).</li>
+                <li>Custom checks for structure, images, contrast, 320px reflow, forms, names, and a few dynamic-content heuristics.</li>
+                <li>Axe “incomplete” items as <em>needs review</em>, not as passes.</li>
+              </>
+            )}
           </ul>
         </section>
 
-        <section style="margin-top: 32px;">
-          <h2 style="font-size: 22px; margin-bottom: 10px;">What we cannot test automatically</h2>
-          <ul class="muted" style="padding-left: 20px; display: flex; flex-direction: column; gap: 8px; max-width: 640px;">
-            <li>Real screen-reader, keyboard, and cognitive testing with people.</li>
-            <li>Most of WCAG 2.2’s 56 Level A and AA success criteria (captions quality, meaningful sequence, language of parts, accessible authentication, and more).</li>
-            <li>Client-rendered SPAs if content is not in the DOM at scan time.</li>
-            <li>YouTube / Vimeo and other embedded players (captions must be checked by a human).</li>
-            <li>Pages behind login, CAPTCHA, or bot protection.</li>
+        <section class="mt-2">
+          <h2>{nl ? 'Wat we niet automatisch kunnen testen' : 'What we cannot test automatically'}</h2>
+          <ul class="muted prose-width">
+            {nl ? (
+              <>
+                <li>Echte screenreader-, toetsenbord- en cognitieve tests met mensen.</li>
+                <li>Het merendeel van de 56 WCAG 2.2 A/AA-succescriteria (ondertitelkwaliteit, betekenisvolle volgorde, taal van onderdelen, toegankelijke authenticatie, en meer).</li>
+                <li>Client-rendered SPA’s als de inhoud niet in de DOM zit op het moment van de scan.</li>
+                <li>YouTube / Vimeo en andere embedded spelers (ondertitels moet een mens checken).</li>
+                <li>Pagina’s achter login, CAPTCHA of botbescherming.</li>
+              </>
+            ) : (
+              <>
+                <li>Real screen-reader, keyboard, and cognitive testing with people.</li>
+                <li>Most of WCAG 2.2’s 56 Level A and AA success criteria (captions quality, meaningful sequence, language of parts, accessible authentication, and more).</li>
+                <li>Client-rendered SPAs if content is not in the DOM at scan time.</li>
+                <li>YouTube / Vimeo and other embedded players (captions must be checked by a human).</li>
+                <li>Pages behind login, CAPTCHA, or bot protection.</li>
+              </>
+            )}
           </ul>
         </section>
 
-        <section style="margin-top: 32px;">
-          <h2 style="font-size: 22px; margin-bottom: 10px;">How to read the score</h2>
-          <p class="muted" style="max-width: 640px;">
-            The 0–100 figure is the share of <em>applicable automated checks that passed</em> on this run.
-            Easy environment checks (for example “no meta refresh”) are excluded so they do not inflate the number.
-            A high score does not mean the site conforms. A low score does not mean it fails every criterion.
+        <section class="mt-2">
+          <h2>{nl ? 'Hoe je de score leest' : 'How to read the score'}</h2>
+          <p class="muted prose-width">
+            {nl
+              ? 'Het cijfer 0–100 is het aandeel toepasselijke automatische checks die slaagden op deze run. Eenvoudige omgevingschecks (bijvoorbeeld “geen meta refresh”) tellen niet mee zodat ze het cijfer niet opblazen. Een hoge score betekent niet dat de site conformeert. Een lage score betekent niet dat elk criterium faalt.'
+              : 'The 0–100 figure is the share of applicable automated checks that passed on this run. Easy environment checks (for example “no meta refresh”) are excluded so they do not inflate the number. A high score does not mean the site conforms. A low score does not mean it fails every criterion.'}
           </p>
         </section>
 
-        <section style="margin-top: 32px;">
-          <h2 style="font-size: 22px; margin-bottom: 10px;">European Accessibility Act</h2>
-          <p class="muted" style="max-width: 640px;">
-            Since 28 June 2025 the EAA applies to listed consumer services in the EU (for example e-commerce),
-            with a micro-enterprise exemption. It does <strong>not</strong> automatically apply to every website.
-            EN 301 549 is the usual technical reference. This tool helps you find issues; it does not certify EAA compliance.
+        <section class="mt-2">
+          <h2>European Accessibility Act</h2>
+          <p class="muted prose-width">
+            {nl
+              ? 'Sinds 28 juni 2025 geldt de EAA voor listed consumentendiensten in de EU (bijvoorbeeld e-commerce), met een vrijstelling voor micro-ondernemingen. Ze geldt niet automatisch voor elke website. EN 301 549 is de gebruikelijke technische referentie. Deze tool helpt issues te vinden; ze certificeert geen EAA-conformiteit.'
+              : 'Since 28 June 2025 the EAA applies to listed consumer services in the EU (for example e-commerce), with a micro-enterprise exemption. It does not automatically apply to every website. EN 301 549 is the usual technical reference. This tool helps you find issues; it does not certify EAA compliance.'}
           </p>
         </section>
 
-        <p style="margin-top: 40px;">
-          <a class="btn btn-primary" href="/">Run a free 1-page scan</a>
+        <p class="limitations-cta">
+          <a class="btn btn-primary" href="/">{nl ? 'Gratis 1-pagina-scan' : 'Run a free 1-page scan'}</a>
+          <a class="btn btn-secondary" href="/pricing">{nl ? 'Abonneer op Pro' : 'Subscribe to Pro'}</a>
         </p>
       </article>
     </main>
+    <SiteFooter lang={lang} />
   </div>
 </Layout>
