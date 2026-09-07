@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { hashPassword, isStrongPassword, verifyPassword } from '../server/passwords.mjs';
 import { decodeSession, encodeSession } from '../server/session.mjs';
-import { t, resolveLang } from '../server/i18n.mjs';
+import { t, resolveLang, resolvePageLang } from '../server/i18n.mjs';
 import { creditSnapshot, PAGE_CREDITS_PER_MONTH, CUSTOMER_MAX_URLS_PER_RUN, assertCanSpend } from '../server/credits.mjs';
 import { verifyStripeSignature, pricingPublic } from '../server/billing.mjs';
 import { canAccessDomain } from '../server/projects.mjs';
@@ -39,6 +39,12 @@ describe('i18n', () => {
     assert.equal(resolveLang('nl-BE'), 'nl');
     assert.equal(t('nl').pricing.monthly, '€49 / maand');
     assert.equal(t('en').pricing.monthly, '€49 / month');
+  });
+
+  it('lets ?lang= win over the cookie', () => {
+    assert.equal(resolvePageLang({ searchLang: 'nl', cookieLang: 'en' }), 'nl');
+    assert.equal(resolvePageLang({ searchLang: null, cookieLang: 'nl' }), 'nl');
+    assert.equal(resolvePageLang({}), 'en');
   });
 });
 

@@ -74,6 +74,12 @@ const NL = {
   },
 };
 
+export function resolvePageLang({ searchLang, cookieLang } = {}) {
+  if (searchLang === 'nl' || searchLang === 'en') return searchLang;
+  if (cookieLang === 'nl' || cookieLang === 'en') return cookieLang;
+  return 'en';
+}
+
 export function resolveLang(input) {
   const raw = typeof input === 'string' ? input : '';
   if (raw.toLowerCase().startsWith('nl')) return 'nl';

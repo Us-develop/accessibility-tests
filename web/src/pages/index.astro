@@ -3,12 +3,13 @@ import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import { t } from '../../../server/i18n.mjs';
+import { langFromAstro } from '../lib/page-lang.mjs';
 
 const cookieHeader = Astro.request.headers.get('cookie') || '';
 const ssrStaff = /(?:^|;\s*)wcag_access=1(?:;|$)/.test(cookieHeader) || /(?:^|;\s*)wcag_ui=1(?:;|$)/.test(cookieHeader);
 const ssrCustomer = /(?:^|;\s*)wcag_ui=c(?:;|$)/.test(cookieHeader);
 const ssrSignedIn = ssrStaff || ssrCustomer;
-const lang = /(?:^|;\s*)lang=nl(?:;|$)/.test(cookieHeader) ? 'nl' : 'en';
+const lang = langFromAstro(Astro);
 const copy = t(lang);
 
 export const prerender = false;

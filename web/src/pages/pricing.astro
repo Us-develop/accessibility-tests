@@ -2,11 +2,11 @@
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
+import { langFromAstro } from '../lib/page-lang.mjs';
 
 export const prerender = false;
 
-const cookieHeader = Astro.request.headers.get('cookie') || '';
-const lang = /(?:^|;\s*)lang=nl(?:;|$)/.test(cookieHeader) ? 'nl' : 'en';
+const lang = langFromAstro(Astro);
 const nl = lang === 'nl';
 ---
 <Layout title={nl ? 'Prijzen · Us' : 'Pricing · Us'} indexable={true} authMode="guest-ok">
