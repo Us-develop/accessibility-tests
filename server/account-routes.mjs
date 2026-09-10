@@ -11,7 +11,7 @@ import {
   verifyUserEmail,
 } from './users.mjs';
 import { attachRunToUser, deleteProjectsForUser, listProjectsForUser } from './projects.mjs';
-import { clearSessionCookies, parseCookies, setSessionCookies } from './session.mjs';
+import { clearSessionCookies, isHtmlFormPost, parseCookies, setSessionCookies } from './session.mjs';
 import { isValidGuestToken } from './guest.mjs';
 import { sendAccountEmail } from '../server-email.js';
 import {
@@ -28,6 +28,16 @@ import { isStrongPassword, verifyPassword } from './passwords.mjs';
 
 function publicBase() {
   return String(process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '') || 'http://localhost:3456';
+}
+
+function formOrJson(req, res, htmlPath, jsonStatus, jsonBody) {
+  if (isHtmlFormPost(req)) {
+    return res.redirect(303, htmlPath);
+  }
+  if (jsonStatus && jsonStatus !== 200) {
+    return res.status(jsonStatus).json(jsonBody);
+  }
+  return res.json(jsonBody);
 }
 
 function sameSiteFromEnv() {
@@ -145,9 +155,12 @@ export function registerAccountRoutes(app, ctx) {
       } else {
         setSessionCookies(res, { userId: user.id, role: user.role, email: user.email }, sameSiteFromEnv());
       }
-      return res.json({ ok: true, needsVerification: Boolean(verifyToken), user });
+      const next = verifyToken ? '/signup?check-email=1' : '/account';
+      return formOrJson(req, res, next, 200, { ok: true, needsVerification: Boolean(verifyToken), user });
     } catch (err) {
-      return res.status(Number(err.status) || 400).json({ error: err.message || 'Could not create account.' });
+      return formOrJson(req, res, '/signup?error=1', Number(err.status) || 400, {
+        error: err.message || 'Could not create account.',
+      });
     }
   });
 
@@ -168,18 +181,23 @@ export function registerAccountRoutes(app, ctx) {
         text: `Reset your password:\n${link}\nThis link expires in 2 hours.\n`,
       });
     }
-    return res.json({ ok: true });
+    return formOrJson(req, res, '/forgot?sent=1', 200, { ok: true });
   });
 
   app.post('/api/auth/reset', async (req, res) => {
     const token = String(req.body?.token || '');
     const user = await consumePasswordReset(token);
-    if (!user) return res.status(400).json({ error: 'Invalid or expired reset link.' });
+    if (!user) {
+      return formOrJson(req, res, '/reset?error=1', 400, { error: 'Invalid or expired reset link.' });
+    }
     try {
       await setPassword(user.id, req.body?.password);
-      return res.json({ ok: true });
+      return formOrJson(req, res, '/', 200, { ok: true });
     } catch (err) {
-      return res.status(Number(err.status) || 400).json({ error: err.message });
+      const safeToken = token ? `?error=1&token=${encodeURIComponent(token)}` : '?error=1';
+      return formOrJson(req, res, `/reset${safeToken}`, Number(err.status) || 400, {
+        error: err.message,
+      });
     }
   });
 

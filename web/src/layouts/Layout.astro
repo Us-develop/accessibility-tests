@@ -47,6 +47,20 @@ const gateLocked = authMode === 'required' && !staffHint;
     <script is:inline>
       (function () {
         try {
+          var params = new URLSearchParams(window.location.search);
+          var dirty = false;
+          ['password', 'currentPassword', 'newPassword', 'username'].forEach(function (key) {
+            if (params.has(key)) {
+              params.delete(key);
+              dirty = true;
+            }
+          });
+          if (dirty) {
+            var qs = params.toString();
+            history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : '') + window.location.hash);
+          }
+        } catch (e) {}
+        try {
           var staff = false;
           try { staff = sessionStorage.getItem('wcagStaff') === '1'; } catch (e) {}
           if (!staff && typeof document.cookie === 'string' && /(^|; )wcag_ui=(?:1|c)(;|$)/.test(document.cookie)) {

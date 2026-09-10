@@ -3,6 +3,7 @@ import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 export const prerender = false;
 const token = Astro.url.searchParams.get('token') || '';
+const resetError = Astro.url.searchParams.get('error') === '1';
 ---
 <Layout title="Set a new password · Us" authMode="guest-ok">
   <div class="app-shell">
@@ -10,35 +11,42 @@ const token = Astro.url.searchParams.get('token') || '';
     <main class="app-main">
       <article class="container-narrow page-article">
         <h1>Set a new password</h1>
-        <form id="reset-form" class="card stack-form stack-form-spaced">
+        <form id="reset-form" class="card stack-form stack-form-spaced" method="post" action="/api/auth/reset">
           <input type="hidden" name="token" value={token} />
           <div class="field">
             <label class="field-label" for="password">New password</label>
-            <input class="input" id="password" name="password" type="password" minlength="10" required />
+            <input class="input" id="password" name="password" type="password" minlength="10" required autocomplete="new-password" />
           </div>
           <button class="btn btn-primary" type="submit">Save password</button>
-          <p id="reset-msg" class="muted" role="status"></p>
+          <p id="reset-msg" class="muted" role="status">
+            {resetError ? 'Could not reset password. The link may have expired.' : ''}
+          </p>
         </form>
       </article>
     </main>
   </div>
 </Layout>
 <script>
-  document.getElementById('reset-form')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
-    const res = await fetch(api('/api/auth/reset'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: fd.get('token'), password: fd.get('password') }),
+  if (!globalThis.__wcagResetDelegated) {
+    globalThis.__wcagResetDelegated = true;
+    document.addEventListener('submit', async (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement) || form.id !== 'reset-form') return;
+      event.preventDefault();
+      const fd = new FormData(form);
+      const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
+      const res = await fetch(api('/api/auth/reset'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: fd.get('token'), password: fd.get('password') }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const msg = document.getElementById('reset-msg');
+      if (!res.ok) {
+        if (msg) msg.textContent = data.error || 'Could not reset password.';
+        return;
+      }
+      window.location.href = '/';
     });
-    const data = await res.json().catch(() => ({}));
-    const msg = document.getElementById('reset-msg');
-    if (!res.ok) {
-      if (msg) msg.textContent = data.error || 'Could not reset password.';
-      return;
-    }
-    window.location.href = '/';
-  });
+  }
 </script>

@@ -48,6 +48,7 @@ import { buildTeaserPayload } from './teaser-payload.mjs';
 import {
   clearSessionCookies,
   csrfOk,
+  isHtmlFormPost,
   readAccessFromCookies,
   setSessionCookies,
 } from './session.mjs';
@@ -872,23 +873,36 @@ app.get('/api/config', (_req, res) => {
   });
 });
 
+function loginFormRedirect(req, res, path, jsonStatus, jsonBody) {
+  if (isHtmlFormPost(req)) {
+    return res.redirect(303, path);
+  }
+  if (jsonStatus && jsonStatus !== 200) {
+    return res.status(jsonStatus).json(jsonBody);
+  }
+  return res.json(jsonBody);
+}
+
 app.post('/api/auth/login', async (req, res) => {
-  if (!AUTH_ENABLED) return res.json({ ok: true, role: 'staff' });
+  if (!AUTH_ENABLED) return loginFormRedirect(req, res, '/', 200, { ok: true, role: 'staff' });
   const username = String(req.body?.username ?? req.body?.email ?? '').trim();
   const password = String(req.body?.password ?? '');
   if (credentialsValid(username, password)) {
     setAuthCookie(res, { userId: 'staff', role: 'staff', email: username });
-    return res.json({ ok: true, role: 'staff' });
+    return loginFormRedirect(req, res, '/', 200, { ok: true, role: 'staff' });
   }
   const user = await authenticateUser(username, password);
   if (!user) {
-    return res.status(401).json({ error: 'Invalid username or password.' });
+    return loginFormRedirect(req, res, '/?signin=failed', 401, { error: 'Invalid username or password.' });
   }
   if (!user.emailVerified) {
-    return res.status(403).json({ error: 'Verify your email before signing in.' });
+    return loginFormRedirect(req, res, '/?signin=unverified', 403, {
+      error: 'Verify your email before signing in.',
+    });
   }
   setAuthCookie(res, { userId: user.id, role: user.role, email: user.email });
-  return res.json({ ok: true, role: user.role });
+  const next = user.role === 'staff' ? '/' : '/account';
+  return loginFormRedirect(req, res, next, 200, { ok: true, role: user.role });
 });
 
 app.post('/api/auth/logout', (req, res) => {

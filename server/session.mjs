@@ -141,6 +141,19 @@ const CSRF_SAFE_PATHS = new Set([
   '/api/access-request',
 ]);
 
+/**
+ * Native <form method="post"> submissions (no fetch). Used so login/signup
+ * can redirect instead of returning JSON when JavaScript is missing or a
+ * ClientRouter swap dropped the submit handler.
+ */
+export function isHtmlFormPost(req) {
+  const type = String(req.headers['content-type'] || '');
+  if (!type.includes('application/x-www-form-urlencoded')) return false;
+  const accept = String(req.headers.accept || '*/*');
+  if (accept.includes('application/json') && !/\btext\/html\b/i.test(accept)) return false;
+  return true;
+}
+
 export function csrfOk(req) {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return true;
   if (CSRF_SAFE_PATHS.has(req.path)) return true;

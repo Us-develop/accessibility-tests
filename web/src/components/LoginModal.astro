@@ -76,7 +76,13 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
           <h2 id="wcag-login-title" class="wcag-login-title">Sign in</h2>
           <p class="wcag-login-lead">Customers use email. Us staff use the agency username.</p>
           <p id="wcag-login-err" class="wcag-login-err" role="alert" hidden></p>
-          <form id="wcag-login-form" class="wcag-login-form">
+          <form
+            id="wcag-login-form"
+            class="wcag-login-form"
+            method="post"
+            action="/api/auth/login"
+            autocomplete="on"
+          >
             <label class="wcag-login-label" for="wcag-login-user">Email or staff username</label>
             <input
               class="wcag-login-input"
@@ -258,6 +264,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       }
 
       if (data.authenticated === true) {
+        globalThis.__wcagKeepLoginOpen = false;
         const role = data.role === 'customer' ? 'customer' : 'staff';
         try { sessionStorage.setItem('wcagStaff', '1'); } catch {}
         document.documentElement.classList.add('wcag-staff');
@@ -276,9 +283,13 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       document.body.classList.remove('is-customer');
       document.documentElement.classList.remove('wcag-staff');
       try { sessionStorage.removeItem('wcagStaff'); } catch {}
-      if (errEl) {
+      if (errEl && !globalThis.__wcagKeepLoginOpen) {
         errEl.hidden = true;
         errEl.textContent = '';
+      }
+      if (globalThis.__wcagKeepLoginOpen) {
+        openModal();
+        return;
       }
       if (guestOk()) {
         closeModal();
@@ -322,8 +333,32 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     }
   }
 
+  function showSigninQueryError() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const reason = params.get('signin');
+      if (!reason) return;
+      const errEl = qs('wcag-login-err');
+      if (errEl) {
+        errEl.textContent =
+          reason === 'unverified'
+            ? 'Verify your email before signing in.'
+            : 'Invalid email or password.';
+        errEl.hidden = false;
+      }
+      globalThis.__wcagKeepLoginOpen = true;
+      openModal();
+      params.delete('signin');
+      const nextQs = params.toString();
+      history.replaceState(null, '', window.location.pathname + (nextQs ? `?${nextQs}` : '') + window.location.hash);
+    } catch {
+      /* ignore */
+    }
+  }
+
   function onPageReady() {
     applyStaffShellHint();
+    showSigninQueryError();
     if (globalThis.__wcagAuthGateTimer) clearTimeout(globalThis.__wcagAuthGateTimer);
     globalThis.__wcagAuthGateTimer = setTimeout(() => {
       globalThis.__wcagAuthGateTimer = null;
@@ -342,30 +377,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     }
   }
 
-  if (!globalThis.__wcagLoginUiBound) {
-    globalThis.__wcagLoginUiBound = true;
-    document.addEventListener('wcag:login-required', () => {
-    document.documentElement.classList.remove('wcag-staff');
-    document.body.classList.remove('is-staff');
-    document.body.classList.remove('is-customer');
-    try { sessionStorage.removeItem('wcagStaff'); } catch {}
-    if (!guestOk()) lockAppShell();
-    const errEl = qs('wcag-login-err');
-    if (errEl && !guestOk()) {
-      errEl.textContent = 'Your session expired. Sign in again.';
-      errEl.hidden = false;
-    }
-    openModal();
-  });
-
-  document.addEventListener('wcag:open-login', () => {
-    openModal();
-    qs('wcag-login-user')?.focus();
-  });
-
-  const form = qs('wcag-login-form');
-  form?.addEventListener('submit', async (e) => {
-    e.preventDefault();
+  async function submitLoginForm(form) {
     const errEl = qs('wcag-login-err');
     const fd = new FormData(form);
     const username = String(fd.get('username') ?? '').trim();
@@ -408,24 +420,9 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
         errEl.hidden = false;
       }
     }
-  });
+  }
 
-  const flipInner = qs('wcag-login-flip-inner');
-  const dialogRoot = qs('wcag-login-dialog');
-  qs('wcag-flip-to-request')?.addEventListener('click', () => {
-    flipInner?.classList.add('is-flipped');
-    dialogRoot?.setAttribute('aria-labelledby', 'wcag-request-title');
-    qs('wcag-access-name')?.focus();
-  });
-  qs('wcag-flip-to-login')?.addEventListener('click', () => {
-    flipInner?.classList.remove('is-flipped');
-    dialogRoot?.setAttribute('aria-labelledby', 'wcag-login-title');
-    qs('wcag-flip-to-request')?.focus();
-  });
-
-  const accessForm = qs('wcag-access-form');
-  accessForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
+  async function submitAccessForm(form) {
     const errEl = qs('wcag-access-err');
     const okEl = qs('wcag-access-ok');
     if (errEl) {
@@ -436,8 +433,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       okEl.hidden = true;
       okEl.textContent = '';
     }
-    if (!accessForm) return;
-    const fd = new FormData(accessForm);
+    const fd = new FormData(form);
     const body = {
       name: String(fd.get('name') ?? '').trim(),
       company: String(fd.get('company') ?? '').trim(),
@@ -468,17 +464,16 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
           : 'Thanks — we received your request.';
         okEl.hidden = false;
       }
-      accessForm.reset();
+      form.reset();
     } catch {
       if (errEl) {
         errEl.textContent = 'Network error — try again in a moment.';
         errEl.hidden = false;
       }
     }
-  });
+  }
 
-  const logoutBtn = qs('wcag-logout-btn');
-  logoutBtn?.addEventListener('click', async () => {
+  async function logoutCurrentSession() {
     try {
       const url = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl('/api/auth/logout') : '/api/auth/logout';
       const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
@@ -501,19 +496,75 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       return;
     }
     openModal();
-  });
+  }
 
-  qs('wcag-login-close')?.addEventListener('click', () => {
-    closeModal();
-    if (guestOk()) unlockAppShell(false);
-  });
+  if (!globalThis.__wcagLoginUiBound) {
+    globalThis.__wcagLoginUiBound = true;
+    document.addEventListener('wcag:login-required', () => {
+      document.documentElement.classList.remove('wcag-staff');
+      document.body.classList.remove('is-staff');
+      document.body.classList.remove('is-customer');
+      try { sessionStorage.removeItem('wcagStaff'); } catch {}
+      if (!guestOk()) lockAppShell();
+      const errEl = qs('wcag-login-err');
+      if (errEl && !guestOk()) {
+        errEl.textContent = 'Your session expired. Sign in again.';
+        errEl.hidden = false;
+      }
+      openModal();
+    });
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    if (!guestOk()) return;
-    const overlay = qs('wcag-login-modal');
-    if (overlay && !overlay.hidden) closeModal();
-  });
+    document.addEventListener('wcag:open-login', () => {
+      openModal();
+      qs('wcag-login-user')?.focus();
+    });
+
+    // Delegate so Astro ClientRouter page swaps cannot drop submit/click handlers.
+    document.addEventListener('submit', (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      if (form.id === 'wcag-login-form') {
+        event.preventDefault();
+        submitLoginForm(form);
+        return;
+      }
+      if (form.id === 'wcag-access-form') {
+        event.preventDefault();
+        submitAccessForm(form);
+      }
+    });
+
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('#wcag-flip-to-request')) {
+        qs('wcag-login-flip-inner')?.classList.add('is-flipped');
+        qs('wcag-login-dialog')?.setAttribute('aria-labelledby', 'wcag-request-title');
+        qs('wcag-access-name')?.focus();
+        return;
+      }
+      if (target.closest('#wcag-flip-to-login')) {
+        qs('wcag-login-flip-inner')?.classList.remove('is-flipped');
+        qs('wcag-login-dialog')?.setAttribute('aria-labelledby', 'wcag-login-title');
+        qs('wcag-flip-to-request')?.focus();
+        return;
+      }
+      if (target.closest('#wcag-login-close')) {
+        closeModal();
+        if (guestOk()) unlockAppShell(false);
+        return;
+      }
+      if (target.closest('#wcag-logout-btn')) {
+        logoutCurrentSession();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (!guestOk()) return;
+      const overlay = qs('wcag-login-modal');
+      if (overlay && !overlay.hidden) closeModal();
+    });
   }
 </script>
 
