@@ -10,7 +10,7 @@ const sent = Astro.url.searchParams.get('sent') === '1';
     <main class="app-main">
       <article class="container-narrow page-article">
         <h1>Forgot password</h1>
-        <form id="forgot-form" class="card stack-form stack-form-spaced" method="post" action="/api/auth/forgot">
+        <form id="forgot-form" class="card stack-form stack-form-spaced" method="post" action="/api/auth/forgot" data-astro-reload>
           <div class="field">
             <label class="field-label" for="email">Email</label>
             <input class="input" id="email" name="email" type="email" required autocomplete="email" />
@@ -31,6 +31,7 @@ const sent = Astro.url.searchParams.get('sent') === '1';
       const form = event.target;
       if (!(form instanceof HTMLFormElement) || form.id !== 'forgot-form') return;
       event.preventDefault();
+      event.stopPropagation();
       const email = new FormData(form).get('email');
       const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
       await fetch(api('/api/auth/forgot'), {
@@ -40,6 +41,6 @@ const sent = Astro.url.searchParams.get('sent') === '1';
       });
       const msg = document.getElementById('forgot-msg');
       if (msg) msg.textContent = 'If that account exists, we sent a reset link (or logged it when SMTP is off).';
-    });
+    }, true);
   }
 </script>

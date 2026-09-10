@@ -16,7 +16,7 @@ const signupError = Astro.url.searchParams.get('error') === '1';
         <p class="muted prose-width prose-lead">
           Save guest snapshots to your email. The public 1-page check stays free without an account.
         </p>
-        <form id="signup-form" class="card stack-form" method="post" action="/api/auth/signup" autocomplete="on">
+        <form id="signup-form" class="card stack-form" method="post" action="/api/auth/signup" autocomplete="on" data-astro-reload>
           {guestToken ? <input type="hidden" name="guestToken" value={guestToken} /> : null}
           <div class="field">
             <label class="field-label" for="name">Name</label>
@@ -58,6 +58,7 @@ const signupError = Astro.url.searchParams.get('error') === '1';
       const form = event.target;
       if (!(form instanceof HTMLFormElement) || form.id !== 'signup-form') return;
       event.preventDefault();
+      event.stopPropagation();
       const msg = document.getElementById('signup-msg');
       const fd = new FormData(form);
       const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
@@ -84,6 +85,6 @@ const signupError = Astro.url.searchParams.get('error') === '1';
         return;
       }
       window.location.href = '/account';
-    });
+    }, true);
   }
 </script>

@@ -4,6 +4,7 @@ import {
   dbDeleteUser,
   dbGetUserByEmail,
   dbGetUserById,
+  dbSetRunUserId,
   dbUpsertProject,
   dbUpsertUser,
 } from './db.js';
@@ -95,9 +96,26 @@ async function hydrateJsonSidecar(user) {
     if (project?.userId !== user.id || !project.id || !project.domain) continue;
     try {
       await dbUpsertProject(project);
+      const runIds = Array.isArray(project.runIds) ? project.runIds : [];
+      for (const runId of runIds) {
+        await dbSetRunUserId(project.domain, runId, user.id);
+      }
     } catch (err) {
       console.warn('[users] project hydrate failed:', err?.message || err);
     }
+  }
+  try {
+    await dbPool.query(
+      `UPDATE runs r
+          SET user_id = $1
+         FROM projects p
+        WHERE r.user_id IS NULL
+          AND r.id = p.domain
+          AND p.user_id = $1`,
+      [user.id]
+    );
+  } catch (err) {
+    console.warn('[users] run hydrate failed:', err?.message || err);
   }
 }
 

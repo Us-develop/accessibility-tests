@@ -11,7 +11,7 @@ const resetError = Astro.url.searchParams.get('error') === '1';
     <main class="app-main">
       <article class="container-narrow page-article">
         <h1>Set a new password</h1>
-        <form id="reset-form" class="card stack-form stack-form-spaced" method="post" action="/api/auth/reset">
+        <form id="reset-form" class="card stack-form stack-form-spaced" method="post" action="/api/auth/reset" data-astro-reload>
           <input type="hidden" name="token" value={token} />
           <div class="field">
             <label class="field-label" for="password">New password</label>
@@ -33,6 +33,7 @@ const resetError = Astro.url.searchParams.get('error') === '1';
       const form = event.target;
       if (!(form instanceof HTMLFormElement) || form.id !== 'reset-form') return;
       event.preventDefault();
+      event.stopPropagation();
       const fd = new FormData(form);
       const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
       const res = await fetch(api('/api/auth/reset'), {
@@ -47,6 +48,6 @@ const resetError = Astro.url.searchParams.get('error') === '1';
         return;
       }
       window.location.href = '/';
-    });
+    }, true);
   }
 </script>
