@@ -134,9 +134,12 @@ export function generateDeveloperAdvice(data, outputDir) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Developer guide · ${escapeHtml(reportData.urls?.[0] || 'Accessibility')}</title>
+  <link rel="preconnect" href="https://use.typekit.net" crossorigin>
+  <link rel="stylesheet" href="https://use.typekit.net/dbo7deg.css">
+  <link rel="stylesheet" href="https://use.typekit.net/rgx8kmt.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Public+Sans:ital,wght@0,300..900;1,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..700&family=Public+Sans:ital,wght@0,300..900;1,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
       --us-cream: #F5F4E5; --us-ink: #19191B; --us-white: #FFFFFF;
@@ -152,7 +155,7 @@ export function generateDeveloperAdvice(data, outputDir) {
       --r-md: 16px; --r-lg: 24px; --r-pill: 500px;
       --shadow-card: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
       --shadow-pop: 0 4px 12px rgba(0,0,0,0.08), 0 16px 40px rgba(0,0,0,0.10);
-      --font-display: "Bricolage Grotesque", system-ui, sans-serif;
+      --font-display: "owners-wide", "Archivo", system-ui, sans-serif;
       --font-body: "Public Sans", system-ui, sans-serif;
       --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
     }
@@ -162,7 +165,7 @@ export function generateDeveloperAdvice(data, outputDir) {
       font-family: var(--font-body); font-weight: 300; line-height: 1.65;
       -webkit-font-smoothing: antialiased;
     }
-    h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin: 0; }
+    h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 700; letter-spacing: normal; line-height: 1.1; margin: 0; }
     .container { max-width: 1280px; margin: 0 auto; padding: 48px 32px 96px; }
     .eyebrow {
       font-size: 12px; font-weight: 600; letter-spacing: 0.08em;

@@ -3,13 +3,16 @@
  * @see DESIGN_SYSTEM_AGENT.md in us-design-system repo.
  */
 
-/** Head links: favicon + fonts (Bricolage Grotesque + Public Sans). */
+/** Head links: favicon + Us Web profile fonts (Owners kits + Public Sans). */
 export const REPORT_BRAND_HEAD = `
   <link rel="icon" href="/assets/us-favicon.png" type="image/png" sizes="88x88">
   <link rel="apple-touch-icon" href="/assets/us-favicon.png">
+  <link rel="preconnect" href="https://use.typekit.net" crossorigin>
+  <link rel="stylesheet" href="https://use.typekit.net/dbo7deg.css">
+  <link rel="stylesheet" href="https://use.typekit.net/rgx8kmt.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Public+Sans:ital,wght@0,300..900;1,400..700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..700&family=Public+Sans:ital,wght@0,300..900;1,400..700&display=swap" rel="stylesheet">
 `;
 
 /**
@@ -38,7 +41,7 @@ export const REPORT_MAIN_REPORT_CSS = `
       --lavender: #bdb4ff;
       --mint: #8dffb7;
       --watercourse: #048255;
-      --brand-heading: "Bricolage Grotesque", ui-serif, Georgia, serif;
+      --brand-heading: "owners-wide", "Archivo", system-ui, sans-serif;
       --brand-body: "Public Sans", system-ui, sans-serif;
     }
     body { font-family: var(--brand-body); color: var(--text); }
@@ -100,7 +103,7 @@ export const REPORT_DELIVERABLE_CSS = `
     --lavender: #bdb4ff;
     --mint: #8dffb7;
     --watercourse: #048255;
-    --brand-heading: "Bricolage Grotesque", ui-serif, Georgia, serif;
+    --brand-heading: "owners-wide", "Archivo", system-ui, sans-serif;
     --brand-body: "Public Sans", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
