@@ -11,11 +11,11 @@ interface Props {
   runId?: string | null;
   /** Which step is currently active. Pass null for the new-audit / loading screens. */
   active?: Step['key'] | null;
-  /** Crumb shown when no audit is loaded. Defaults to "New audit". */
+  /** Crumb shown when no audit is loaded. Defaults to "New scan". */
   crumb?: string;
 }
 
-const { domain = null, runId = null, active = null, crumb = 'New audit' } = Astro.props;
+const { domain = null, runId = null, active = null, crumb = 'New scan' } = Astro.props;
 
 const STEPS: Step[] = [
   { key: 'history', label: 'History' },
@@ -44,9 +44,11 @@ const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
 
 <header class="app-header" data-screen-label="App header">
   <div class="app-header-inner">
-    <a class="brand" href="/" aria-label="Us accessibility home">
-      <img class="brand-logo" src="/assets/us-logo.png" width="83" height="40" alt="Us" />
-      <span class="brand-text">Accessibility</span>
+    <a class="brand" href="/" aria-label="Us home">
+      <span class="brand-marks" aria-hidden="true">
+        <img src="/assets/logo-u-dark.svg" width="28" height="28" alt="" />
+        <img src="/assets/logo-s-dark.svg" width="28" height="28" alt="" />
+      </span>
     </a>
 
     {domain ? (
