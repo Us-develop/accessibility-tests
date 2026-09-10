@@ -23,6 +23,7 @@ const { canAccessDomain } = await import('../server/projects.mjs');
 const { persistGuestToken } = await import('../server/guest.mjs');
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
 const { incrementUsage } = await import('../server/billing.mjs');
+const { writeJob, deleteJob } = await import('../server/queue.mjs');
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -369,6 +370,39 @@ describe('account HTTP', () => {
     assert.match(body.error || '', /month/i);
   });
 
+  it('blocks a second customer scan while one is already queued', async () => {
+    const jar = new CookieJar();
+    const login = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'attached@example.com', password: 'newevenlonger1' }),
+    });
+    jar.store(login.headers);
+    const account = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
+    const data = await account.json();
+    writeJob({
+      id: 'held.example:held-run',
+      domain: 'held.example',
+      runId: 'held-run',
+      status: 'queued',
+      userId: data.user.id,
+      createdAt: new Date().toISOString(),
+    });
+    const run = await fetch(`${origin}/api/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: jar.header(),
+        'X-CSRF-Token': jar.get('wcag_csrf'),
+      },
+      body: JSON.stringify({ url: 'https://example.com' }),
+    });
+    const body = await run.json();
+    deleteJob('held.example:held-run');
+    assert.equal(run.status, 409);
+    assert.match(body.error || '', /already/i);
+  });
+
   it('logs out and clears the session', async () => {
     const jar = new CookieJar();
     const login = await fetch(`${origin}/api/auth/login`, {
@@ -403,6 +437,10 @@ describe('account HTTP', () => {
     assert.match(signup, /method="post"/);
     assert.match(signup, /action="\/api\/auth\/signup"/);
     assert.match(signup, /data-astro-reload/);
+    const home = readFileSync(join(repoRoot, 'web/src/pages/index.astro'), 'utf8');
+    assert.match(home, /id="customer-usage"/);
+    const loading = readFileSync(join(repoRoot, 'web/src/components/LoadingMonitor.svelte'), 'utf8');
+    assert.match(loading, /Waiting in the scan queue/);
   });
 
   it('redirects a GET of the login API to the site instead of JSON', async () => {

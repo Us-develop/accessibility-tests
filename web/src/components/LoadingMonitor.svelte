@@ -27,15 +27,20 @@
   let currentUrl = $state(sampleUrls[0] || '');
   let errorMsg = $state('');
 
+  let runStatus = $state('');
+
   const currentStage = $derived(
     progress >= 100
       ? { label: 'Compiling report' }
-      : processedPages === 0
-        ? { label: 'Starting scan' }
-        : { label: `Scanning page ${Math.min(processedPages, totalPages)} of ${totalPages}` }
+      : runStatus === 'queued'
+        ? { label: 'Waiting in the scan queue' }
+        : processedPages === 0
+          ? { label: 'Starting scan' }
+          : { label: `Scanning page ${Math.min(processedPages, totalPages)} of ${totalPages}` }
   );
 
   function applyStatus(data) {
+    if (data.status) runStatus = String(data.status);
     const total = Number(data.urls || data.processedUrls || totalPages || 1);
     if (total > 0) totalPages = total;
     if (data.scannedPages != null) processedPages = Number(data.scannedPages);
@@ -111,13 +116,19 @@
     <div>
       <span class="eyebrow">
         <span class="dot" style="background: var(--us-mint-text);"></span>
-        Audit in progress &middot; automated WCAG 2.2 AA checks
+        {runStatus === 'queued' ? 'Waiting for a scanner slot' : 'Audit in progress'} &middot; automated WCAG 2.2 AA checks
       </span>
       <h1 class="loading-title">
-        Reading every <em>pixel</em>, line, and aria.
+        {#if runStatus === 'queued'}
+          You're in the <em>queue</em>.
+        {:else}
+          Reading every <em>pixel</em>, line, and aria.
+        {/if}
       </h1>
       <p class="p-large muted loading-lead">
-        {#if guestToken}
+        {#if runStatus === 'queued'}
+          Other scans are using the scanners right now. This tab will start automatically — you can leave it open.
+        {:else if guestToken}
           We're scanning this page with automated WCAG 2.2 AA checks. A snapshot of the top issues will appear next. This is not a full audit.
         {:else}
           We're scanning {totalPages} page{totalPages === 1 ? '' : 's'} with automated WCAG 2.2 AA checks.

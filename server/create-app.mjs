@@ -37,7 +37,6 @@ import {
   publicConfig,
   runRequestIsStaff,
   readGuestTokenRecord,
-  scanPoolFull,
   trackGuestRunEnd,
   trackGuestRunStart,
   verifyTurnstileIfConfigured,
@@ -56,6 +55,14 @@ import { authenticateUser, getUserById } from './users.mjs';
 import { attachRunToUser, canAccessDomain, domainsForUser } from './projects.mjs';
 import { registerAccountRoutes } from './account-routes.mjs';
 import { assertCustomerCanScan, incrementUsage } from './billing.mjs';
+import {
+  customerHasActiveScan,
+  enqueueScanJob,
+  kickQueue,
+  listJobs,
+  recoverInterruptedJobs,
+  setQueueExecutor,
+} from './queue.mjs';
 
 const DELIVERABLE_FILES = [
   'accessibility-developers.html',
@@ -67,11 +74,11 @@ function runKey(domain, runId) {
   return `${domain}:${runId}`;
 }
 
-/** Find any in-memory `running` run for a domain (used by /report/:domain/ redirects). */
+/** Find any in-memory running or queued run for a domain (used by /report/:domain/ redirects). */
 function findRunningRun(runStatusMap, domain) {
   for (const [key, value] of runStatusMap.entries()) {
     if (!key.startsWith(`${domain}:`)) continue;
-    if (value?.status === 'running') {
+    if (value?.status === 'running' || value?.status === 'queued') {
       const runId = key.slice(domain.length + 1);
       return { runId, state: value };
     }
@@ -458,6 +465,254 @@ export function createAccessibilityApp(repoRoot) {
   const loadingPath = '/loading';
 
   const app = express();
+
+  function launchScanProcess(job) {
+    const {
+      domain,
+      runId,
+      urls,
+      processedUrls,
+      requestedUrls,
+      truncated,
+      reportDir,
+    } = job;
+    const key = runKey(domain, runId);
+    runStatePatch(domain, runId, {
+      status: 'running',
+      urls: processedUrls,
+      processedUrls,
+      requestedUrls,
+      truncated,
+      userId: job.userId || null,
+      tier: job.tier || null,
+    });
+    const urlsArg = (Array.isArray(urls) ? urls : []).join('\n');
+    return new Promise((resolve) => {
+      const child = spawn(
+        process.execPath,
+        [
+          join(repoRoot, 'run-tests.js'),
+          '--report',
+          `--urls=${urlsArg}`,
+          `--output-id=${domain}/${runId}`,
+        ],
+        {
+          cwd: repoRoot,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }
+      );
+
+      let stderr = '';
+      let stdoutBuf = '';
+      child.stderr?.on('data', (d) => {
+        stderr += d.toString();
+      });
+      child.stdout?.on('data', (d) => {
+        stdoutBuf += d.toString();
+        const lines = stdoutBuf.split('\n');
+        stdoutBuf = lines.pop() || '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('{')) continue;
+          try {
+            const msg = JSON.parse(trimmed);
+            if (msg && msg.type === 'progress') {
+              runStatePatch(domain, runId, {
+                scannedPages: Number(msg.done) || 0,
+                currentUrl: msg.url || null,
+              });
+            }
+          } catch {
+            /* ignore non-JSON log lines */
+          }
+        }
+      });
+
+      const finish = () => resolve();
+
+      child.on('close', (code) => {
+        const cur = runStatus.get(key);
+        if (cur?.tier === 'guest' && cur.guestIp) {
+          trackGuestRunEnd(cur.guestIp);
+          cur.guestIp = null;
+        }
+        const reportPath = join(reportDir, 'accessibility-report.html');
+        const resultsPath = join(reportDir, 'accessibility-results.json');
+
+        if (code === 0 && existsSync(reportPath)) {
+          finalizeSuccessfulRun({ domain, runId, reportDir, processedUrls, requestedUrls, truncated })
+            .then((ok) => {
+              if (!ok) {
+                runStatePatch(domain, runId, {
+                  status: 'error',
+                  urls: processedUrls,
+                  processedUrls,
+                  requestedUrls,
+                  truncated,
+                  error: 'Report generation failed.',
+                });
+              }
+            })
+            .catch((err) => {
+              runStatePatch(domain, runId, {
+                status: 'error',
+                urls: processedUrls,
+                processedUrls,
+                requestedUrls,
+                truncated,
+                error: err.message,
+              });
+            })
+            .finally(finish);
+          return;
+        }
+        if (code === 0 && !existsSync(reportPath)) {
+          const pollForReport = (attempts = 0) => {
+            if (existsSync(reportPath)) {
+              finalizeSuccessfulRun({ domain, runId, reportDir, processedUrls, requestedUrls, truncated })
+                .then((ok) => {
+                  if (!ok) {
+                    runStatePatch(domain, runId, {
+                      status: 'error',
+                      urls: processedUrls,
+                      processedUrls,
+                      requestedUrls,
+                      truncated,
+                      error: 'Report generation failed.',
+                    });
+                  }
+                })
+                .catch((err) => {
+                  runStatePatch(domain, runId, {
+                    status: 'error',
+                    urls: processedUrls,
+                    processedUrls,
+                    requestedUrls,
+                    truncated,
+                    error: err.message,
+                  });
+                })
+                .finally(finish);
+              return;
+            }
+            if (attempts < 5) {
+              setTimeout(() => pollForReport(attempts + 1), 500);
+            } else if (existsSync(resultsPath)) {
+              (async () => {
+                try {
+                  const { generateReport } = await import(GENERATE_REPORT_URL);
+                  generateReport(null, { outputDir: reportDir });
+                  if (existsSync(reportPath)) {
+                    const ok = await finalizeSuccessfulRun({
+                      domain,
+                      runId,
+                      reportDir,
+                      processedUrls,
+                      requestedUrls,
+                      truncated,
+                    });
+                    if (!ok) {
+                      runStatePatch(domain, runId, {
+                        status: 'error',
+                        urls: processedUrls,
+                        processedUrls,
+                        requestedUrls,
+                        truncated,
+                        error: 'Report generation failed.',
+                      });
+                    }
+                  } else {
+                    runStatePatch(domain, runId, {
+                      status: 'error',
+                      urls: processedUrls,
+                      processedUrls,
+                      requestedUrls,
+                      truncated,
+                      error: 'Report generation failed.',
+                    });
+                  }
+                } catch (err) {
+                  runStatePatch(domain, runId, {
+                    status: 'error',
+                    urls: processedUrls,
+                    processedUrls,
+                    requestedUrls,
+                    truncated,
+                    error: err.message,
+                  });
+                } finally {
+                  finish();
+                }
+              })();
+            } else {
+              runStatePatch(domain, runId, {
+                status: 'error',
+                urls: processedUrls,
+                processedUrls,
+                requestedUrls,
+                truncated,
+                error: 'Report file was not created.',
+              });
+              finish();
+            }
+          };
+          pollForReport();
+          return;
+        }
+        runStatePatch(domain, runId, {
+          status: 'error',
+          urls: processedUrls,
+          processedUrls,
+          requestedUrls,
+          truncated,
+          error: stderr || `Process exited with code ${code}`,
+        });
+        finish();
+      });
+
+      child.on('error', (err) => {
+        const cur = runStatus.get(key);
+        if (cur?.tier === 'guest' && cur.guestIp) {
+          trackGuestRunEnd(cur.guestIp);
+          cur.guestIp = null;
+        }
+        runStatePatch(domain, runId, {
+          status: 'error',
+          urls: processedUrls,
+          processedUrls,
+          requestedUrls,
+          truncated,
+          error: err.message,
+        });
+        finish();
+      });
+    });
+  }
+
+  recoverInterruptedJobs();
+  setQueueExecutor((job) => launchScanProcess(job));
+  for (const job of listJobs()) {
+    if (!job?.domain || !job?.runId) continue;
+    const existing = runStatus.get(runKey(job.domain, job.runId));
+    if (!existing) {
+      runStatus.set(runKey(job.domain, job.runId), {
+        domain: job.domain,
+        runId: job.runId,
+        status: 'queued',
+        urls: job.processedUrls,
+        processedUrls: job.processedUrls,
+        requestedUrls: job.requestedUrls,
+        truncated: job.truncated,
+        error: null,
+        userId: job.userId || null,
+        tier: job.tier || null,
+        guestIp: job.guestIp || null,
+      });
+      if (job.tier === 'guest' && job.guestIp) trackGuestRunStart(job.guestIp);
+    }
+  }
+  kickQueue();
+
 
 // CORS: set ALLOWED_ORIGIN to your UI origin (no trailing slash) when using PUBLIC_APP_BASE / split hosting.
 // RELAX_CORS_LOCALHOST=true + browser hitting PUBLIC_DEV_API_URL lets `astro dev` call :3456 without the Vite proxy (fixes many multipart 403s).
@@ -1091,10 +1346,6 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     });
   }
 
-  if (scanPoolFull(runStatus)) {
-    return res.status(429).json({ error: 'The scanner is busy. Try again in a few minutes.' });
-  }
-
   const domainKey = getSingleDomainKey(urls);
   if (!domainKey) {
     return res.status(400).json({
@@ -1103,11 +1354,16 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   }
 
   const domain = domainKey;
-  // Allow multiple runs per domain over time; only block if one is currently running.
+  // Allow multiple runs per domain over time; only block if one is currently running or queued.
   const concurrent = findRunningRun(runStatus, domain);
   if (concurrent) {
     return res.status(409).json({
       error: `A run for ${domain} is already in progress. Please wait for it to finish.`,
+    });
+  }
+  if (customerUser && customerHasActiveScan(runStatus, customerUser.id)) {
+    return res.status(409).json({
+      error: 'A scan is already running or waiting for your account. Please wait for it to finish.',
     });
   }
   if (customerUser) {
@@ -1140,7 +1396,7 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   const initialState = {
     domain,
     runId,
-    status: 'running',
+    status: 'queued',
     urls: processedUrls,
     requestedUrls,
     processedUrls,
@@ -1164,137 +1420,18 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     console.error(`[run ${domain}/${runId}] DB initial write failed:`, err.message);
   });
 
-  const urlsArg = urls.join('\n');
-  const child = spawn(
-    process.execPath,
-    [
-      join(repoRoot, 'run-tests.js'),
-      '--report',
-      `--urls=${urlsArg}`,
-      `--output-id=${domain}/${runId}`,
-    ],
-    {
-      cwd: repoRoot,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }
-  );
-
-  let stderr = '';
-  let stdoutBuf = '';
-  child.stderr?.on('data', (d) => { stderr += d.toString(); });
-  child.stdout?.on('data', (d) => {
-    stdoutBuf += d.toString();
-    const lines = stdoutBuf.split('\n');
-    stdoutBuf = lines.pop() || '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('{')) continue;
-      try {
-        const msg = JSON.parse(trimmed);
-        if (msg && msg.type === 'progress') {
-          runStatePatch(domain, runId, {
-            scannedPages: Number(msg.done) || 0,
-            currentUrl: msg.url || null,
-          });
-        }
-      } catch {
-        /* ignore non-JSON log lines */
-      }
-    }
-  });
-
-  child.on('close', (code) => {
-    const cur = runStatus.get(key);
-    if (cur?.tier === 'guest' && cur.guestIp) {
-      trackGuestRunEnd(cur.guestIp);
-      cur.guestIp = null;
-    }
-    const reportPath = join(reportDir, 'accessibility-report.html');
-    const resultsPath = join(reportDir, 'accessibility-results.json');
-
-    if (code === 0 && existsSync(reportPath)) {
-      finalizeSuccessfulRun({ domain, runId, reportDir, processedUrls, requestedUrls, truncated })
-        .then((ok) => {
-          if (!ok) {
-            runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
-          }
-        })
-        .catch((err) => {
-          runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: err.message });
-        });
-      return;
-    }
-    if (code === 0 && !existsSync(reportPath)) {
-      const pollForReport = (attempts = 0) => {
-        if (existsSync(reportPath)) {
-          finalizeSuccessfulRun({ domain, runId, reportDir, processedUrls, requestedUrls, truncated })
-            .then((ok) => {
-              if (!ok) {
-                runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
-              }
-            })
-            .catch((err) => {
-              runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: err.message });
-            });
-          return;
-        }
-        if (attempts < 5) {
-          setTimeout(() => pollForReport(attempts + 1), 500);
-        } else if (existsSync(resultsPath)) {
-          (async () => {
-            try {
-              const { generateReport } = await import(GENERATE_REPORT_URL);
-              generateReport(null, { outputDir: reportDir });
-              if (existsSync(reportPath)) {
-                const ok = await finalizeSuccessfulRun({ domain, runId, reportDir, processedUrls, requestedUrls, truncated });
-                if (!ok) {
-                  runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
-                }
-              } else {
-                runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: 'Report generation failed.' });
-              }
-            } catch (err) {
-              runStatePatch(domain, runId, { status: 'error', urls: processedUrls, processedUrls, requestedUrls, truncated, error: err.message });
-            }
-          })();
-        } else {
-          runStatePatch(domain, runId, {
-            status: 'error',
-            urls: processedUrls,
-            processedUrls,
-            requestedUrls,
-            truncated,
-            error: 'Report file was not created.',
-          });
-        }
-      };
-      pollForReport();
-      return;
-    }
-    runStatePatch(domain, runId, {
-      status: 'error',
-      urls: processedUrls,
-      processedUrls,
-      requestedUrls,
-      truncated,
-      error: stderr || `Process exited with code ${code}`,
-    });
-  });
-
-  child.on('error', (err) => {
-    const cur = runStatus.get(key);
-    if (cur?.tier === 'guest' && cur.guestIp) {
-      trackGuestRunEnd(cur.guestIp);
-      cur.guestIp = null;
-    }
-    runStatePatch(domain, runId, {
-      status: 'error',
-      urls: processedUrls,
-      processedUrls,
-      requestedUrls,
-      truncated,
-      error: err.message,
-    });
+  enqueueScanJob({
+    id: key,
+    domain,
+    runId,
+    urls,
+    processedUrls,
+    requestedUrls,
+    truncated,
+    reportDir,
+    userId: initialState.userId,
+    tier: initialState.tier,
+    guestIp: initialState.guestIp,
   });
 
   res.json({
@@ -1302,6 +1439,7 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     runId,
     id: domain,
     reportId: domain,
+    status: 'queued',
     urls: processedUrls,
     processedUrls,
     requestedUrls,

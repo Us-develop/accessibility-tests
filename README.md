@@ -36,7 +36,7 @@ AUTH_ENABLED=false npm start
 
 Staff can still sign in with `APP_USERNAME` / `APP_PASSWORD`. Customers sign up at `/signup` (email + hashed password, signed `wcag_sid` session, CSRF). Set **`SESSION_SECRET`** in production (defaults to a dev-only value derived from `APP_PASSWORD`). Guest 1-page snapshots can attach to the new account (`/signup?guest=TOKEN`).
 
-The public homepage stays the free 1-page scan unless someone is actually signed in. Stripe, quotas, and legal pages are not in this accounts slice.
+The public homepage stays the free 1-page scan unless someone is actually signed in. Signed-in customers share a restart-safe scan queue (`SCAN_MAX_CONCURRENT`, default 3, files under `reports/_queue/`) and one active scan per account. Monthly plan caps still return 429; a second scan while one is queued or running returns 409. Stripe Checkout and legal pages (`/terms`, `/privacy`, `/cookies`, `/pricing`) are not wired yet.
 
 ### How scans work (and limitations)
 
