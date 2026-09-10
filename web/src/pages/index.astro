@@ -429,6 +429,12 @@ export const prerender = false;
         window.location.href = wcUrl(`/loading?token=${encodeURIComponent(data.guestToken)}`);
         return;
       }
+      const domain = data.domain || data.id || data.reportId;
+      const runId = data.runId;
+      if (domain && runId) {
+        window.location.href = wcUrl(`/loading?domain=${encodeURIComponent(domain)}&runId=${encodeURIComponent(runId)}`);
+        return;
+      }
       errEl.textContent = 'Could not start the free scan.';
       errEl.style.display = 'block';
     } catch {

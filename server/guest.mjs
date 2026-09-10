@@ -45,6 +45,24 @@ export function isValidGuestToken(token) {
   return typeof token === 'string' && GUEST_TOKEN_RE.test(token);
 }
 
+/**
+ * Guest homepage posts `url` (one page). Staff posts `urls` and/or a file.
+ * AUTH_ENABLED=false still treats most requests as staff; this keeps the public
+ * 1-page form on the guest scan path so it receives a guestToken.
+ */
+export function isGuestScanPayload(body, file) {
+  if (file) return false;
+  const guestUrl = String(body?.url || '').trim();
+  const staffUrls = String(body?.urls || '').trim();
+  return Boolean(guestUrl) && !staffUrls;
+}
+
+export function runRequestIsStaff({ authEnabled, accessRole, body, file }) {
+  if (isGuestScanPayload(body, file)) return false;
+  if (!authEnabled) return true;
+  return accessRole === 'staff';
+}
+
 export function newGuestToken() {
   return randomBytes(16).toString('hex');
 }
