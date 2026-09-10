@@ -265,7 +265,6 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       }
 
       if (data.authenticated === true) {
-        globalThis.__wcagKeepLoginOpen = false;
         const role = data.role === 'customer' ? 'customer' : 'staff';
         try { sessionStorage.setItem('wcagStaff', '1'); } catch {}
         document.documentElement.classList.add('wcag-staff');
@@ -284,15 +283,16 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       document.body.classList.remove('is-customer');
       document.documentElement.classList.remove('wcag-staff');
       try { sessionStorage.removeItem('wcagStaff'); } catch {}
-      if (errEl && !globalThis.__wcagKeepLoginOpen) {
-        errEl.hidden = true;
-        errEl.textContent = '';
-      }
-      if (globalThis.__wcagKeepLoginOpen) {
-        openModal();
-        return;
-      }
       if (guestOk()) {
+        const overlay = qs('wcag-login-modal');
+        if (overlay && !overlay.hidden) {
+          unlockAppShell(false);
+          return;
+        }
+        if (errEl) {
+          errEl.hidden = true;
+          errEl.textContent = '';
+        }
         closeModal();
         unlockAppShell(false);
         return;
@@ -347,7 +347,6 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
             : 'Invalid email or password.';
         errEl.hidden = false;
       }
-      globalThis.__wcagKeepLoginOpen = true;
       openModal();
       params.delete('signin');
       const nextQs = params.toString();
