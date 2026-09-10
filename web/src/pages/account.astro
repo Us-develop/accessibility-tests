@@ -11,10 +11,83 @@ export const prerender = false;
       <article class="container-narrow page-article">
         <h1>Account</h1>
         <p id="account-status" class="muted mt-1">Loading…</p>
-        <div id="account-projects" class="card stack-form" hidden></div>
+
+        <section id="usage-card" class="card stack-form account-section" hidden>
+          <h2>Plan and usage</h2>
+          <p id="plan-name" class="muted"></p>
+          <div class="usage-bar" aria-hidden="true"><span id="usage-fill"></span></div>
+          <p id="usage-label" class="muted"></p>
+        </section>
+
+        <section id="contact-card" class="card stack-form account-section" hidden>
+          <h2>Contact details</h2>
+          <form id="contact-form" class="account-form">
+            <label>Name <input name="name" type="text" autocomplete="name" /></label>
+            <label>Company <input name="company" type="text" autocomplete="organization" /></label>
+            <label>Phone <input name="phone" type="tel" autocomplete="tel" /></label>
+            <label>VAT number <input name="vatNumber" type="text" /></label>
+            <label>Address <input name="addressLine1" type="text" autocomplete="address-line1" /></label>
+            <label class="sr-only">Address line 2 <input name="addressLine2" type="text" autocomplete="address-line2" /></label>
+            <div class="account-form-row">
+              <label>City <input name="city" type="text" autocomplete="address-level2" /></label>
+              <label>Postal code <input name="postalCode" type="text" autocomplete="postal-code" /></label>
+            </div>
+            <label>Country <input name="country" type="text" autocomplete="country-name" /></label>
+            <button type="submit" class="btn btn-primary">Save details</button>
+          </form>
+        </section>
+
+        <section id="password-card" class="card stack-form account-section" hidden>
+          <h2>Change password</h2>
+          <form id="password-form" class="account-form">
+            <label>Current password <input name="currentPassword" type="password" autocomplete="current-password" required /></label>
+            <label>New password <input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
+            <button type="submit" class="btn btn-ghost">Update password</button>
+          </form>
+        </section>
+
+        <div id="account-projects" class="card stack-form account-section" hidden></div>
+
+        <section id="scans-card" class="card stack-form account-section" hidden>
+          <h2>Scan history</h2>
+          <div class="table-wrap">
+            <table class="account-table">
+              <thead>
+                <tr>
+                  <th scope="col">Project</th>
+                  <th scope="col">Date</th>
+                  <th scope="col">Pages</th>
+                  <th scope="col">Score</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody id="scans-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="payments-card" class="card stack-form account-section" hidden>
+          <h2>Payment history</h2>
+          <p id="payments-empty" class="muted">No payments yet. Stripe billing is not connected.</p>
+          <div class="table-wrap" id="payments-table-wrap" hidden>
+            <table class="account-table">
+              <thead>
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">Description</th>
+                  <th scope="col">Amount</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody id="payments-body"></tbody>
+            </table>
+          </div>
+        </section>
+
         <div class="account-actions">
           <a class="btn btn-primary" href="/">New scan</a>
-          <a class="btn btn-ghost" href="/api/account/export">Export my data</a>
+          <a class="btn btn-ghost" href="/api/account/export">Export JSON</a>
+          <a class="btn btn-ghost" href="/api/account/export?format=csv">Export CSV</a>
           <button type="button" class="btn btn-ghost" id="delete-btn">Delete account</button>
         </div>
         <p id="account-msg" class="muted" role="status"></p>
@@ -28,6 +101,27 @@ export const prerender = false;
   const headers = () =>
     typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' };
 
+  function setMsg(text) {
+    const msg = document.getElementById('account-msg');
+    if (msg) msg.textContent = text || '';
+  }
+
+  function fillForm(form, user) {
+    if (!form || !user) return;
+    for (const el of form.elements) {
+      if (el.name && user[el.name] != null) el.value = user[el.name];
+    }
+  }
+
+  function formatMoney(cents, currency) {
+    const amount = Number(cents || 0) / 100;
+    try {
+      return new Intl.NumberFormat('en-GB', { style: 'currency', currency: (currency || 'eur').toUpperCase() }).format(amount);
+    } catch {
+      return `${amount.toFixed(2)} ${(currency || 'eur').toUpperCase()}`;
+    }
+  }
+
   async function attachGuestIfPresent() {
     const guest = new URLSearchParams(window.location.search).get('guest') || '';
     if (!guest) return;
@@ -38,12 +132,11 @@ export const prerender = false;
       body: JSON.stringify({ guestToken: guest }),
     });
     const data = await res.json().catch(() => ({}));
-    const msg = document.getElementById('account-msg');
     if (!res.ok) {
-      if (msg) msg.textContent = data.error || 'Could not attach that snapshot.';
+      setMsg(data.error || 'Could not attach that snapshot.');
       return;
     }
-    if (msg) msg.textContent = `Saved ${data.project?.domain || 'that snapshot'} to your projects.`;
+    setMsg(`Saved ${data.project?.domain || 'that snapshot'} to your projects.`);
   }
 
   async function load() {
@@ -56,13 +149,39 @@ export const prerender = false;
       return;
     }
     if (status) status.textContent = `${data.user?.email || ''} · ${data.role}`;
+
+    const usageCard = document.getElementById('usage-card');
+    const contactCard = document.getElementById('contact-card');
+    const passwordCard = document.getElementById('password-card');
+    if (data.role === 'customer') {
+      if (usageCard) usageCard.hidden = false;
+      if (contactCard) contactCard.hidden = false;
+      if (passwordCard) passwordCard.hidden = false;
+      fillForm(document.getElementById('contact-form'), data.user);
+      const planName = document.getElementById('plan-name');
+      const usage = data.usage || {};
+      const plan = data.plan;
+      if (planName) planName.textContent = plan?.name ? `${plan.name} plan` : 'Free plan';
+      const used = Number(usage.scansUsed || 0);
+      const max = usage.maxScansPerMonth;
+      const pct = max ? Math.min(100, Math.round((used / max) * 100)) : 0;
+      const fill = document.getElementById('usage-fill');
+      if (fill) fill.style.width = max ? `${pct}%` : '0%';
+      const usageLabel = document.getElementById('usage-label');
+      if (usageLabel) {
+        usageLabel.textContent = max == null
+          ? `${used} scan(s) this month · unlimited on this plan`
+          : `${used} of ${max} scans this month`;
+      }
+    }
+
     const projects = Array.isArray(data.projects) ? data.projects : [];
     if (list) {
       list.hidden = false;
       if (!projects.length) {
-        list.innerHTML = '<p class="muted">No saved projects yet. Run a scan or attach a guest snapshot after signup.</p>';
+        list.innerHTML = '<h2>Projects</h2><p class="muted">No saved projects yet. Run a scan or attach a guest snapshot after signup. Each domain is one project; a subdomain is a new project.</p>';
       } else {
-        list.innerHTML = `<h2 style="font-size: 18px; margin: 0 0 12px;">Projects</h2>${projects
+        list.innerHTML = `<h2>Projects</h2>${projects
           .map((p) => {
             const href = `/report/${encodeURIComponent(p.domain)}/history`;
             return `<p><a class="link" href="${href}">${p.domain}</a> · ${p.runIds?.length || 0} run(s)</p>`;
@@ -70,7 +189,92 @@ export const prerender = false;
           .join('')}`;
       }
     }
+
+    const scans = Array.isArray(data.scans) ? data.scans : [];
+    const scansCard = document.getElementById('scans-card');
+    const scansBody = document.getElementById('scans-body');
+    if (scansCard && scansBody) {
+      scansCard.hidden = false;
+      if (!scans.length) {
+        scansBody.innerHTML = '<tr><td colspan="5" class="muted">No scans in this account yet.</td></tr>';
+      } else {
+        scansBody.innerHTML = scans
+          .map((row) => {
+            const href = row.run_id
+              ? `/report/${encodeURIComponent(row.project_domain)}/${encodeURIComponent(row.run_id)}/`
+              : `/report/${encodeURIComponent(row.project_domain)}/history`;
+            const date = row.scan_date ? new Date(row.scan_date).toLocaleString() : '—';
+            const score = row.score == null ? '—' : String(row.score);
+            return `<tr>
+              <td><a class="link" href="${href}">${row.project_domain}</a></td>
+              <td>${date}</td>
+              <td>${row.pages_scanned ?? '—'}</td>
+              <td>${score}</td>
+              <td>${row.status || '—'}</td>
+            </tr>`;
+          })
+          .join('');
+      }
+    }
+
+    const payments = Array.isArray(data.payments) ? data.payments : [];
+    const paymentsCard = document.getElementById('payments-card');
+    const paymentsEmpty = document.getElementById('payments-empty');
+    const paymentsWrap = document.getElementById('payments-table-wrap');
+    const paymentsBody = document.getElementById('payments-body');
+    if (paymentsCard) {
+      paymentsCard.hidden = false;
+      if (!payments.length) {
+        if (paymentsEmpty) paymentsEmpty.hidden = false;
+        if (paymentsWrap) paymentsWrap.hidden = true;
+      } else {
+        if (paymentsEmpty) paymentsEmpty.hidden = true;
+        if (paymentsWrap) paymentsWrap.hidden = false;
+        if (paymentsBody) {
+          paymentsBody.innerHTML = payments
+            .map((row) => {
+              const date = row.createdAt ? new Date(row.createdAt).toLocaleDateString() : '—';
+              return `<tr>
+                <td>${date}</td>
+                <td>${row.description || '—'}</td>
+                <td>${formatMoney(row.amountCents, row.currency)}</td>
+                <td>${row.status || '—'}</td>
+              </tr>`;
+            })
+            .join('');
+        }
+      }
+    }
   }
+
+  document.getElementById('contact-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const body = Object.fromEntries(new FormData(form).entries());
+    const res = await fetch(api('/api/account'), {
+      method: 'PUT',
+      credentials: creds,
+      headers: headers(),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    setMsg(res.ok ? 'Details saved.' : data.error || 'Could not save details.');
+  });
+
+  document.getElementById('password-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const body = Object.fromEntries(new FormData(form).entries());
+    const res = await fetch(api('/api/account/password'), {
+      method: 'PUT',
+      credentials: creds,
+      headers: headers(),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    setMsg(res.ok ? 'Password updated.' : data.error || 'Could not update password.');
+    if (res.ok) form.reset();
+  });
 
   document.getElementById('delete-btn')?.addEventListener('click', async () => {
     if (!confirm('Delete your account and project links? This cannot be undone.')) return;

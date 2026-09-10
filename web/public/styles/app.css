@@ -631,3 +631,65 @@ button.linklike {
   margin-top: 16px;
 }
 
+.account-section {
+  margin-top: 20px;
+}
+.account-section h2 {
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+.account-form {
+  display: grid;
+  gap: 12px;
+}
+.account-form label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.account-form input {
+  font: inherit;
+  font-weight: 400;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: #fff;
+}
+.account-form-row {
+  display: grid;
+  gap: 12px;
+}
+@media (min-width: 560px) {
+  .account-form-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.usage-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(25, 25, 27, 0.08);
+  overflow: hidden;
+}
+.usage-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--us-mint, #8DFFB7);
+}
+.table-wrap {
+  overflow-x: auto;
+}
+.account-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.account-table th,
+.account-table td {
+  text-align: left;
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+}
+

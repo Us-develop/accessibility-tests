@@ -1,4 +1,6 @@
 import pg from 'pg';
+import { readJsonStore } from './json-store.mjs';
+import { DEFAULT_PLANS } from './plan-catalog.mjs';
 
 const { Pool } = pg;
 
@@ -105,6 +107,121 @@ export async function initDb() {
     )
   `);
   await dbPool.query(`CREATE INDEX IF NOT EXISTS leads_created_idx ON leads (created_at DESC)`);
+
+  await dbPool.query(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS user_id TEXT`);
+  await dbPool.query(
+    `CREATE INDEX IF NOT EXISTS runs_user_created_idx ON runs (user_id, created_at DESC)`
+  );
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      name TEXT,
+      role TEXT NOT NULL DEFAULT 'customer',
+      password_hash TEXT NOT NULL,
+      email_verified BOOLEAN DEFAULT FALSE,
+      verify_token TEXT,
+      verify_expires_at TIMESTAMPTZ,
+      reset_token TEXT,
+      reset_expires_at TIMESTAMPTZ,
+      phone TEXT,
+      company TEXT,
+      vat_number TEXT,
+      address_line1 TEXT,
+      address_line2 TEXT,
+      city TEXT,
+      postal_code TEXT,
+      country TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT`);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT`);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vat_number TEXT`);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS address_line1 TEXT`);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS address_line2 TEXT`);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT`);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS postal_code TEXT`);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT`);
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS plans (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      max_pages_per_scan INT,
+      max_scans_per_month INT,
+      max_projects INT,
+      features JSONB,
+      price_cents INT,
+      billing_interval TEXT,
+      active BOOLEAN DEFAULT TRUE
+    )
+  `);
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      domain TEXT NOT NULL,
+      name TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, domain)
+    )
+  `);
+  await dbPool.query(`CREATE INDEX IF NOT EXISTS projects_user_idx ON projects (user_id)`);
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      plan_id TEXT NOT NULL REFERENCES plans(id),
+      status TEXT NOT NULL,
+      current_period_start TIMESTAMPTZ,
+      current_period_end TIMESTAMPTZ,
+      stripe_subscription_id TEXT,
+      stripe_customer_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbPool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_user_uidx ON subscriptions (user_id)`
+  );
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS usage (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      period TEXT NOT NULL,
+      scans_used INT DEFAULT 0,
+      pages_scanned INT DEFAULT 0,
+      UNIQUE (user_id, period)
+    )
+  `);
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS payments (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      amount_cents INT NOT NULL,
+      currency TEXT DEFAULT 'eur',
+      status TEXT,
+      description TEXT,
+      stripe_payment_intent_id TEXT,
+      invoice_url TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbPool.query(
+    `CREATE INDEX IF NOT EXISTS payments_user_created_idx ON payments (user_id, created_at DESC)`
+  );
+
+  await seedDefaultPlans();
+  await migrateJsonStoresToPostgres();
+  await backfillRunUserIds();
 }
 
 /**
@@ -119,11 +236,11 @@ export async function dbUpsertRun(domain, runId, patch = {}) {
       INSERT INTO runs (
         id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
         notify_requested, notify_email, statement_meta_json, result_json, manual_progress_json,
-        tier, guest_token
+        tier, guest_token, user_id
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11::jsonb, $12::jsonb, $13::jsonb,
-        $14, $15
+        $14, $15, $16
       )
       ON CONFLICT (id, run_id) DO UPDATE SET
         status = COALESCE(EXCLUDED.status, runs.status),
@@ -139,6 +256,7 @@ export async function dbUpsertRun(domain, runId, patch = {}) {
         manual_progress_json = COALESCE(EXCLUDED.manual_progress_json, runs.manual_progress_json),
         tier = COALESCE(EXCLUDED.tier, runs.tier),
         guest_token = COALESCE(EXCLUDED.guest_token, runs.guest_token),
+        user_id = COALESCE(EXCLUDED.user_id, runs.user_id),
         updated_at = NOW()
     `,
     [
@@ -157,6 +275,7 @@ export async function dbUpsertRun(domain, runId, patch = {}) {
       patch.manualProgress ? JSON.stringify(patch.manualProgress) : null,
       patch.tier ?? null,
       patch.guestToken ?? null,
+      patch.userId ?? null,
     ]
   );
 }
@@ -180,6 +299,7 @@ function mapRunRow(row) {
     updatedAt: row.updated_at || null,
     tier: row.tier || null,
     guestToken: row.guest_token || null,
+    userId: row.user_id || null,
   };
 }
 
@@ -189,7 +309,7 @@ export async function dbGetRun(domain, runId) {
   const { rows } = await dbPool.query(
     `SELECT id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
             notify_requested, notify_email, result_json, manual_progress_json, updated_at,
-            tier, guest_token
+            tier, guest_token, user_id
        FROM runs WHERE id = $1 AND run_id = $2 LIMIT 1`,
     [domain, runId]
   );
@@ -202,7 +322,7 @@ export async function dbGetLatestRun(domain) {
   const { rows } = await dbPool.query(
     `SELECT id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
             notify_requested, notify_email, result_json, manual_progress_json, updated_at,
-            tier, guest_token
+            tier, guest_token, user_id
        FROM runs
       WHERE id = $1
       ORDER BY updated_at DESC
@@ -218,7 +338,7 @@ export async function dbListRunsForDomain(domain, limit = 100) {
   const { rows } = await dbPool.query(
     `SELECT id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
             notify_requested, notify_email, result_json, manual_progress_json, updated_at,
-            tier, guest_token
+            tier, guest_token, user_id
        FROM runs
       WHERE id = $1
       ORDER BY updated_at DESC
@@ -234,7 +354,7 @@ export async function dbGetRunByGuestToken(token) {
   const { rows } = await dbPool.query(
     `SELECT id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
             notify_requested, notify_email, result_json, manual_progress_json, updated_at,
-            tier, guest_token
+            tier, guest_token, user_id
        FROM runs WHERE guest_token = $1 LIMIT 1`,
     [token]
   );
@@ -297,4 +417,484 @@ export async function dbListLeads(limit = 200) {
   );
   return rows.map(mapLeadRow);
 }
+
+function isoOrNull(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
+function mapUserRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name || '',
+    role: row.role || 'customer',
+    passwordHash: row.password_hash,
+    emailVerified: !!row.email_verified,
+    verifyToken: row.verify_token || null,
+    verifyExpiresAt: isoOrNull(row.verify_expires_at),
+    resetToken: row.reset_token || null,
+    resetExpiresAt: isoOrNull(row.reset_expires_at),
+    phone: row.phone || '',
+    company: row.company || '',
+    vatNumber: row.vat_number || '',
+    addressLine1: row.address_line1 || '',
+    addressLine2: row.address_line2 || '',
+    city: row.city || '',
+    postalCode: row.postal_code || '',
+    country: row.country || '',
+    createdAt: isoOrNull(row.created_at),
+    updatedAt: isoOrNull(row.updated_at),
+  };
+}
+
+const USER_COLUMNS = `id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
+            reset_token, reset_expires_at, phone, company, vat_number, address_line1, address_line2,
+            city, postal_code, country, created_at, updated_at`;
+
+export async function dbGetUserById(id) {
+  if (!dbPool || !id) return null;
+  const { rows } = await dbPool.query(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1 LIMIT 1`, [id]);
+  return mapUserRow(rows[0]);
+}
+
+export async function dbGetUserByEmail(email) {
+  if (!dbPool || !email) return null;
+  const needle = String(email).trim().toLowerCase();
+  const { rows } = await dbPool.query(`SELECT ${USER_COLUMNS} FROM users WHERE email = $1 LIMIT 1`, [needle]);
+  return mapUserRow(rows[0]);
+}
+
+export async function dbUpsertUser(user) {
+  if (!dbPool || !user?.id) return null;
+  const { rows } = await dbPool.query(
+    `
+      INSERT INTO users (
+        id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
+        reset_token, reset_expires_at, phone, company, vat_number, address_line1, address_line2,
+        city, postal_code, country, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14, $15,
+        $16, $17, $18, COALESCE($19::timestamptz, NOW()), NOW()
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        email = EXCLUDED.email,
+        name = EXCLUDED.name,
+        role = EXCLUDED.role,
+        password_hash = EXCLUDED.password_hash,
+        email_verified = EXCLUDED.email_verified,
+        verify_token = EXCLUDED.verify_token,
+        verify_expires_at = EXCLUDED.verify_expires_at,
+        reset_token = EXCLUDED.reset_token,
+        reset_expires_at = EXCLUDED.reset_expires_at,
+        phone = EXCLUDED.phone,
+        company = EXCLUDED.company,
+        vat_number = EXCLUDED.vat_number,
+        address_line1 = EXCLUDED.address_line1,
+        address_line2 = EXCLUDED.address_line2,
+        city = EXCLUDED.city,
+        postal_code = EXCLUDED.postal_code,
+        country = EXCLUDED.country,
+        updated_at = NOW()
+      RETURNING ${USER_COLUMNS}
+    `,
+    [
+      user.id,
+      String(user.email || '').trim().toLowerCase(),
+      user.name || '',
+      user.role || 'customer',
+      user.passwordHash,
+      user.emailVerified === true,
+      user.verifyToken || null,
+      user.verifyExpiresAt || null,
+      user.resetToken || null,
+      user.resetExpiresAt || null,
+      user.phone || '',
+      user.company || '',
+      user.vatNumber || '',
+      user.addressLine1 || '',
+      user.addressLine2 || '',
+      user.city || '',
+      user.postalCode || '',
+      user.country || '',
+      user.createdAt || null,
+    ]
+  );
+  return mapUserRow(rows[0]);
+}
+
+export async function dbDeleteUser(id) {
+  if (!dbPool || !id) return;
+  await dbPool.query(`DELETE FROM users WHERE id = $1`, [id]);
+}
+
+function mapProjectRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    domain: row.domain,
+    name: row.name || row.domain,
+    runIds: Array.isArray(row.run_ids) ? row.run_ids : [],
+    createdAt: isoOrNull(row.created_at),
+    updatedAt: isoOrNull(row.updated_at),
+  };
+}
+
+export async function dbUpsertProject(project) {
+  if (!dbPool || !project?.id || !project.userId || !project.domain) return null;
+  const { rows } = await dbPool.query(
+    `
+      INSERT INTO projects (id, user_id, domain, name, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()), NOW())
+      ON CONFLICT (user_id, domain) DO UPDATE SET
+        name = COALESCE(EXCLUDED.name, projects.name),
+        updated_at = NOW()
+      RETURNING id, user_id, domain, name, created_at, updated_at
+    `,
+    [
+      project.id,
+      project.userId,
+      String(project.domain).toLowerCase(),
+      project.name || project.domain,
+      project.createdAt || null,
+    ]
+  );
+  const mapped = mapProjectRow(rows[0]);
+  if (mapped) mapped.runIds = Array.isArray(project.runIds) ? project.runIds : [];
+  return mapped;
+}
+
+export async function dbListProjectsForUser(userId) {
+  if (!dbPool || !userId) return [];
+  const { rows } = await dbPool.query(
+    `SELECT id, user_id, domain, name, created_at, updated_at FROM projects WHERE user_id = $1 ORDER BY updated_at DESC`,
+    [userId]
+  );
+  const projects = rows.map(mapProjectRow);
+  const runRows = await dbPool.query(
+    `SELECT id AS domain, run_id FROM runs WHERE user_id = $1 ORDER BY updated_at DESC`,
+    [userId]
+  );
+  const byDomain = new Map();
+  for (const row of runRows.rows) {
+    if (!byDomain.has(row.domain)) byDomain.set(row.domain, []);
+    byDomain.get(row.domain).push(row.run_id);
+  }
+  return projects.map((p) => ({ ...p, runIds: byDomain.get(p.domain) || p.runIds || [] }));
+}
+
+export async function dbFindProjectByDomain(userId, domain) {
+  if (!dbPool || !userId || !domain) return null;
+  const { rows } = await dbPool.query(
+    `SELECT id, user_id, domain, name, created_at, updated_at FROM projects WHERE user_id = $1 AND domain = $2 LIMIT 1`,
+    [userId, String(domain).toLowerCase()]
+  );
+  const project = mapProjectRow(rows[0]);
+  if (!project) return null;
+  const runRows = await dbPool.query(
+    `SELECT run_id FROM runs WHERE user_id = $1 AND id = $2 ORDER BY updated_at DESC`,
+    [userId, project.domain]
+  );
+  project.runIds = runRows.rows.map((r) => r.run_id);
+  return project;
+}
+
+export async function dbGetProject(id) {
+  if (!dbPool || !id) return null;
+  const { rows } = await dbPool.query(
+    `SELECT id, user_id, domain, name, created_at, updated_at FROM projects WHERE id = $1 LIMIT 1`,
+    [id]
+  );
+  return mapProjectRow(rows[0]);
+}
+
+export async function dbDeleteProjectsForUser(userId) {
+  if (!dbPool || !userId) return;
+  await dbPool.query(`DELETE FROM projects WHERE user_id = $1`, [userId]);
+}
+
+export async function dbSetRunUserId(domain, runId, userId) {
+  if (!dbPool || !domain || !runId || !userId) return;
+  await dbPool.query(
+    `UPDATE runs SET user_id = $3 WHERE id = $1 AND run_id = $2 AND user_id IS NULL`,
+    [domain, runId, userId]
+  );
+}
+
+function mapPlanRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    maxPagesPerScan: row.max_pages_per_scan == null ? null : Number(row.max_pages_per_scan),
+    maxScansPerMonth: row.max_scans_per_month == null ? null : Number(row.max_scans_per_month),
+    maxProjects: row.max_projects == null ? null : Number(row.max_projects),
+    features: row.features && typeof row.features === 'object' ? row.features : {},
+    priceCents: row.price_cents == null ? 0 : Number(row.price_cents),
+    billingInterval: row.billing_interval || 'monthly',
+    active: row.active !== false,
+  };
+}
+
+export async function dbGetPlan(id) {
+  if (!dbPool || !id) return null;
+  const { rows } = await dbPool.query(
+    `SELECT id, name, max_pages_per_scan, max_scans_per_month, max_projects, features, price_cents, billing_interval, active
+       FROM plans WHERE id = $1 LIMIT 1`,
+    [id]
+  );
+  return mapPlanRow(rows[0]);
+}
+
+export async function dbListPlans() {
+  if (!dbPool) return [];
+  const { rows } = await dbPool.query(
+    `SELECT id, name, max_pages_per_scan, max_scans_per_month, max_projects, features, price_cents, billing_interval, active
+       FROM plans WHERE active = TRUE ORDER BY price_cents ASC`
+  );
+  return rows.map(mapPlanRow);
+}
+
+export async function dbUpsertPlan(plan) {
+  if (!dbPool || !plan?.id) return null;
+  const { rows } = await dbPool.query(
+    `
+      INSERT INTO plans (
+        id, name, max_pages_per_scan, max_scans_per_month, max_projects, features, price_cents, billing_interval, active
+      ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id, name, max_pages_per_scan, max_scans_per_month, max_projects, features, price_cents, billing_interval, active
+    `,
+    [
+      plan.id,
+      plan.name,
+      plan.maxPagesPerScan,
+      plan.maxScansPerMonth,
+      plan.maxProjects,
+      JSON.stringify(plan.features || {}),
+      plan.priceCents ?? 0,
+      plan.billingInterval || 'monthly',
+      plan.active !== false,
+    ]
+  );
+  if (rows[0]) return mapPlanRow(rows[0]);
+  return dbGetPlan(plan.id);
+}
+
+function mapSubscriptionRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    planId: row.plan_id,
+    status: row.status,
+    currentPeriodStart: isoOrNull(row.current_period_start),
+    currentPeriodEnd: isoOrNull(row.current_period_end),
+    stripeSubscriptionId: row.stripe_subscription_id || null,
+    stripeCustomerId: row.stripe_customer_id || null,
+    createdAt: isoOrNull(row.created_at),
+    updatedAt: isoOrNull(row.updated_at),
+  };
+}
+
+export async function dbGetSubscription(userId) {
+  if (!dbPool || !userId) return null;
+  const { rows } = await dbPool.query(
+    `SELECT id, user_id, plan_id, status, current_period_start, current_period_end,
+            stripe_subscription_id, stripe_customer_id, created_at, updated_at
+       FROM subscriptions WHERE user_id = $1 LIMIT 1`,
+    [userId]
+  );
+  return mapSubscriptionRow(rows[0]);
+}
+
+export async function dbUpsertSubscription(sub) {
+  if (!dbPool || !sub?.id || !sub.userId) return null;
+  const { rows } = await dbPool.query(
+    `
+      INSERT INTO subscriptions (
+        id, user_id, plan_id, status, current_period_start, current_period_end,
+        stripe_subscription_id, stripe_customer_id, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::timestamptz, NOW()), NOW())
+      ON CONFLICT (user_id) DO UPDATE SET
+        plan_id = EXCLUDED.plan_id,
+        status = EXCLUDED.status,
+        current_period_start = EXCLUDED.current_period_start,
+        current_period_end = EXCLUDED.current_period_end,
+        stripe_subscription_id = COALESCE(EXCLUDED.stripe_subscription_id, subscriptions.stripe_subscription_id),
+        stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, subscriptions.stripe_customer_id),
+        updated_at = NOW()
+      RETURNING id, user_id, plan_id, status, current_period_start, current_period_end,
+                stripe_subscription_id, stripe_customer_id, created_at, updated_at
+    `,
+    [
+      sub.id,
+      sub.userId,
+      sub.planId || 'free',
+      sub.status || 'active',
+      sub.currentPeriodStart || null,
+      sub.currentPeriodEnd || null,
+      sub.stripeSubscriptionId || null,
+      sub.stripeCustomerId || null,
+      sub.createdAt || null,
+    ]
+  );
+  return mapSubscriptionRow(rows[0]);
+}
+
+function mapUsageRow(row) {
+  if (!row) return { scansUsed: 0, pagesScanned: 0, period: null };
+  return {
+    userId: row.user_id,
+    period: row.period,
+    scansUsed: Number(row.scans_used || 0),
+    pagesScanned: Number(row.pages_scanned || 0),
+  };
+}
+
+export async function dbGetUsage(userId, period) {
+  if (!dbPool || !userId || !period) return { userId, period, scansUsed: 0, pagesScanned: 0 };
+  const { rows } = await dbPool.query(
+    `SELECT user_id, period, scans_used, pages_scanned FROM usage WHERE user_id = $1 AND period = $2 LIMIT 1`,
+    [userId, period]
+  );
+  if (!rows[0]) return { userId, period, scansUsed: 0, pagesScanned: 0 };
+  return mapUsageRow(rows[0]);
+}
+
+export async function dbIncrementUsage(userId, period, scans = 1, pages = 0) {
+  if (!dbPool || !userId || !period) return dbGetUsage(userId, period);
+  const { rows } = await dbPool.query(
+    `
+      INSERT INTO usage (user_id, period, scans_used, pages_scanned)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (user_id, period) DO UPDATE SET
+        scans_used = usage.scans_used + EXCLUDED.scans_used,
+        pages_scanned = usage.pages_scanned + EXCLUDED.pages_scanned
+      RETURNING user_id, period, scans_used, pages_scanned
+    `,
+    [userId, period, Number(scans) || 0, Number(pages) || 0]
+  );
+  return mapUsageRow(rows[0]);
+}
+
+function mapPaymentRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    amountCents: Number(row.amount_cents || 0),
+    currency: row.currency || 'eur',
+    status: row.status || '',
+    description: row.description || '',
+    stripePaymentIntentId: row.stripe_payment_intent_id || null,
+    invoiceUrl: row.invoice_url || null,
+    createdAt: isoOrNull(row.created_at),
+  };
+}
+
+export async function dbInsertPayment(payment) {
+  if (!dbPool || !payment?.id || !payment.userId) return null;
+  const { rows } = await dbPool.query(
+    `
+      INSERT INTO payments (
+        id, user_id, amount_cents, currency, status, description, stripe_payment_intent_id, invoice_url, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::timestamptz, NOW()))
+      RETURNING id, user_id, amount_cents, currency, status, description, stripe_payment_intent_id, invoice_url, created_at
+    `,
+    [
+      payment.id,
+      payment.userId,
+      payment.amountCents ?? 0,
+      payment.currency || 'eur',
+      payment.status || 'paid',
+      payment.description || '',
+      payment.stripePaymentIntentId || null,
+      payment.invoiceUrl || null,
+      payment.createdAt || null,
+    ]
+  );
+  return mapPaymentRow(rows[0]);
+}
+
+export async function dbListPayments(userId, limit = 50) {
+  if (!dbPool || !userId) return [];
+  const { rows } = await dbPool.query(
+    `SELECT id, user_id, amount_cents, currency, status, description, stripe_payment_intent_id, invoice_url, created_at
+       FROM payments WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
+    [userId, limit]
+  );
+  return rows.map(mapPaymentRow);
+}
+
+export async function dbListRunsForUser(userId, limit = 200) {
+  if (!dbPool || !userId) return [];
+  const { rows } = await dbPool.query(
+    `SELECT id, run_id, status, urls, processed_urls, requested_urls, result_json, updated_at, user_id, tier
+       FROM runs
+      WHERE user_id = $1
+      ORDER BY updated_at DESC
+      LIMIT $2`,
+    [userId, limit]
+  );
+  return rows.map((row) => ({
+    domain: row.id,
+    runId: row.run_id,
+    status: row.status,
+    pages: Array.isArray(row.result_json?.urls)
+      ? row.result_json.urls.length
+      : Number(row.processed_urls || row.requested_urls || row.urls || 0),
+    updatedAt: row.updated_at,
+    resultJson: row.result_json || null,
+    userId: row.user_id,
+    tier: row.tier || null,
+  }));
+}
+
+async function seedDefaultPlans() {
+  if (!dbPool) return;
+  for (const plan of DEFAULT_PLANS) {
+    await dbUpsertPlan(plan);
+  }
+}
+
+async function migrateJsonStoresToPostgres() {
+  if (!dbPool) return;
+  const userData = readJsonStore('users.json', { users: [] });
+  const users = Array.isArray(userData.users) ? userData.users : [];
+  for (const user of users) {
+    if (!user?.id || !user.email) continue;
+    try {
+      await dbUpsertUser(user);
+    } catch (err) {
+      console.error(`[migrate] user ${user.id} failed:`, err.message);
+    }
+  }
+  const projectData = readJsonStore('projects.json', { projects: [] });
+  const projects = Array.isArray(projectData.projects) ? projectData.projects : [];
+  for (const project of projects) {
+    if (!project?.id || !project.userId || !project.domain) continue;
+    try {
+      await dbUpsertProject(project);
+    } catch (err) {
+      console.error(`[migrate] project ${project.id} failed:`, err.message);
+    }
+  }
+}
+
+async function backfillRunUserIds() {
+  if (!dbPool) return;
+  await dbPool.query(`
+    UPDATE runs r
+       SET user_id = p.user_id
+      FROM projects p
+     WHERE r.user_id IS NULL
+       AND r.id = p.domain
+  `);
+}
+
 

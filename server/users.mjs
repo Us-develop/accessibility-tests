@@ -1,11 +1,35 @@
 import { randomBytes } from 'crypto';
+import {
+  dbPool,
+  dbDeleteUser,
+  dbGetUserByEmail,
+  dbGetUserById,
+  dbUpsertUser,
+} from './db.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 import { hashPassword, verifyPassword, isStrongPassword } from './passwords.mjs';
+import { ensureFreeSubscription } from './billing.mjs';
 
 const USERS_FILE = 'users.json';
 
+const CONTACT_FIELDS = [
+  'name',
+  'phone',
+  'company',
+  'vatNumber',
+  'addressLine1',
+  'addressLine2',
+  'city',
+  'postalCode',
+  'country',
+];
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+function useDb() {
+  return Boolean(dbPool);
 }
 
 function loadUsers() {
@@ -17,7 +41,25 @@ function saveUsers(users) {
   writeJsonStore(USERS_FILE, { users });
 }
 
-function publicUser(user) {
+function emptyContact() {
+  return {
+    phone: '',
+    company: '',
+    vatNumber: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    postalCode: '',
+    country: '',
+  };
+}
+
+function withContactDefaults(user) {
+  if (!user) return null;
+  return { ...emptyContact(), ...user };
+}
+
+export function publicUser(user) {
   if (!user) return null;
   const {
     passwordHash,
@@ -26,7 +68,7 @@ function publicUser(user) {
     resetToken,
     resetExpiresAt,
     ...rest
-  } = user;
+  } = withContactDefaults(user);
   return rest;
 }
 
@@ -35,17 +77,29 @@ function findByEmail(users, email) {
   return users.find((u) => u.email === needle) || null;
 }
 
-export function getUserById(id) {
+export async function getUserById(id) {
   if (!id) return null;
-  return loadUsers().find((u) => u.id === id) || null;
+  if (useDb()) return withContactDefaults(await dbGetUserById(id));
+  return withContactDefaults(loadUsers().find((u) => u.id === id) || null);
 }
 
-export function getUserByEmail(email) {
-  return findByEmail(loadUsers(), email);
+export async function getUserByEmail(email) {
+  if (useDb()) return withContactDefaults(await dbGetUserByEmail(email));
+  return withContactDefaults(findByEmail(loadUsers(), email));
 }
 
-export function getPublicUserById(id) {
-  return publicUser(getUserById(id));
+export async function getPublicUserById(id) {
+  return publicUser(await getUserById(id));
+}
+
+export async function persistUser(user) {
+  if (useDb()) return withContactDefaults(await dbUpsertUser(user));
+  const users = loadUsers();
+  const idx = users.findIndex((u) => u.id === user.id);
+  if (idx === -1) users.push(user);
+  else users[idx] = user;
+  saveUsers(users);
+  return withContactDefaults(user);
 }
 
 export async function createUser({ email, password, name = '' }) {
@@ -56,8 +110,7 @@ export async function createUser({ email, password, name = '' }) {
   if (!isStrongPassword(password)) {
     throw Object.assign(new Error('Use a password of at least 10 characters.'), { status: 400 });
   }
-  const users = loadUsers();
-  if (findByEmail(users, normalized)) {
+  if (await getUserByEmail(normalized)) {
     throw Object.assign(new Error('An account with that email already exists.'), { status: 409 });
   }
   const autoVerify = String(process.env.AUTH_EMAIL_VERIFY || 'auto').toLowerCase() !== 'required';
@@ -72,37 +125,62 @@ export async function createUser({ email, password, name = '' }) {
     verifyExpiresAt: autoVerify ? null : new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
     resetToken: null,
     resetExpiresAt: null,
+    ...emptyContact(),
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };
-  users.push(user);
-  saveUsers(users);
+  try {
+    await persistUser(user);
+  } catch (err) {
+    if (err?.code === '23505') {
+      throw Object.assign(new Error('An account with that email already exists.'), { status: 409 });
+    }
+    throw err;
+  }
+  await ensureFreeSubscription(user.id);
   return { user: publicUser(user), verifyToken: user.verifyToken };
 }
 
 export async function authenticateUser(email, password) {
-  const user = findByEmail(loadUsers(), email);
+  const user = await getUserByEmail(email);
   if (!user) return null;
   const ok = await verifyPassword(password, user.passwordHash);
   return ok ? user : null;
 }
 
-export function updateUser(id, patch) {
-  const users = loadUsers();
-  const idx = users.findIndex((u) => u.id === id);
-  if (idx === -1) return null;
-  users[idx] = { ...users[idx], ...patch, updatedAt: nowIso() };
-  saveUsers(users);
-  return users[idx];
+export async function updateUser(id, patch) {
+  const current = await getUserById(id);
+  if (!current) return null;
+  const next = { ...current, ...patch, id, updatedAt: nowIso() };
+  return persistUser(next);
 }
 
-export function verifyUserEmail(token) {
-  const users = loadUsers();
-  const user = users.find((u) => u.verifyToken && u.verifyToken === token);
+export async function updateContactDetails(userId, patch) {
+  const allowed = {};
+  for (const key of CONTACT_FIELDS) {
+    if (patch && Object.prototype.hasOwnProperty.call(patch, key)) {
+      allowed[key] = String(patch[key] ?? '').trim().slice(0, 200);
+    }
+  }
+  return publicUser(await updateUser(userId, allowed));
+}
+
+export async function verifyUserEmail(token) {
+  if (!token) return null;
+  let user = null;
+  if (useDb()) {
+    const { rows } = await dbPool.query(
+      `SELECT id FROM users WHERE verify_token = $1 LIMIT 1`,
+      [token]
+    );
+    if (rows[0]) user = await getUserById(rows[0].id);
+  } else {
+    user = loadUsers().find((u) => u.verifyToken && u.verifyToken === token) || null;
+  }
   if (!user) return null;
   if (user.verifyExpiresAt && Date.parse(user.verifyExpiresAt) < Date.now()) return null;
   return publicUser(
-    updateUser(user.id, { emailVerified: true, verifyToken: null, verifyExpiresAt: null })
+    await updateUser(user.id, { emailVerified: true, verifyToken: null, verifyExpiresAt: null })
   );
 }
 
@@ -110,31 +188,51 @@ export async function setPassword(id, password) {
   if (!isStrongPassword(password)) {
     throw Object.assign(new Error('Use a password of at least 10 characters.'), { status: 400 });
   }
-  return publicUser(updateUser(id, { passwordHash: await hashPassword(password), resetToken: null, resetExpiresAt: null }));
+  return publicUser(
+    await updateUser(id, {
+      passwordHash: await hashPassword(password),
+      resetToken: null,
+      resetExpiresAt: null,
+    })
+  );
 }
 
-export function startPasswordReset(email) {
-  const user = findByEmail(loadUsers(), email);
+export async function startPasswordReset(email) {
+  const user = await getUserByEmail(email);
   if (!user) return null;
   const token = randomBytes(16).toString('hex');
-  updateUser(user.id, {
+  await updateUser(user.id, {
     resetToken: token,
     resetExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
   });
   return { user: publicUser(user), token };
 }
 
-export function consumePasswordReset(token) {
-  const users = loadUsers();
-  const user = users.find((u) => u.resetToken && u.resetToken === token);
+export async function consumePasswordReset(token) {
+  if (!token) return null;
+  if (useDb()) {
+    const { rows } = await dbPool.query(
+      `SELECT id FROM users WHERE reset_token = $1 LIMIT 1`,
+      [token]
+    );
+    if (!rows[0]) return null;
+    const user = await getUserById(rows[0].id);
+    if (!user) return null;
+    if (user.resetExpiresAt && Date.parse(user.resetExpiresAt) < Date.now()) return null;
+    return user;
+  }
+  const user = loadUsers().find((u) => u.resetToken && u.resetToken === token) || null;
   if (!user) return null;
   if (user.resetExpiresAt && Date.parse(user.resetExpiresAt) < Date.now()) return null;
-  return user;
+  return withContactDefaults(user);
 }
 
-export function deleteUser(id) {
-  const users = loadUsers().filter((u) => u.id !== id);
-  saveUsers(users);
+export async function deleteUser(id) {
+  if (useDb()) {
+    await dbDeleteUser(id);
+    return;
+  }
+  saveUsers(loadUsers().filter((u) => u.id !== id));
 }
 
 export function exportUserData(user) {

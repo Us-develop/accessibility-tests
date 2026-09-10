@@ -54,6 +54,7 @@ import {
 import { authenticateUser, getUserById } from './users.mjs';
 import { attachRunToUser, canAccessDomain, domainsForUser } from './projects.mjs';
 import { registerAccountRoutes } from './account-routes.mjs';
+import { assertCustomerCanScan, incrementUsage } from './billing.mjs';
 
 const DELIVERABLE_FILES = [
   'accessibility-developers.html',
@@ -138,6 +139,7 @@ const PUBLIC_GET_PATHS = new Set([
   '/reset',
   '/teaser',
   '/api/config',
+  '/api/health/db',
   '/robots.txt',
   '/favicon.png',
   '/design-system.css',
@@ -835,7 +837,7 @@ app.get('/auth/jira/callback', async (req, res) => {
   }
 });
 
-app.get('/api/auth/status', (req, res) => {
+app.get('/api/auth/status', async (req, res) => {
   if (!AUTH_ENABLED) {
     return res.json({
       authEnabled: false,
@@ -846,7 +848,7 @@ app.get('/api/auth/status', (req, res) => {
   }
   const access = readAccessFromCookies(req);
   if (access) {
-    const user = access.role === 'customer' ? getUserById(access.userId) : { role: 'staff' };
+    const user = access.role === 'customer' ? await getUserById(access.userId) : { role: 'staff' };
     return res.json({
       authEnabled: true,
       authenticated: true,
@@ -976,7 +978,7 @@ registerAccountRoutes(app, { readGuestTokenRecord });
 app.post('/api/run', upload.single('file'), async (req, res) => {
   const staff = requestIsStaff(req);
   const customer = req.access?.role === 'customer';
-  const customerUser = customer ? getUserById(req.access.userId) : null;
+  const customerUser = customer ? await getUserById(req.access.userId) : null;
   const fullReport = staff || Boolean(customerUser);
   const ip = clientIp(req);
   let urls = [];
@@ -1087,6 +1089,14 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
       error: `A run for ${domain} is already in progress. Please wait for it to finish.`,
     });
   }
+  if (customerUser) {
+    try {
+      await assertCustomerCanScan(customerUser.id, { pages: processedUrls, domain });
+    } catch (err) {
+      const status = Number(err?.status) || 400;
+      return res.status(status).json({ error: err.message || 'Scan is not allowed on this plan.' });
+    }
+  }
   const runId = newRunId();
   const key = runKey(domain, runId);
   const guestToken = fullReport ? null : newGuestToken();
@@ -1102,7 +1112,8 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   }
 
   if (customerUser) {
-    attachRunToUser(customerUser.id, domain, runId);
+    await attachRunToUser(customerUser.id, domain, runId);
+    await incrementUsage(customerUser.id, { scans: 1, pages: processedUrls });
   }
 
   const initialState = {
@@ -1314,12 +1325,12 @@ async function resolveStatus({ domain, runId }) {
   };
 }
 
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
   const match = req.path.match(/^\/(?:api\/status|api\/report|api\/audits|report)\/([^/]+)/);
   if (!match) return next();
   const domain = match[1];
   if (domain === 'leads' || !isValidDomain(domain)) return next();
-  if (canAccessDomain(req.access, domain)) return next();
+  if (await canAccessDomain(req.access, domain)) return next();
   if (req.path.startsWith('/api/')) {
     return res.status(403).json({ error: 'You do not have access to this project.' });
   }
@@ -1657,7 +1668,7 @@ app.get('/api/audits', async (req, res) => {
   try {
     let audits = await listAuditEntries(dbPool, REPORTS_BASE);
     if (req.access?.role === 'customer') {
-      const allowed = new Set(domainsForUser(req.access.userId));
+      const allowed = new Set(await domainsForUser(req.access.userId));
       audits = audits.filter((row) => allowed.has(row.domain));
     }
     return res.json({ audits });
@@ -1669,7 +1680,7 @@ app.get('/api/audits', async (req, res) => {
 app.get('/api/audits/:domain/runs', async (req, res) => {
   const domain = req.params.domain;
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
-  if (!canAccessDomain(req.access, domain)) {
+  if (!(await canAccessDomain(req.access, domain))) {
     return res.status(403).json({ error: 'You do not have access to this project.' });
   }
   try {
