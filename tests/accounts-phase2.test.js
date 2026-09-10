@@ -394,6 +394,7 @@ describe('account HTTP', () => {
     assert.match(src, /id="wcag-login-form"/);
     assert.match(src, /method="post"/);
     assert.match(src, /action="\/api\/auth\/login"/);
+    assert.match(src, /data-astro-reload/);
     assert.match(src, /form\.id === 'wcag-login-form'/);
     const layout = readFileSync(join(repoRoot, 'web/src/layouts/Layout.astro'), 'utf8');
     assert.match(layout, /params\.delete\(key\)/);
@@ -401,6 +402,13 @@ describe('account HTTP', () => {
     const signup = readFileSync(join(repoRoot, 'web/src/pages/signup.astro'), 'utf8');
     assert.match(signup, /method="post"/);
     assert.match(signup, /action="\/api\/auth\/signup"/);
+    assert.match(signup, /data-astro-reload/);
+  });
+
+  it('redirects a GET of the login API to the site instead of JSON', async () => {
+    const res = await fetch(`${origin}/api/auth/login`, { redirect: 'manual' });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/');
   });
 
   it('accepts a native HTML login POST and never echoes the password', async () => {

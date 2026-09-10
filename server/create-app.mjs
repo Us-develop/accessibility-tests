@@ -883,6 +883,13 @@ function loginFormRedirect(req, res, path, jsonStatus, jsonBody) {
   return res.json(jsonBody);
 }
 
+/** Browser GET of a form action (Astro ClientRouter / address bar) should never dump JSON. */
+app.get('/api/auth/login', (_req, res) => res.redirect(303, '/'));
+app.get('/api/auth/signup', (_req, res) => res.redirect(303, '/signup'));
+app.get('/api/auth/logout', (_req, res) => res.redirect(303, '/'));
+app.get('/api/auth/forgot', (_req, res) => res.redirect(303, '/forgot'));
+app.get('/api/auth/reset', (_req, res) => res.redirect(303, '/reset'));
+
 app.post('/api/auth/login', async (req, res) => {
   if (!AUTH_ENABLED) return loginFormRedirect(req, res, '/', 200, { ok: true, role: 'staff' });
   const username = String(req.body?.username ?? req.body?.email ?? '').trim();

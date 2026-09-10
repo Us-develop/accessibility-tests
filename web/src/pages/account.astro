@@ -21,7 +21,7 @@ export const prerender = false;
 
         <section id="contact-card" class="card stack-form account-section" hidden>
           <h2>Contact details</h2>
-          <form id="contact-form" class="account-form" method="post" action="/account">
+          <form id="contact-form" class="account-form" method="post" action="/account" data-astro-reload>
             <label>Name <input name="name" type="text" autocomplete="name" /></label>
             <label>Company <input name="company" type="text" autocomplete="organization" /></label>
             <label>Phone <input name="phone" type="tel" autocomplete="tel" /></label>
@@ -39,7 +39,7 @@ export const prerender = false;
 
         <section id="password-card" class="card stack-form account-section" hidden>
           <h2>Change password</h2>
-          <form id="password-form" class="account-form" method="post" action="/account">
+          <form id="password-form" class="account-form" method="post" action="/account" data-astro-reload>
             <label>Current password <input name="currentPassword" type="password" autocomplete="current-password" required /></label>
             <label>New password <input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
             <button type="submit" class="btn btn-ghost">Update password</button>
