@@ -35,6 +35,7 @@ import {
   newGuestToken,
   persistGuestToken,
   publicConfig,
+  runRequestIsStaff,
   readGuestTokenRecord,
   scanPoolFull,
   trackGuestRunEnd,
@@ -134,8 +135,12 @@ function isGuestOpenPath(req) {
 }
 
 function requestIsStaff(req) {
-  if (!AUTH_ENABLED) return true;
-  return req.access?.role === 'staff';
+  return runRequestIsStaff({
+    authEnabled: AUTH_ENABLED,
+    accessRole: req.access?.role,
+    body: req.body,
+    file: req.file,
+  });
 }
 
 function getJiraConfig() {
