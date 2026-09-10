@@ -52,9 +52,9 @@ export function isValidGuestToken(token) {
  */
 export function isGuestScanPayload(body, file) {
   if (file) return false;
-  const guestUrl = String(body?.url || '').trim();
   const staffUrls = String(body?.urls || '').trim();
-  return Boolean(guestUrl) && !staffUrls;
+  if (staffUrls) return false;
+  return Boolean(body) && Object.prototype.hasOwnProperty.call(body, 'url');
 }
 
 export function runRequestIsStaff({ authEnabled, accessRole, body, file }) {
