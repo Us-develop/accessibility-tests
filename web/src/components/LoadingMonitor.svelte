@@ -118,7 +118,7 @@
       </h1>
       <p class="p-large muted loading-lead">
         {#if guestToken}
-          We're scanning this page with axe-core and custom checks aligned with WCAG 2.2 AA. A snapshot of the top issues will appear next. This is not a full audit.
+          We're scanning this page with automated WCAG 2.2 AA checks. A snapshot of the top issues will appear next. This is not a full audit.
         {:else}
           We're scanning {totalPages} page{totalPages === 1 ? '' : 's'} with automated WCAG 2.2 AA checks.
           You can close this tab — we'll email when it's done if you asked us to.

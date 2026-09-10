@@ -340,7 +340,7 @@
     {#if locked}
       <p class="locked-banner">
         Free 1-page snapshot — Overview is open. Other tabs are a blurred preview.
-        <a class="link" href="#lead-form">Request WCAG services</a> to get the full readable report.
+        <a class="link" href="#lead-form">Talk to a WCAG expert</a> to get the full readable report.
       </p>
     {/if}
     <!-- Tabs + density switcher (only on Overview/Issues) -->
@@ -691,7 +691,7 @@
           <p class="muted" style="font-size: 14px; margin-bottom: 18px;">
             Unlock the full issue list, fix guidance, and per-page breakdown.
           </p>
-          <a class="btn btn-grad" href="#lead-form">Request WCAG services</a>
+          <a class="btn btn-grad" href="#lead-form">Talk to a WCAG expert</a>
         </div>
       </div>
     {/if}
