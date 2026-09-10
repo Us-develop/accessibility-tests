@@ -5,6 +5,7 @@ import { isGuestScanPayload, runRequestIsStaff } from '../server/guest.mjs';
 describe('isGuestScanPayload', () => {
   it('accepts a single-page url field', () => {
     assert.equal(isGuestScanPayload({ url: 'https://example.com' }), true);
+    assert.equal(isGuestScanPayload({ url: '' }), true);
   });
 
   it('rejects staff urls text', () => {
