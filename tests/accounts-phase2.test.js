@@ -1,7 +1,7 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +16,9 @@ process.env.AUTH_EMAIL_VERIFY = 'auto';
 process.env.DEFER_ROOT_LOGIN_TO_SHELL = 'true';
 
 const { hashPassword, isStrongPassword, verifyPassword } = await import('../server/passwords.mjs');
-const { decodeSession, encodeSession } = await import('../server/session.mjs');
+const { decodeSession, encodeSession, isHtmlFormPost } = await import('../server/session.mjs');
+const { authenticateUser } = await import('../server/users.mjs');
+const { readJsonStore, writeJsonStore } = await import('../server/json-store.mjs');
 const { canAccessDomain } = await import('../server/projects.mjs');
 const { persistGuestToken } = await import('../server/guest.mjs');
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
@@ -85,6 +87,27 @@ describe('session', () => {
     const data = decodeSession(token);
     assert.equal(data.sub, 'abc');
     assert.equal(data.role, 'customer');
+  });
+
+  it('treats urlencoded browser posts as HTML form logins', () => {
+    assert.equal(
+      isHtmlFormPost({
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          accept: 'text/html,application/xhtml+xml',
+        },
+      }),
+      true
+    );
+    assert.equal(
+      isHtmlFormPost({
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+      }),
+      false
+    );
   });
 
   it('rejects a tampered session', () => {
@@ -364,6 +387,95 @@ describe('account HTTP', () => {
     const st = await status.json();
     assert.equal(st.authenticated, false);
     assert.equal(st.role, 'guest');
+  });
+
+  it('posts the login form so passwords cannot land in the query string', () => {
+    const src = readFileSync(join(repoRoot, 'web/src/components/LoginModal.astro'), 'utf8');
+    assert.match(src, /id="wcag-login-form"/);
+    assert.match(src, /method="post"/);
+    assert.match(src, /action="\/api\/auth\/login"/);
+    assert.match(src, /form\.id === 'wcag-login-form'/);
+    const layout = readFileSync(join(repoRoot, 'web/src/layouts/Layout.astro'), 'utf8');
+    assert.match(layout, /params\.delete\(key\)/);
+    assert.match(layout, /history\.replaceState/);
+    const signup = readFileSync(join(repoRoot, 'web/src/pages/signup.astro'), 'utf8');
+    assert.match(signup, /method="post"/);
+    assert.match(signup, /action="\/api\/auth\/signup"/);
+  });
+
+  it('accepts a native HTML login POST and never echoes the password', async () => {
+    const res = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'text/html',
+      },
+      body: new URLSearchParams({
+        username: 'customer@example.com',
+        password: 'longenough1',
+      }),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/account');
+    const cookies = typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : [];
+    assert.ok(cookies.some((line) => line.startsWith('wcag_sid=')));
+  });
+
+  it('redirects a failed HTML login without putting credentials in the URL', async () => {
+    const res = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'text/html',
+      },
+      body: new URLSearchParams({
+        username: 'nobody@example.com',
+        password: 'wrong-password-1',
+      }),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 303);
+    const loc = res.headers.get('location') || '';
+    assert.equal(loc, '/?signin=failed');
+    assert.doesNotMatch(loc, /password/i);
+    assert.doesNotMatch(loc, /username=/i);
+  });
+
+  it('keeps JSON login failures as 401 without a redirect', async () => {
+    const res = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'nobody@example.com', password: 'wrong-password-1' }),
+    });
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.match(String(data.error || ''), /invalid/i);
+  });
+
+  it('authenticates a user that exists only in the JSON store', async () => {
+    const passwordHash = await hashPassword('jsononlypass1');
+    const data = readJsonStore('users.json', { users: [] });
+    const users = Array.isArray(data.users) ? data.users : [];
+    users.push({
+      id: 'json-only-user',
+      email: 'jsononly@example.com',
+      role: 'customer',
+      passwordHash,
+      emailVerified: true,
+      name: 'Json',
+    });
+    writeJsonStore('users.json', { users });
+    const user = await authenticateUser('jsononly@example.com', 'jsononlypass1');
+    assert.equal(user?.email, 'jsononly@example.com');
+    const login = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'jsononly@example.com', password: 'jsononlypass1' }),
+    });
+    assert.equal(login.status, 200);
+    const body = await login.json();
+    assert.equal(body.role, 'customer');
   });
 
   it('keeps guest 1-page payloads off the staff path', async () => {

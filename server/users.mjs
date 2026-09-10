@@ -4,6 +4,7 @@ import {
   dbDeleteUser,
   dbGetUserByEmail,
   dbGetUserById,
+  dbUpsertProject,
   dbUpsertUser,
 } from './db.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
@@ -77,14 +78,56 @@ function findByEmail(users, email) {
   return users.find((u) => u.email === needle) || null;
 }
 
+/**
+ * Accounts created while Postgres was down live only in users.json.
+ * Copy that row (and its projects) into Postgres the first time we look it up.
+ */
+async function hydrateJsonSidecar(user) {
+  if (!user?.id || !useDb()) return;
+  try {
+    await ensureFreeSubscription(user.id);
+  } catch (err) {
+    console.warn('[users] free plan hydrate failed:', err?.message || err);
+  }
+  const data = readJsonStore('projects.json', { projects: [] });
+  const projects = Array.isArray(data.projects) ? data.projects : [];
+  for (const project of projects) {
+    if (project?.userId !== user.id || !project.id || !project.domain) continue;
+    try {
+      await dbUpsertProject(project);
+    } catch (err) {
+      console.warn('[users] project hydrate failed:', err?.message || err);
+    }
+  }
+}
+
+async function hydrateJsonUser(fromJson) {
+  if (!fromJson || !useDb()) return fromJson;
+  await dbUpsertUser(fromJson);
+  await hydrateJsonSidecar(fromJson);
+  return withContactDefaults(await dbGetUserById(fromJson.id)) || fromJson;
+}
+
 export async function getUserById(id) {
   if (!id) return null;
-  if (useDb()) return withContactDefaults(await dbGetUserById(id));
+  if (useDb()) {
+    const fromDb = withContactDefaults(await dbGetUserById(id));
+    if (fromDb) return fromDb;
+    const fromJson = withContactDefaults(loadUsers().find((u) => u.id === id) || null);
+    if (!fromJson) return null;
+    return hydrateJsonUser(fromJson);
+  }
   return withContactDefaults(loadUsers().find((u) => u.id === id) || null);
 }
 
 export async function getUserByEmail(email) {
-  if (useDb()) return withContactDefaults(await dbGetUserByEmail(email));
+  if (useDb()) {
+    const fromDb = withContactDefaults(await dbGetUserByEmail(email));
+    if (fromDb) return fromDb;
+    const fromJson = withContactDefaults(findByEmail(loadUsers(), email));
+    if (!fromJson) return null;
+    return hydrateJsonUser(fromJson);
+  }
   return withContactDefaults(findByEmail(loadUsers(), email));
 }
 

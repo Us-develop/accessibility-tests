@@ -3,6 +3,9 @@ import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 
 export const prerender = false;
+const guestToken = Astro.url.searchParams.get('guest') || '';
+const checkEmail = Astro.url.searchParams.get('check-email') === '1';
+const signupError = Astro.url.searchParams.get('error') === '1';
 ---
 <Layout title="Create account · Us" indexable={true} authMode="guest-ok">
   <div class="app-shell">
@@ -13,7 +16,8 @@ export const prerender = false;
         <p class="muted prose-width prose-lead">
           Save guest snapshots to your email. The public 1-page check stays free without an account.
         </p>
-        <form id="signup-form" class="card stack-form">
+        <form id="signup-form" class="card stack-form" method="post" action="/api/auth/signup" autocomplete="on">
+          {guestToken ? <input type="hidden" name="guestToken" value={guestToken} /> : null}
           <div class="field">
             <label class="field-label" for="name">Name</label>
             <input class="input" id="name" name="name" autocomplete="name" />
@@ -27,7 +31,13 @@ export const prerender = false;
             <input class="input" id="password" name="password" type="password" autocomplete="new-password" required minlength="10" />
           </div>
           <button type="submit" class="btn btn-primary" id="signup-btn">Create account</button>
-          <p id="signup-msg" class="muted" role="status"></p>
+          <p id="signup-msg" class="muted" role="status">
+            {checkEmail
+              ? 'Check your email to verify the account, then sign in.'
+              : signupError
+                ? 'Could not create account. Try a different email, or log in if you already have one.'
+                : ''}
+          </p>
           <p class="muted" style="font-size: 13px; margin: 0;">
             Already have an account? Use <button type="button" class="linklike" id="signup-open-login">Log in</button>.
           </p>
@@ -37,37 +47,43 @@ export const prerender = false;
   </div>
 </Layout>
 <script>
-  document.getElementById('signup-open-login')?.addEventListener('click', () => {
-    document.dispatchEvent(new CustomEvent('wcag:open-login'));
-  });
-  document.getElementById('signup-form')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const msg = document.getElementById('signup-msg');
-    const fd = new FormData(form);
-    const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
-    const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
-    const guest = new URLSearchParams(window.location.search).get('guest') || '';
-    const res = await fetch(api('/api/auth/signup'), {
-      method: 'POST',
-      credentials: creds,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: fd.get('name'),
-        email: fd.get('email'),
-        password: fd.get('password'),
-        guestToken: guest,
-      }),
+  if (!globalThis.__wcagSignupDelegated) {
+    globalThis.__wcagSignupDelegated = true;
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest('#signup-open-login')) return;
+      document.dispatchEvent(new CustomEvent('wcag:open-login'));
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      if (msg) msg.textContent = data.error || 'Could not create account.';
-      return;
-    }
-    if (data.needsVerification) {
-      if (msg) msg.textContent = 'Check your email to verify the account, then sign in.';
-      return;
-    }
-    window.location.href = '/account';
-  });
+    document.addEventListener('submit', async (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement) || form.id !== 'signup-form') return;
+      event.preventDefault();
+      const msg = document.getElementById('signup-msg');
+      const fd = new FormData(form);
+      const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
+      const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
+      const guest = String(fd.get('guestToken') || new URLSearchParams(window.location.search).get('guest') || '');
+      const res = await fetch(api('/api/auth/signup'), {
+        method: 'POST',
+        credentials: creds,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: fd.get('name'),
+          email: fd.get('email'),
+          password: fd.get('password'),
+          guestToken: guest,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (msg) msg.textContent = data.error || 'Could not create account.';
+        return;
+      }
+      if (data.needsVerification) {
+        if (msg) msg.textContent = 'Check your email to verify the account, then sign in.';
+        return;
+      }
+      window.location.href = '/account';
+    });
+  }
 </script>
