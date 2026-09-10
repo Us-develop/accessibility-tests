@@ -34,6 +34,10 @@ The server defaults to `AUTH_ENABLED=true` and **requires** `APP_PASSWORD`; it e
 AUTH_ENABLED=false npm start
 ```
 
+Staff can still sign in with `APP_USERNAME` / `APP_PASSWORD`. Customers sign up at `/signup` (email + hashed password, signed `wcag_sid` session, CSRF). Set **`SESSION_SECRET`** in production (defaults to a dev-only value derived from `APP_PASSWORD`). Guest 1-page snapshots can attach to the new account (`/signup?guest=TOKEN`).
+
+The public homepage stays the free 1-page scan unless someone is actually signed in. Stripe, quotas, and legal pages are not in this accounts slice.
+
 ### How scans work (and limitations)
 
 - **Page load:** URLs open with `domcontentloaded` (see `PAGE_GOTO_TIMEOUT_MS`, optional `WAIT_FOR_NETWORKIDLE` in the test runner and server-spawned runs).
@@ -112,6 +116,8 @@ sudo systemctl status accessibility.service --no-pager
 ```
 
 Do **not** run `npm ci` or `npm run build` as `debian` — `node_modules` is owned by `deploy` and you will get `EACCES`. After restart, hard-refresh the site.
+
+Before the first accounts publish, set **`SESSION_SECRET`** (a long random value) on the VPS unit or env file used by `accessibility.service`. Staff login still uses **`APP_USERNAME` / `APP_PASSWORD`**. Stay on this OVH VPS (`wcag.about-us.be`); do not migrate this product to Combell.
 
 If the unit name is ever in doubt:
 

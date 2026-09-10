@@ -129,7 +129,15 @@ if (!isValidGuestToken(token)) {
       ) : dashboardProps ? (
         <>
           <ResultsDashboard client:load {...dashboardProps} />
-          <div class="container" style="padding: 0 32px 80px;">
+          <div class="container teaser-cta">
+            <div class="card teaser-unlock">
+              <h2 style="font-size: 22px; margin: 0 0 8px;">Keep this snapshot</h2>
+              <p class="muted">Create an account to attach this 1-page check to your email. Sitemap scans stay on the staff tool for now.</p>
+              <div class="guest-cta-row">
+                <a class="btn btn-primary" href={`/signup?guest=${token}`}>Create an account</a>
+                <a class="btn btn-secondary" href="#lead-form">Talk to a WCAG expert</a>
+              </div>
+            </div>
             <GuestLeadForm client:load token={token} />
           </div>
         </>

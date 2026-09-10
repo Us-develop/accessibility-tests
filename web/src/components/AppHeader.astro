@@ -87,7 +87,9 @@ const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
           All scans
         </a>
       ) : null}
+      <a class="btn btn-ghost btn-sm wcag-header-account" href="/account">Account</a>
       <span class="muted" style="font-size: 13px;">WCAG 2.2 AA aligned</span>
+      <a class="btn btn-ghost wcag-header-signup" href="/signup">Create account</a>
       <button type="button" class="btn btn-ghost wcag-header-login" id="wcag-header-login">
         Log in
       </button>
@@ -109,7 +111,13 @@ const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
 </script>
 
 <style>
-  :global(body.is-staff) .wcag-header-login {
+  :global(body.is-staff) .wcag-header-login,
+  :global(body.is-customer) .wcag-header-login,
+  :global(body.is-staff) .wcag-header-signup,
+  :global(body.is-customer) .wcag-header-signup {
+    display: none;
+  }
+  :global(body:not(.is-staff):not(.is-customer)) .wcag-header-account {
     display: none;
   }
   .btn-all-scans {
