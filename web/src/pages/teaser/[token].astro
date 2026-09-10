@@ -131,11 +131,11 @@ if (!isValidGuestToken(token)) {
           <ResultsDashboard client:load {...dashboardProps} />
           <div class="container teaser-cta">
             <div class="us-card teaser-unlock">
-              <h2>Unlock the full report</h2>
-              <p class="muted">Subscribe to Pro for history, sitemaps, fix code, and 300 page-scans a month — or ask Us for a human WCAG audit.</p>
+              <h2>Go beyond a one-page scan</h2>
+              <p class="muted">Full access lets you scan more of your website and follow up on issues — or talk to a WCAG expert for a human audit.</p>
               <div class="guest-cta-row">
-                <a class="btn btn-primary" href={`/signup?guest=${token}`}>Subscribe to Pro</a>
-                <a class="btn btn-secondary" href="#lead-form">Request WCAG services</a>
+                <a class="btn btn-primary" href={`/signup?guest=${token}`}>Get full access</a>
+                <a class="btn btn-secondary" href="#lead-form">Talk to a WCAG expert</a>
               </div>
             </div>
             <GuestLeadForm client:load token={token} />

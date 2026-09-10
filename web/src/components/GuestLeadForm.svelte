@@ -53,9 +53,9 @@
 </script>
 
 <div class="card guest-lead" id="lead-form">
-  <h2>Get a full WCAG audit from Us</h2>
+  <h2>Talk to a WCAG expert</h2>
   <p class="muted guest-lead-intro">
-    We’ll review the findings with you and quote remediation or an accessibility statement. No obligation.
+    Prefer expert support? We can audit the site, prioritise findings, and turn them into practical improvements. No obligation.
   </p>
   <form onsubmit={onSubmit}>
     <input type="hidden" name="token" value={token} />
@@ -86,7 +86,7 @@
       <p class="guest-lead-msg guest-lead-msg-ok">{ok}</p>
     {/if}
     <button type="submit" class="btn btn-grad btn-lg" disabled={submitting}>
-      {submitting ? 'Sending…' : 'Request WCAG services'}
+      {submitting ? 'Sending…' : 'Talk to a WCAG expert'}
     </button>
   </form>
 </div>

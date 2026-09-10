@@ -39,6 +39,8 @@ describe('i18n', () => {
     assert.equal(resolveLang('nl-BE'), 'nl');
     assert.equal(t('nl').pricing.monthly, '€49 / maand');
     assert.equal(t('en').pricing.monthly, '€49 / month');
+    assert.equal(t('en').home.guestTitle, 'Run a free accessibility check on your page');
+    assert.equal(t('en').home.checkPage, 'Scan this page for free');
   });
 
   it('lets ?lang= win over the cookie', () => {
