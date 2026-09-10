@@ -1,7 +1,20 @@
 import { randomBytes } from 'crypto';
+import {
+  dbPool,
+  dbDeleteProjectsForUser,
+  dbFindProjectByDomain,
+  dbGetProject,
+  dbListProjectsForUser,
+  dbSetRunUserId,
+  dbUpsertProject,
+} from './db.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 
 const FILE = 'projects.json';
+
+function useDb() {
+  return Boolean(dbPool);
+}
 
 function load() {
   const data = readJsonStore(FILE, { projects: [] });
@@ -12,23 +25,42 @@ function save(projects) {
   writeJsonStore(FILE, { projects });
 }
 
-export function listProjectsForUser(userId) {
+export async function listProjectsForUser(userId) {
   if (!userId) return [];
+  if (useDb()) return dbListProjectsForUser(userId);
   return load().filter((p) => p.userId === userId);
 }
 
-export function getProject(id) {
+export async function getProject(id) {
+  if (useDb()) return dbGetProject(id);
   return load().find((p) => p.id === id) || null;
 }
 
-export function findProjectByDomain(userId, domain) {
+export async function findProjectByDomain(userId, domain) {
   const d = String(domain || '').toLowerCase();
+  if (useDb()) return dbFindProjectByDomain(userId, d);
   return load().find((p) => p.userId === userId && p.domain === d) || null;
 }
 
-export function upsertProject({ userId, domain, name, runId }) {
+export async function upsertProject({ userId, domain, name, runId }) {
   const d = String(domain || '').toLowerCase().trim();
   if (!userId || !d) return null;
+  if (useDb()) {
+    const existing = await dbFindProjectByDomain(userId, d);
+    const project = await dbUpsertProject({
+      id: existing?.id || randomBytes(10).toString('hex'),
+      userId,
+      domain: d,
+      name: String(name || existing?.name || d).slice(0, 200),
+      runIds: existing?.runIds || [],
+      createdAt: existing?.createdAt,
+    });
+    if (runId) await dbSetRunUserId(d, runId, userId);
+    if (project && runId && !project.runIds.includes(runId)) {
+      project.runIds = [...project.runIds, runId];
+    }
+    return project;
+  }
   const projects = load();
   let project = projects.find((p) => p.userId === userId && p.domain === d);
   if (!project) {
@@ -49,24 +81,28 @@ export function upsertProject({ userId, domain, name, runId }) {
   return project;
 }
 
-export function userOwnsDomain(userId, domain) {
+export async function userOwnsDomain(userId, domain) {
   if (!userId || !domain) return false;
-  return Boolean(findProjectByDomain(userId, domain));
+  return Boolean(await findProjectByDomain(userId, domain));
 }
 
-export function attachRunToUser(userId, domain, runId) {
+export async function attachRunToUser(userId, domain, runId) {
   return upsertProject({ userId, domain, runId });
 }
 
-export function domainsForUser(userId) {
-  return listProjectsForUser(userId).map((p) => p.domain);
+export async function domainsForUser(userId) {
+  return (await listProjectsForUser(userId)).map((p) => p.domain);
 }
 
-export function deleteProjectsForUser(userId) {
+export async function deleteProjectsForUser(userId) {
+  if (useDb()) {
+    await dbDeleteProjectsForUser(userId);
+    return;
+  }
   save(load().filter((p) => p.userId !== userId));
 }
 
-export function canAccessDomain(access, domain) {
+export async function canAccessDomain(access, domain) {
   if (!access) return false;
   if (access.role === 'staff') return true;
   if (access.role === 'customer') return userOwnsDomain(access.userId, domain);

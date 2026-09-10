@@ -20,6 +20,7 @@ const { decodeSession, encodeSession } = await import('../server/session.mjs');
 const { canAccessDomain } = await import('../server/projects.mjs');
 const { persistGuestToken } = await import('../server/guest.mjs');
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
+const { incrementUsage } = await import('../server/billing.mjs');
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -93,16 +94,16 @@ describe('session', () => {
 });
 
 describe('tenancy', () => {
-  it('staff can access any domain', () => {
-    assert.equal(canAccessDomain({ role: 'staff' }, 'example.com'), true);
+  it('staff can access any domain', async () => {
+    assert.equal(await canAccessDomain({ role: 'staff' }, 'example.com'), true);
   });
 
-  it('guests cannot access project domains', () => {
-    assert.equal(canAccessDomain({ role: 'guest' }, 'example.com'), false);
+  it('guests cannot access project domains', async () => {
+    assert.equal(await canAccessDomain({ role: 'guest' }, 'example.com'), false);
   });
 
-  it('customers cannot load domains they do not own', () => {
-    assert.equal(canAccessDomain({ role: 'customer', userId: 'no-such-user' }, 'example.com'), false);
+  it('customers cannot load domains they do not own', async () => {
+    assert.equal(await canAccessDomain({ role: 'customer', userId: 'no-such-user' }, 'example.com'), false);
   });
 });
 
@@ -230,6 +231,119 @@ describe('account HTTP', () => {
     const data = await account.json();
     assert.equal(account.status, 200);
     assert.equal(data.projects[0]?.domain, 'example.com');
+  });
+
+  it('exposes db health without a session', async () => {
+    const res = await fetch(`${origin}/api/health/db`);
+    const data = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(data.ok, true);
+    assert.equal(data.db, 'disabled');
+  });
+
+  it('assigns the free plan and lets the customer edit details', async () => {
+    const jar = new CookieJar();
+    const login = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'attached@example.com', password: 'longenough1' }),
+    });
+    jar.store(login.headers);
+    const account = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
+    const data = await account.json();
+    assert.equal(account.status, 200);
+    assert.equal(data.plan?.id, 'free');
+    assert.equal(data.usage?.maxScansPerMonth, 30);
+
+    const saved = await fetch(`${origin}/api/account`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: jar.header(),
+        'X-CSRF-Token': jar.get('wcag_csrf'),
+      },
+      body: JSON.stringify({ company: 'About Us', city: 'Ghent', country: 'Belgium' }),
+    });
+    const savedBody = await saved.json();
+    assert.equal(saved.status, 200);
+    assert.equal(savedBody.user.company, 'About Us');
+    assert.equal(savedBody.user.city, 'Ghent');
+  });
+
+  it('changes password when the current password is correct', async () => {
+    const jar = new CookieJar();
+    const login = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'attached@example.com', password: 'longenough1' }),
+    });
+    jar.store(login.headers);
+    const bad = await fetch(`${origin}/api/account/password`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: jar.header(),
+        'X-CSRF-Token': jar.get('wcag_csrf'),
+      },
+      body: JSON.stringify({ currentPassword: 'wrong-password', password: 'newevenlonger1' }),
+    });
+    assert.equal(bad.status, 400);
+    const ok = await fetch(`${origin}/api/account/password`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: jar.header(),
+        'X-CSRF-Token': jar.get('wcag_csrf'),
+      },
+      body: JSON.stringify({ currentPassword: 'longenough1', password: 'newevenlonger1' }),
+    });
+    assert.equal(ok.status, 200);
+    const relogin = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'attached@example.com', password: 'newevenlonger1' }),
+    });
+    assert.equal(relogin.status, 200);
+  });
+
+  it('exports scan history as csv', async () => {
+    const jar = new CookieJar();
+    const login = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'attached@example.com', password: 'newevenlonger1' }),
+    });
+    jar.store(login.headers);
+    const res = await fetch(`${origin}/api/account/export?format=csv`, { headers: { cookie: jar.header() } });
+    const text = await res.text();
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type') || '', /csv/i);
+    assert.match(text, /project_domain,scan_date,run_id,pages_scanned,score,status/);
+  });
+
+  it('enforces the monthly scan limit', async () => {
+    const jar = new CookieJar();
+    const login = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'attached@example.com', password: 'newevenlonger1' }),
+    });
+    jar.store(login.headers);
+    const account = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
+    const data = await account.json();
+    await incrementUsage(data.user.id, { scans: 30, pages: 30 });
+    const run = await fetch(`${origin}/api/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: jar.header(),
+        'X-CSRF-Token': jar.get('wcag_csrf'),
+      },
+      body: JSON.stringify({ url: 'https://example.com' }),
+    });
+    const body = await run.json();
+    assert.equal(run.status, 429);
+    assert.match(body.error || '', /month/i);
   });
 
   it('logs out and clears the session', async () => {

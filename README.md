@@ -71,18 +71,18 @@ Current behavior:
 
 ### Optional: Postgres persistence
 
-To store run status/results/manual checklist progress in Postgres:
+To store run status/results/manual checklist progress **and** customer accounts (users, projects, plans, usage) in Postgres:
 
-- Set **`DATABASE_URL`** in the server environment.
-- Optional for SSL-required connections: **`DATABASE_SSL=true`**.
+- Set **`DATABASE_URL`** in the server environment (on the live VPS this lives in `/etc/accessibility-db.env`, loaded by the systemd drop-in — not `Environment=` with a password that contains `*` or `%`).
+- Optional for SSL-required connections: **`DATABASE_SSL=true`**. Localhost Postgres does **not** need SSL.
 
-When `DATABASE_URL` is set, the server creates a `runs` table and stores run lifecycle, summary metadata, raw report JSON, and manual checklist progress.
+When `DATABASE_URL` is set, the server creates `runs`, `leads`, `users`, `projects`, `plans`, `subscriptions`, `usage`, and `payments` tables. Existing `reports/_saas/users.json` and `projects.json` are copied in on first boot. Scan HTML/screenshots stay on disk under `reports/<domain>/<runId>/`.
 
-If `DATABASE_URL` is not set, the app uses **local files** under `reports/` (and optional FTP — see below).
+If `DATABASE_URL` is not set, accounts fall back to those JSON files (fine for local tests; not safe for a campaign).
 
 Monitoring:
 
-- `GET /api/health/db` → DB health (`up`, `down`, or `disabled`).
+- `GET /api/health/db` → DB health (`up`, `down`, or `disabled`). No login required.
 - `GET /api/report/:domain/:runId/urls` → list URLs stored for a run.
 - `GET /api/audits/:domain/runs` → every run for a given domain (used by the history page).
 
@@ -116,6 +116,55 @@ sudo systemctl status accessibility.service --no-pager
 ```
 
 Do **not** run `npm ci` or `npm run build` as `debian` — `node_modules` is owned by `deploy` and you will get `EACCES`. After restart, hard-refresh the site.
+
+The Node process listens on **port 3000**. Caddy serves 80/443. In `ss` the process name is **`MainThread`**, not `node`, so `grep node` is empty even when the app is healthy:
+
+```bash
+sudo ss -lntp | grep -E '3000|MainThread'
+sudo journalctl -u accessibility.service -n 20 --no-pager | grep -i postgres
+curl -sS http://127.0.0.1:3000/api/health/db
+```
+
+Expect `{"ok":true,"db":"up"}` when Postgres is wired. `db: "disabled"` means `DATABASE_URL` is not loaded. A bad password crash-loops the unit (`password authentication failed for user "wcag"`) — move `override.conf` aside, restart, then fix `/etc/accessibility-db.env`.
+
+`DATABASE_URL` must be an env file, not a systemd `Environment=` line:
+
+```ini
+# /etc/systemd/system/accessibility.service.d/override.conf
+[Service]
+EnvironmentFile=/etc/accessibility-db.env
+```
+
+```
+# /etc/accessibility-db.env (chmod 600)
+DATABASE_URL=postgresql://wcag:HEXPASSWORD@127.0.0.1:5432/wcag
+```
+
+Test the role without a URI (special characters in passwords break URLs):
+
+```bash
+PGPASSWORD='HEXPASSWORD' psql -h 127.0.0.1 -U wcag -d wcag -c 'SELECT 1;'
+```
+
+Browse tables: `sudo -u postgres psql -d wcag` then `\dt` (MySQL `SHOW TABLES`) and `\d users` (`DESCRIBE`). From a laptop, Beekeeper Studio → PostgreSQL, SSH tunnel to `debian@135.125.226.198`, host `127.0.0.1`, port `5432`, database `wcag`, user `wcag`, SSL off.
+
+Daily dump:
+
+```bash
+sudo mkdir -p /var/backups/wcag-pg
+sudo chown postgres:postgres /var/backups/wcag-pg
+sudo tee /etc/cron.daily/wcag-pg-dump >/dev/null <<'EOF'
+#!/bin/sh
+set -e
+umask 077
+FILE=/var/backups/wcag-pg/wcag-$(date +%F).sql.gz
+sudo -u postgres pg_dump wcag | gzip > "$FILE"
+find /var/backups/wcag-pg -name 'wcag-*.sql.gz' -mtime +14 -delete
+EOF
+sudo chmod +x /etc/cron.daily/wcag-pg-dump
+```
+
+RAM: watch **MemAvailable**, not “used %”. Chromium scans are the risk. Alert when available memory is under ~400 MB (cron + the same `SMTP_*` the app uses). OVH ping checks do not warn about RAM.
 
 Before the first accounts publish, set **`SESSION_SECRET`** (a long random value) on the VPS unit or env file used by `accessibility.service`. Staff login still uses **`APP_USERNAME` / `APP_PASSWORD`**. Stay on this OVH VPS (`wcag.about-us.be`); do not migrate this product to Combell.
 
