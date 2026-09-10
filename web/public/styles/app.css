@@ -167,7 +167,7 @@ html, body {
   justify-content: center;
   gap: 8px;
   padding: 14px 24px;
-  font-family: var(--font-body);
+  font-family: var(--font-button);
   font-size: 15px;
   font-weight: 500;
   border-radius: var(--r-pill);
@@ -283,7 +283,7 @@ html, body {
   border: 1px solid var(--us-ink);
   background: var(--us-ink);
   color: var(--us-cream);
-  font-family: var(--font-body);
+  font-family: var(--font-button);
   font-size: 14px;
   font-weight: 500;
 }
