@@ -1,0 +1,82 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+
+export const prerender = false;
+---
+<Layout title="Account · Us" authMode="required">
+  <div class="app-shell">
+    <AppHeader crumb="Account" />
+    <main class="app-main">
+      <article class="container-narrow page-article">
+        <h1>Account</h1>
+        <p id="account-status" class="muted mt-1">Loading…</p>
+        <div id="account-projects" class="card stack-form" hidden></div>
+        <div class="account-actions">
+          <a class="btn btn-primary" href="/">New scan</a>
+          <a class="btn btn-ghost" href="/api/account/export">Export my data</a>
+          <button type="button" class="btn btn-ghost" id="delete-btn">Delete account</button>
+        </div>
+        <p id="account-msg" class="muted" role="status"></p>
+      </article>
+    </main>
+  </div>
+</Layout>
+<script>
+  const api = (p) => (typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(p) : p);
+  const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
+  const headers = () =>
+    typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' };
+
+  async function attachGuestIfPresent() {
+    const guest = new URLSearchParams(window.location.search).get('guest') || '';
+    if (!guest) return;
+    const res = await fetch(api('/api/account/attach-guest'), {
+      method: 'POST',
+      credentials: creds,
+      headers: headers(),
+      body: JSON.stringify({ guestToken: guest }),
+    });
+    const data = await res.json().catch(() => ({}));
+    const msg = document.getElementById('account-msg');
+    if (!res.ok) {
+      if (msg) msg.textContent = data.error || 'Could not attach that snapshot.';
+      return;
+    }
+    if (msg) msg.textContent = `Saved ${data.project?.domain || 'that snapshot'} to your projects.`;
+  }
+
+  async function load() {
+    const res = await fetch(api('/api/account'), { credentials: creds });
+    const data = await res.json().catch(() => ({}));
+    const status = document.getElementById('account-status');
+    const list = document.getElementById('account-projects');
+    if (!res.ok) {
+      if (status) status.textContent = data.error || 'Sign in first.';
+      return;
+    }
+    if (status) status.textContent = `${data.user?.email || ''} · ${data.role}`;
+    const projects = Array.isArray(data.projects) ? data.projects : [];
+    if (list) {
+      list.hidden = false;
+      if (!projects.length) {
+        list.innerHTML = '<p class="muted">No saved projects yet. Run a scan or attach a guest snapshot after signup.</p>';
+      } else {
+        list.innerHTML = `<h2 style="font-size: 18px; margin: 0 0 12px;">Projects</h2>${projects
+          .map((p) => {
+            const href = `/report/${encodeURIComponent(p.domain)}/history`;
+            return `<p><a class="link" href="${href}">${p.domain}</a> · ${p.runIds?.length || 0} run(s)</p>`;
+          })
+          .join('')}`;
+      }
+    }
+  }
+
+  document.getElementById('delete-btn')?.addEventListener('click', async () => {
+    if (!confirm('Delete your account and project links? This cannot be undone.')) return;
+    const res = await fetch(api('/api/account/delete'), { method: 'POST', credentials: creds, headers: headers() });
+    if (res.ok) window.location.href = '/';
+  });
+
+  attachGuestIfPresent().finally(load);
+</script>

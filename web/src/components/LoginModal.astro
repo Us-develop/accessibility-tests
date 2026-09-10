@@ -74,10 +74,10 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
             Close
           </button>
           <h2 id="wcag-login-title" class="wcag-login-title">Sign in</h2>
-          <p class="wcag-login-lead">Enter your username and password to use the app.</p>
+          <p class="wcag-login-lead">Customers use email. Us staff use the agency username.</p>
           <p id="wcag-login-err" class="wcag-login-err" role="alert" hidden></p>
           <form id="wcag-login-form" class="wcag-login-form">
-            <label class="wcag-login-label" for="wcag-login-user">Username</label>
+            <label class="wcag-login-label" for="wcag-login-user">Email or staff username</label>
             <input
               class="wcag-login-input"
               id="wcag-login-user"
@@ -97,6 +97,11 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
             />
             <button type="submit" class="wcag-login-submit">Continue</button>
           </form>
+          <p class="wcag-login-footer-request">
+            <a class="wcag-login-linklike" href="/signup">Create an account</a>
+            ·
+            <a class="wcag-login-linklike" href="/forgot">Forgot password</a>
+          </p>
           <p class="wcag-login-footer-request">
             <button type="button" class="wcag-login-linklike" id="wcag-flip-to-request">
               Talk to a WCAG expert
@@ -253,11 +258,13 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       }
 
       if (data.authenticated === true) {
+        const role = data.role === 'customer' ? 'customer' : 'staff';
         try { sessionStorage.setItem('wcagStaff', '1'); } catch {}
         document.documentElement.classList.add('wcag-staff');
         closeModal();
         unlockAppShell(true);
-        document.body.classList.add('is-staff');
+        document.body.classList.toggle('is-staff', role === 'staff');
+        document.body.classList.toggle('is-customer', role === 'customer');
         if (errEl) {
           errEl.hidden = true;
           errEl.textContent = '';
@@ -266,6 +273,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       }
 
       document.body.classList.remove('is-staff');
+      document.body.classList.remove('is-customer');
       document.documentElement.classList.remove('wcag-staff');
       try { sessionStorage.removeItem('wcagStaff'); } catch {}
       if (errEl) {
@@ -306,7 +314,9 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     if (document.documentElement.classList.contains('wcag-staff')) {
       closeModal();
       unlockAppShell(true);
-      document.body.classList.add('is-staff');
+      const customer = typeof document.cookie === 'string' && /(^|; )wcag_ui=c(;|$)/.test(document.cookie);
+      document.body.classList.toggle('is-staff', !customer);
+      document.body.classList.toggle('is-customer', customer);
     } else if (!guestOk()) {
       lockAppShell();
     }
@@ -337,6 +347,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     document.addEventListener('wcag:login-required', () => {
     document.documentElement.classList.remove('wcag-staff');
     document.body.classList.remove('is-staff');
+    document.body.classList.remove('is-customer');
     try { sessionStorage.removeItem('wcagStaff'); } catch {}
     if (!guestOk()) lockAppShell();
     const errEl = qs('wcag-login-err');
@@ -382,10 +393,12 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       }
       closeModal();
       unlockAppShell(true);
-      document.body.classList.add('is-staff');
+      const role = data.role === 'customer' ? 'customer' : 'staff';
+      document.body.classList.toggle('is-staff', role === 'staff');
+      document.body.classList.toggle('is-customer', role === 'customer');
       document.documentElement.classList.add('wcag-staff');
       try { sessionStorage.setItem('wcagStaff', '1'); } catch {}
-      document.dispatchEvent(new CustomEvent('wcag:logged-in'));
+      document.dispatchEvent(new CustomEvent('wcag:logged-in', { detail: { role } }));
       if (guestOk()) {
         window.location.reload();
       }
@@ -479,6 +492,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       errEl.hidden = true;
     }
     document.body.classList.remove('is-staff');
+    document.body.classList.remove('is-customer');
     document.documentElement.classList.remove('wcag-staff');
     try { sessionStorage.removeItem('wcagStaff'); } catch {}
     if (guestOk()) {

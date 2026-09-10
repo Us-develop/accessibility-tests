@@ -1,0 +1,73 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+
+export const prerender = false;
+---
+<Layout title="Create account · Us" indexable={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb="Create account" />
+    <main class="app-main">
+      <article class="container-narrow page-article">
+        <h1>Create account</h1>
+        <p class="muted prose-width prose-lead">
+          Save guest snapshots to your email. The public 1-page check stays free without an account.
+        </p>
+        <form id="signup-form" class="card stack-form">
+          <div class="field">
+            <label class="field-label" for="name">Name</label>
+            <input class="input" id="name" name="name" autocomplete="name" />
+          </div>
+          <div class="field">
+            <label class="field-label" for="email">Email</label>
+            <input class="input" id="email" name="email" type="email" autocomplete="email" required />
+          </div>
+          <div class="field">
+            <label class="field-label" for="password">Password (min. 10 characters)</label>
+            <input class="input" id="password" name="password" type="password" autocomplete="new-password" required minlength="10" />
+          </div>
+          <button type="submit" class="btn btn-primary" id="signup-btn">Create account</button>
+          <p id="signup-msg" class="muted" role="status"></p>
+          <p class="muted" style="font-size: 13px; margin: 0;">
+            Already have an account? Use <button type="button" class="linklike" id="signup-open-login">Log in</button>.
+          </p>
+        </form>
+      </article>
+    </main>
+  </div>
+</Layout>
+<script>
+  document.getElementById('signup-open-login')?.addEventListener('click', () => {
+    document.dispatchEvent(new CustomEvent('wcag:open-login'));
+  });
+  document.getElementById('signup-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const msg = document.getElementById('signup-msg');
+    const fd = new FormData(form);
+    const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
+    const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
+    const guest = new URLSearchParams(window.location.search).get('guest') || '';
+    const res = await fetch(api('/api/auth/signup'), {
+      method: 'POST',
+      credentials: creds,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: fd.get('name'),
+        email: fd.get('email'),
+        password: fd.get('password'),
+        guestToken: guest,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (msg) msg.textContent = data.error || 'Could not create account.';
+      return;
+    }
+    if (data.needsVerification) {
+      if (msg) msg.textContent = 'Check your email to verify the account, then sign in.';
+      return;
+    }
+    window.location.href = '/account';
+  });
+</script>

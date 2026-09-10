@@ -581,3 +581,53 @@ html, body {
     font-size: clamp(28px, 12vw, 40px);
   }
 }
+
+.page-article {
+  padding: clamp(32px, 5vw, 56px) 0 clamp(48px, 8vw, 96px);
+}
+.page-article h1 {
+  font-size: clamp(32px, 4vw, 48px);
+  margin: 0 0 12px;
+}
+.prose-lead {
+  margin: 0 0 24px;
+  max-width: 620px;
+}
+.stack-form {
+  display: grid;
+  gap: 16px;
+  padding: 28px 32px;
+}
+.stack-form-spaced {
+  margin-top: 8px;
+}
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}
+.mt-1 { margin-top: 8px; }
+button.linklike {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.teaser-cta {
+  padding: 0 32px 80px;
+}
+.teaser-unlock {
+  padding: 28px 32px;
+  margin-bottom: 24px;
+}
+.guest-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+

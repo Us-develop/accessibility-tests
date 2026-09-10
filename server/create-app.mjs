@@ -45,6 +45,15 @@ import {
   readLeadFileRows,
 } from './guest.mjs';
 import { buildTeaserPayload } from './teaser-payload.mjs';
+import {
+  clearSessionCookies,
+  csrfOk,
+  readAccessFromCookies,
+  setSessionCookies,
+} from './session.mjs';
+import { authenticateUser, getUserById } from './users.mjs';
+import { attachRunToUser, canAccessDomain, domainsForUser } from './projects.mjs';
+import { registerAccountRoutes } from './account-routes.mjs';
 
 const DELIVERABLE_FILES = [
   'accessibility-developers.html',
@@ -84,9 +93,6 @@ let AUTH_ENABLED = parseBooleanEnv('AUTH_ENABLED', true);
 let APP_USERNAME = 'root';
 let APP_PASSWORD = 'root';
 let AUTH_COOKIE_SAMESITE = 'Lax';
-const AUTH_COOKIE_NAME = 'wcag_access';
-const AUTH_UI_COOKIE_NAME = 'wcag_ui';
-const AUTH_COOKIE_SECURE = parseBooleanEnv('AUTH_COOKIE_SECURE', false);
 
 // In-memory run status (running, done, error)
 const runStatus = new Map();
@@ -117,20 +123,36 @@ function isValidEmail(email) {
 function isIndexablePath(pathname) {
   if (pathname === '/' || pathname === '') return true;
   if (pathname === '/limitations') return true;
+  if (pathname === '/signup' || pathname === '/forgot' || pathname === '/reset') return true;
   if (pathname === '/teaser' || pathname.startsWith('/teaser/')) return true;
   return false;
 }
 
+const PUBLIC_GET_PREFIXES = ['/assets/', '/styles/', '/_astro/', '/teaser/', '/api/guest/', '/api/auth/verify'];
+const PUBLIC_GET_PATHS = new Set([
+  '/',
+  '/loading',
+  '/limitations',
+  '/signup',
+  '/forgot',
+  '/reset',
+  '/teaser',
+  '/api/config',
+  '/robots.txt',
+  '/favicon.png',
+  '/design-system.css',
+]);
+
 function isGuestOpenPath(req) {
   const p = req.path;
   if (req.method === 'GET') {
-    if (p === '/' || p === '/loading' || p === '/limitations') return true;
-    if (p === '/teaser' || p.startsWith('/teaser/')) return true;
-    if (p === '/api/config') return true;
-    if (p.startsWith('/api/guest/')) return true;
-    if (p.startsWith('/assets/') || p.startsWith('/styles/') || p.startsWith('/_astro/')) return true;
+    if (PUBLIC_GET_PATHS.has(p)) return true;
+    if (PUBLIC_GET_PREFIXES.some((prefix) => p.startsWith(prefix))) return true;
   }
-  if (req.method === 'POST' && (p === '/api/run' || p === '/api/lead')) return true;
+  if (req.method === 'POST') {
+    if (p === '/api/run' || p === '/api/lead' || p === '/api/access-request') return true;
+    if (p.startsWith('/api/auth/')) return true;
+  }
   return false;
 }
 
@@ -461,8 +483,11 @@ app.use((req, res, next) => {
   } else {
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Username, X-App-Password');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-App-Username, X-App-Password, X-CSRF-Token'
+  );
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
@@ -486,20 +511,6 @@ function safeNextAfterLogin(raw) {
     /* ignore */
   }
   return '/';
-}
-
-function parseCookies(req) {
-  const raw = req.headers.cookie || '';
-  const out = {};
-  raw.split(';').forEach((part) => {
-    const idx = part.indexOf('=');
-    if (idx === -1) return;
-    const k = part.slice(0, idx).trim();
-    const v = part.slice(idx + 1).trim();
-    if (!k) return;
-    out[k] = decodeURIComponent(v);
-  });
-  return out;
 }
 
 function parseBasicAuth(req) {
@@ -527,9 +538,7 @@ function credentialsFromRequest(req) {
   }
   const qp = req.query?.password;
   if (typeof qp === 'string' && qp) {
-    const qu = req.query?.username;
-    const user = typeof qu === 'string' && qu.trim() ? qu.trim() : APP_USERNAME;
-    return { user, pass: qp };
+    return null;
   }
   return null;
 }
@@ -538,26 +547,12 @@ function credentialsValid(user, pass) {
   return String(user || '') === String(APP_USERNAME) && String(pass || '') === String(APP_PASSWORD);
 }
 
-function setAuthCookie(res) {
-  const useSecure = AUTH_COOKIE_SAMESITE === 'None' ? true : AUTH_COOKIE_SECURE;
-  const securePart = useSecure ? '; Secure' : '';
-  const session = `${AUTH_COOKIE_NAME}=1; Path=/; HttpOnly; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=43200${securePart}`;
-  const ui = `${AUTH_UI_COOKIE_NAME}=1; Path=/; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=43200${securePart}`;
-  res.append('Set-Cookie', session);
-  res.append('Set-Cookie', ui);
+function setAuthCookie(res, session = { userId: 'staff', role: 'staff', email: '' }) {
+  setSessionCookies(res, session, AUTH_COOKIE_SAMESITE);
 }
 
 function clearAuthCookie(res) {
-  const useSecure = AUTH_COOKIE_SAMESITE === 'None' ? true : AUTH_COOKIE_SECURE;
-  const securePart = useSecure ? '; Secure' : '';
-  res.append(
-    'Set-Cookie',
-    `${AUTH_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=0${securePart}`
-  );
-  res.append(
-    'Set-Cookie',
-    `${AUTH_UI_COOKIE_NAME}=; Path=/; SameSite=${AUTH_COOKIE_SAMESITE}; Max-Age=0${securePart}`
-  );
+  clearSessionCookies(res, AUTH_COOKIE_SAMESITE);
 }
 
 function loginPageHtml(nextPath = '', errorMessage = '') {
@@ -731,6 +726,9 @@ app.get('/robots.txt', (_req, res) => {
       'Allow: /',
       'Allow: /teaser/',
       'Allow: /limitations',
+      'Allow: /signup',
+      'Allow: /forgot',
+      'Allow: /reset',
       'Disallow: /api/',
       'Disallow: /report/',
       'Disallow: /audits',
@@ -754,15 +752,20 @@ app.get('/auth/login', (req, res) => {
   return res.status(200).send(loginPageHtml(nextPath));
 });
 
-app.post('/auth/login', (req, res) => {
+app.post('/auth/login', async (req, res) => {
   if (!AUTH_ENABLED) return res.redirect('/');
   const nextPath = safeNextAfterLogin(typeof req.body?.next === 'string' ? req.body.next : '/');
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '');
-  if (!credentialsValid(username, password)) {
+  if (credentialsValid(username, password)) {
+    setAuthCookie(res, { userId: 'staff', role: 'staff', email: username });
+    return res.redirect(nextPath);
+  }
+  const user = await authenticateUser(username, password);
+  if (!user || !user.emailVerified) {
     return res.status(401).send(loginPageHtml(nextPath, 'Invalid username or password. Try again.'));
   }
-  setAuthCookie(res);
+  setAuthCookie(res, { userId: user.id, role: user.role, email: user.email });
   return res.redirect(nextPath);
 });
 
@@ -833,13 +836,30 @@ app.get('/auth/jira/callback', async (req, res) => {
 });
 
 app.get('/api/auth/status', (req, res) => {
-  if (!AUTH_ENABLED) return res.json({ authEnabled: false, authenticated: true, role: 'staff' });
-  const cookies = parseCookies(req);
-  const authenticated = cookies[AUTH_COOKIE_NAME] === '1';
+  if (!AUTH_ENABLED) {
+    return res.json({
+      authEnabled: false,
+      authenticated: true,
+      role: 'staff',
+      csrf: '',
+    });
+  }
+  const access = readAccessFromCookies(req);
+  if (access) {
+    const user = access.role === 'customer' ? getUserById(access.userId) : { role: 'staff' };
+    return res.json({
+      authEnabled: true,
+      authenticated: true,
+      role: access.role,
+      email: access.email || user?.email || '',
+      csrf: access.csrf || '',
+    });
+  }
   return res.json({
     authEnabled: true,
-    authenticated,
-    role: authenticated ? 'staff' : 'guest',
+    authenticated: false,
+    role: 'guest',
+    csrf: '',
   });
 });
 
@@ -850,15 +870,23 @@ app.get('/api/config', (_req, res) => {
   });
 });
 
-app.post('/api/auth/login', (req, res) => {
-  if (!AUTH_ENABLED) return res.json({ ok: true });
-  const username = String(req.body?.username ?? '').trim();
+app.post('/api/auth/login', async (req, res) => {
+  if (!AUTH_ENABLED) return res.json({ ok: true, role: 'staff' });
+  const username = String(req.body?.username ?? req.body?.email ?? '').trim();
   const password = String(req.body?.password ?? '');
-  if (!credentialsValid(username, password)) {
+  if (credentialsValid(username, password)) {
+    setAuthCookie(res, { userId: 'staff', role: 'staff', email: username });
+    return res.json({ ok: true, role: 'staff' });
+  }
+  const user = await authenticateUser(username, password);
+  if (!user) {
     return res.status(401).json({ error: 'Invalid username or password.' });
   }
-  setAuthCookie(res);
-  return res.json({ ok: true });
+  if (!user.emailVerified) {
+    return res.status(403).json({ error: 'Verify your email before signing in.' });
+  }
+  setAuthCookie(res, { userId: user.id, role: user.role, email: user.email });
+  return res.json({ ok: true, role: user.role });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -889,15 +917,13 @@ app.post('/api/access-request', async (req, res) => {
 
 app.use((req, res, next) => {
   if (!AUTH_ENABLED) {
-    req.access = { role: 'staff' };
+    req.access = { role: 'staff', userId: 'staff', email: '', csrf: '' };
     return next();
   }
   if (req.path === '/robots.txt') return next();
-  if (req.path === '/auth/login') return next();
-  if (req.path === '/auth/logout') return next();
+  if (req.path === '/auth/login' || req.path === '/auth/logout') return next();
   if (req.path.startsWith('/auth/jira/')) return next();
   if (req.path === '/api/config') return next();
-  /** Public GETs: loading shell + static assets (styles/scripts while session cookie is set). */
   if (
     req.method === 'GET' &&
     (req.path === '/loading' ||
@@ -908,27 +934,19 @@ app.use((req, res, next) => {
     return next();
   }
 
-  const cookies = parseCookies(req);
-  const hasSession = cookies[AUTH_COOKIE_NAME] === '1';
-  const creds = credentialsFromRequest(req);
-  let authed = hasSession;
-  if (!authed && creds && credentialsValid(creds.user, creds.pass)) {
-    setAuthCookie(res);
-    authed = true;
-    if (
-      !req.path.startsWith('/api/') &&
-      (typeof req.query?.password === 'string' || typeof req.query?.username === 'string')
-    ) {
-      const cleanQuery = { ...req.query };
-      delete cleanQuery.password;
-      delete cleanQuery.username;
-      const qs = new URLSearchParams(cleanQuery).toString();
-      const target = `${req.path}${qs ? `?${qs}` : ''}`;
-      return res.redirect(target);
+  const cookieAccess = readAccessFromCookies(req);
+  if (cookieAccess) {
+    req.access = cookieAccess;
+    if (!csrfOk(req) && req.path.startsWith('/api/')) {
+      return res.status(403).json({ error: 'Missing or invalid CSRF token.' });
     }
+    return next();
   }
-  if (authed) {
-    req.access = { role: 'staff' };
+
+  const creds = credentialsFromRequest(req);
+  if (creds && credentialsValid(creds.user, creds.pass)) {
+    setAuthCookie(res, { userId: 'staff', role: 'staff', email: creds.user });
+    req.access = { role: 'staff', userId: 'staff', email: creds.user, csrf: '' };
     return next();
   }
 
@@ -953,12 +971,37 @@ app.use((req, res, next) => {
   return res.redirect(`/auth/login?next=${encodeURIComponent(nextPath)}`);
 });
 
+registerAccountRoutes(app, { readGuestTokenRecord });
+
 app.post('/api/run', upload.single('file'), async (req, res) => {
   const staff = requestIsStaff(req);
+  const customer = req.access?.role === 'customer';
+  const customerUser = customer ? getUserById(req.access.userId) : null;
+  const fullReport = staff || Boolean(customerUser);
   const ip = clientIp(req);
   let urls = [];
 
-  if (!staff) {
+  if (staff) {
+    const urlText = req.body?.urls || '';
+    if (urlText.trim()) {
+      urls = extractUrlsFromText(urlText);
+    }
+  } else if (customerUser) {
+    if (req.file) {
+      return res.status(400).json({ error: 'Sitemap uploads stay on staff scans for now. Paste one public URL.' });
+    }
+    try {
+      const rawUrl = String(req.body?.url || req.body?.urls || '')
+        .split(/[\n,]+/)
+        .map((s) => s.trim())
+        .find(Boolean);
+      const canonical = await assertPublicHttpUrl(rawUrl);
+      urls = [canonical];
+    } catch (err) {
+      const status = Number(err?.status) || 400;
+      return res.status(status).json({ error: err.message || 'Could not start the scan.' });
+    }
+  } else {
     if (req.file) {
       return res.status(400).json({ error: 'File uploads are available after you sign in.' });
     }
@@ -974,11 +1017,6 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     } catch (err) {
       const status = Number(err?.status) || 400;
       return res.status(status).json({ error: err.message || 'Could not start the scan.' });
-    }
-  } else {
-    const urlText = req.body?.urls || '';
-    if (urlText.trim()) {
-      urls = extractUrlsFromText(urlText);
     }
   }
 
@@ -1051,7 +1089,7 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   }
   const runId = newRunId();
   const key = runKey(domain, runId);
-  const guestToken = staff ? null : newGuestToken();
+  const guestToken = fullReport ? null : newGuestToken();
 
   const reportDir = runDirOf(domain, runId);
   if (!existsSync(reportDir)) mkdirSync(reportDir, { recursive: true });
@@ -1061,6 +1099,10 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     writeFileSync(join(reportDir, 'statement-meta.json'), JSON.stringify(statementMeta, null, 2), 'utf8');
   } catch (err) {
     console.error('statement-meta write failed:', err.message);
+  }
+
+  if (customerUser) {
+    attachRunToUser(customerUser.id, domain, runId);
   }
 
   const initialState = {
@@ -1074,14 +1116,15 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     error: null,
     notifyRequested: !!(notifyOnComplete && notifyEmail),
     notifyEmail: notifyOnComplete && notifyEmail ? notifyEmail : null,
-    tier: staff ? 'staff' : 'guest',
+    tier: staff ? 'staff' : customerUser ? 'customer' : 'guest',
+    userId: customerUser?.id || (staff ? 'staff' : null),
     guestToken,
-    guestIp: staff ? null : ip,
-    guestUrl: staff ? null : urls[0],
+    guestIp: fullReport ? null : ip,
+    guestUrl: fullReport ? null : urls[0],
   };
   notificationAttempted.delete(key);
   runStatus.set(key, initialState);
-  if (!staff) {
+  if (!fullReport) {
     trackGuestRunStart(ip);
     persistGuestToken(guestToken, { domain, runId, url: urls[0], ip });
   }
@@ -1233,7 +1276,7 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     truncated,
     maxUrls: maxUrls > 0 ? maxUrls : null,
     guestToken: guestToken || undefined,
-    teaser: !staff,
+    teaser: !fullReport,
   });
 });
 
@@ -1270,6 +1313,18 @@ async function resolveStatus({ domain, runId }) {
     error: status.error,
   };
 }
+
+app.use((req, res, next) => {
+  const match = req.path.match(/^\/(?:api\/status|api\/report|api\/audits|report)\/([^/]+)/);
+  if (!match) return next();
+  const domain = match[1];
+  if (domain === 'leads' || !isValidDomain(domain)) return next();
+  if (canAccessDomain(req.access, domain)) return next();
+  if (req.path.startsWith('/api/')) {
+    return res.status(403).json({ error: 'You do not have access to this project.' });
+  }
+  return res.status(403).send('You do not have access to this project.');
+});
 
 app.get('/api/status/:domain/:runId', async (req, res) => {
   const { domain, runId } = req.params;
@@ -1442,7 +1497,10 @@ app.post('/api/lead', async (req, res) => {
   }
 });
 
-app.get('/api/admin/leads', async (_req, res) => {
+app.get('/api/admin/leads', async (req, res) => {
+  if (req.access?.role !== 'staff') {
+    return res.status(403).json({ error: 'Staff only.' });
+  }
   try {
     if (dbPool) {
       const leads = await dbListLeads(200);
@@ -1595,9 +1653,13 @@ app.post('/api/jira/sprint', async (req, res) => {
   return res.json({ ok: true, createdCount: created.length, issues: created });
 });
 
-app.get('/api/audits', async (_req, res) => {
+app.get('/api/audits', async (req, res) => {
   try {
-    const audits = await listAuditEntries(dbPool, REPORTS_BASE);
+    let audits = await listAuditEntries(dbPool, REPORTS_BASE);
+    if (req.access?.role === 'customer') {
+      const allowed = new Set(domainsForUser(req.access.userId));
+      audits = audits.filter((row) => allowed.has(row.domain));
+    }
     return res.json({ audits });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1607,6 +1669,9 @@ app.get('/api/audits', async (_req, res) => {
 app.get('/api/audits/:domain/runs', async (req, res) => {
   const domain = req.params.domain;
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
+  if (!canAccessDomain(req.access, domain)) {
+    return res.status(403).json({ error: 'You do not have access to this project.' });
+  }
   try {
     const runs = await listRunsForDomain(dbPool, REPORTS_BASE, domain);
     return res.json({ domain, runs });

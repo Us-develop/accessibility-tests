@@ -42,7 +42,9 @@
         method: 'PUT',
         credentials: 'same-origin',
         keepalive: true,
-        headers: { 'Content-Type': 'application/json' },
+        headers: typeof globalThis.wcagHeaders === 'function'
+          ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' })
+          : { 'Content-Type': 'application/json' },
         body: JSON.stringify({ checked }),
       }
     );

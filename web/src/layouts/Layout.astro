@@ -18,8 +18,10 @@ const devApiBase =
 /** In dev, prefer direct API URL so multipart POST skips Vite proxy; production still uses PUBLIC_APP_BASE. */
 const appBaseMeta =
   import.meta.env.DEV && devApiBase ? devApiBase : publicAppBase || devApiBase;
-/** Non-HttpOnly hint cookie so SSR can skip the login overlay on staff navigations. */
-const staffHint = Astro.cookies.get('wcag_ui')?.value === '1';
+/** Non-HttpOnly hint cookie so SSR can skip the login overlay on signed-in navigations. */
+const uiHint = Astro.cookies.get('wcag_ui')?.value;
+const staffHint = uiHint === '1' || uiHint === 'c';
+const signedRole = uiHint === '1' ? 'staff' : uiHint === 'c' ? 'customer' : '';
 const gateLocked = authMode === 'required' && !staffHint;
 ---
 <!DOCTYPE html>
@@ -47,7 +49,7 @@ const gateLocked = authMode === 'required' && !staffHint;
         try {
           var staff = false;
           try { staff = sessionStorage.getItem('wcagStaff') === '1'; } catch (e) {}
-          if (!staff && typeof document.cookie === 'string' && /(^|; )wcag_ui=1(;|$)/.test(document.cookie)) {
+          if (!staff && typeof document.cookie === 'string' && /(^|; )wcag_ui=(?:1|c)(;|$)/.test(document.cookie)) {
             staff = true;
           }
           if (staff) document.documentElement.classList.add('wcag-staff');
@@ -65,10 +67,20 @@ const gateLocked = authMode === 'required' && !staffHint;
           if (/^https?:\/\//i.test(base)) return 'include';
           return 'same-origin';
         };
+        globalThis.wcagCsrfToken = function () {
+          var match = typeof document.cookie === 'string' ? document.cookie.match(/(?:^|; )wcag_csrf=([^;]*)/) : null;
+          return match ? decodeURIComponent(match[1]) : '';
+        };
+        globalThis.wcagHeaders = function (extra) {
+          var headers = extra ? Object.assign({}, extra) : {};
+          var token = globalThis.wcagCsrfToken();
+          if (token) headers['X-CSRF-Token'] = token;
+          return headers;
+        };
       })();
     </script>
   </head>
-  <body data-wcag-auth={authMode}>
+  <body data-wcag-auth={authMode} class={signedRole === 'staff' ? 'is-staff' : signedRole === 'customer' ? 'is-customer' : undefined}>
     <div
       id="wcag-main"
       class="wcag-main-shell"
@@ -98,7 +110,12 @@ const gateLocked = authMode === 'required' && !staffHint;
         }
         var bar = document.getElementById('wcag-session-bar');
         if (bar) bar.hidden = false;
-        document.body.classList.add('is-staff');
+        if (/(?:^|; )wcag_ui=c(?:;|$)/.test(document.cookie || '')) {
+          document.body.classList.add('is-customer');
+          document.body.classList.remove('is-staff');
+        } else {
+          document.body.classList.add('is-staff');
+        }
       })();
     </script>
     <noscript>

@@ -1,0 +1,44 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+export const prerender = false;
+const token = Astro.url.searchParams.get('token') || '';
+---
+<Layout title="Set a new password · Us" authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb="Password" />
+    <main class="app-main">
+      <article class="container-narrow page-article">
+        <h1>Set a new password</h1>
+        <form id="reset-form" class="card stack-form stack-form-spaced">
+          <input type="hidden" name="token" value={token} />
+          <div class="field">
+            <label class="field-label" for="password">New password</label>
+            <input class="input" id="password" name="password" type="password" minlength="10" required />
+          </div>
+          <button class="btn btn-primary" type="submit">Save password</button>
+          <p id="reset-msg" class="muted" role="status"></p>
+        </form>
+      </article>
+    </main>
+  </div>
+</Layout>
+<script>
+  document.getElementById('reset-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
+    const res = await fetch(api('/api/auth/reset'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: fd.get('token'), password: fd.get('password') }),
+    });
+    const data = await res.json().catch(() => ({}));
+    const msg = document.getElementById('reset-msg');
+    if (!res.ok) {
+      if (msg) msg.textContent = data.error || 'Could not reset password.';
+      return;
+    }
+    window.location.href = '/';
+  });
+</script>
