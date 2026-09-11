@@ -176,7 +176,7 @@ describe('stripe fulfillment', () => {
       payment_status: 'paid',
       amount_total: 1000,
       currency: 'eur',
-      created: 1_700_000_000,
+      created: Math.floor(Date.now() / 1000),
       payment_intent: 'pi_pack',
       metadata: { userId: user.id, packId: 'pack_10', tokens: '10' },
       client_reference_id: user.id,
