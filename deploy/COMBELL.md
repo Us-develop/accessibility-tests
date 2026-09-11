@@ -56,7 +56,6 @@ Set these in Combell’s environment configuration (names may vary by UI). Never
 | `REPORTS_BASE`                | Absolute path to a **writable** directory if `./reports` is not persistent on hosting.                                                                                                           |
 | `SMTP_`* / `ACCESS_REQUEST_`* | Optional mail for access-request and teaser-scan leads (see `web/.env.example` and server code). |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Optional Cloudflare Turnstile for guest scans. If the secret is set, guests must pass captcha. |
-| `GUEST_SCANS_PER_HOUR` / `GUEST_SCANS_PER_DAY` | Guest rate limits (defaults 3 / hour, 10 / day). |
 | `SCAN_MAX_CONCURRENT` | Max simultaneous Playwright scans (default 3). |
 | `ANTHROPIC_API_KEY` | Optional. Writes a prose WCAG coverage analysis on the report Coverage page. The criterion matrix is always computed locally. |
 | `ANTHROPIC_MODEL` | Optional. Defaults to `claude-sonnet-4-5`. |

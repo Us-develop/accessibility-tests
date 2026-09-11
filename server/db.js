@@ -250,6 +250,11 @@ export async function initDb() {
        ON token_lots (stripe_checkout_session_id)
      WHERE stripe_checkout_session_id IS NOT NULL`
   );
+  await dbPool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS token_lots_one_freebie_per_user
+       ON token_lots (user_id)
+     WHERE pack_id = 'freebie'`
+  );
 
   await seedDefaultPlans();
   await migrateJsonStoresToPostgres();
@@ -976,6 +981,18 @@ export async function dbInsertTokenLot(lot) {
   return dbGetTokenLotByCheckoutSession(lot.stripeCheckoutSessionId);
 }
 
+export async function dbSetTokenLotRemaining(lotId, remaining) {
+  if (!dbPool || !lotId) return null;
+  const { rows } = await dbPool.query(
+    `UPDATE token_lots SET tokens_remaining = $2
+      WHERE id = $1
+      RETURNING id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
+                stripe_checkout_session_id, stripe_payment_intent_id, created_at`,
+    [lotId, Math.max(0, Number(remaining) || 0)]
+  );
+  return mapTokenLotRow(rows[0]);
+}
+
 export async function dbConsumeTokens(userId, amount) {
   if (!dbPool || !userId) return { consumed: 0 };
   const needed = Number(amount) || 0;
@@ -987,7 +1004,7 @@ export async function dbConsumeTokens(userId, amount) {
       `SELECT id, tokens_remaining
          FROM token_lots
         WHERE user_id = $1 AND tokens_remaining > 0 AND expires_at > NOW()
-        ORDER BY expires_at ASC
+        ORDER BY CASE WHEN pack_id = 'freebie' THEN 0 ELSE 1 END, expires_at ASC
         FOR UPDATE`,
       [userId]
     );

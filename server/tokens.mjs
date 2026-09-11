@@ -5,10 +5,13 @@ import {
   dbConsumeTokens,
   dbGetTokenLotByCheckoutSession,
   dbInsertTokenLot,
+  dbListRunsForUser,
   dbListTokenLots,
+  dbSetTokenLotRemaining,
 } from './db.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
-import { TOKEN_TTL_MONTHS, addMonthsUtc, tokenPackById } from './plan-catalog.mjs';
+import { listProjectsForUser } from './projects.mjs';
+import { FREEBIE_PACK_ID, TOKEN_TTL_MONTHS, addMonthsUtc, tokenPackById } from './plan-catalog.mjs';
 
 const LOTS_FILE = 'token-lots.json';
 
@@ -27,6 +30,13 @@ function saveLots(lots) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function compareLotsForConsume(a, b) {
+  const af = a.packId === FREEBIE_PACK_ID ? 0 : 1;
+  const bf = b.packId === FREEBIE_PACK_ID ? 0 : 1;
+  if (af !== bf) return af - bf;
+  return String(a.expiresAt || '').localeCompare(String(b.expiresAt || ''));
 }
 
 function isUnexpired(lot, now = new Date()) {
@@ -117,7 +127,7 @@ export async function consumeTokens(userId, amount) {
   const rows = loadLots();
   const mine = rows
     .filter((lot) => lot.userId === userId && isUnexpired(lot, now))
-    .sort((a, b) => String(a.expiresAt || '').localeCompare(String(b.expiresAt || '')));
+    .sort(compareLotsForConsume);
   let left = needed;
   for (const lot of mine) {
     if (left <= 0) break;
@@ -144,4 +154,72 @@ export async function clawbackTokensForPaymentIntent(intentId) {
   lot.tokensRemaining = 0;
   saveLots(rows);
   return lot;
+}
+
+export async function getFreebieLot(userId) {
+  if (!userId) return null;
+  const lots = await listTokenLots(userId);
+  return lots.find((lot) => lot.packId === FREEBIE_PACK_ID) || null;
+}
+
+async function userAlreadyScanned(userId) {
+  if (useDb()) {
+    const rows = await dbListRunsForUser(userId, 1);
+    return rows.length > 0;
+  }
+  const projects = await listProjectsForUser(userId);
+  return projects.some((project) => (project.runIds || []).length > 0);
+}
+
+async function setLotRemaining(lot, remaining) {
+  const next = Math.max(0, Number(remaining) || 0);
+  if (useDb()) return dbSetTokenLotRemaining(lot.id, next);
+  const rows = loadLots();
+  const found = rows.find((row) => row.id === lot.id);
+  if (found) found.tokensRemaining = next;
+  saveLots(rows);
+  return { ...lot, tokensRemaining: next };
+}
+
+/**
+ * One complimentary token per account. If they already used the guest snapshot
+ * (cookie/IP or an attached run), the lot is recorded as used (0 remaining) so
+ * Payment history can still show Freebie.
+ */
+export async function ensureFreebieLot(userId, { guestFreebieUsed = false } = {}) {
+  if (!userId) return null;
+  const alreadyScanned = await userAlreadyScanned(userId);
+  const used = Boolean(guestFreebieUsed) || alreadyScanned;
+  const existing = await getFreebieLot(userId);
+  if (existing) {
+    if (guestFreebieUsed && Number(existing.tokensRemaining || 0) > 0) {
+      return setLotRemaining(existing, 0);
+    }
+    return existing;
+  }
+  const remaining = used ? 0 : 1;
+  const now = new Date();
+  const lot = {
+    id: randomBytes(10).toString('hex'),
+    userId,
+    packId: FREEBIE_PACK_ID,
+    tokensGranted: 1,
+    tokensRemaining: remaining,
+    purchasedAt: now.toISOString(),
+    expiresAt: tokenExpiryFrom(now),
+    stripeCheckoutSessionId: null,
+    stripePaymentIntentId: null,
+    createdAt: nowIso(),
+  };
+  try {
+    if (useDb()) return dbInsertTokenLot(lot);
+    const rows = loadLots();
+    rows.push(lot);
+    saveLots(rows);
+    return lot;
+  } catch (err) {
+    const again = await getFreebieLot(userId);
+    if (again) return again;
+    throw err;
+  }
 }

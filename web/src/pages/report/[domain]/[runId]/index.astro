@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { buildAstroMainReportPayload } from '../../../../../../report-astro-payload.js';
 import { isValidReportId } from '../../../../../../server/fs-utils.js';
 import { runDir, isValidRunId } from '../../../../../../server/run-ids.js';
-import { listRunsForDomain } from '../../../../../../server/audit-list.js';
+import { listVisibleRunsForDomain } from '../../../../../../server/audit-viewer.mjs';
 import { dbPool } from '../../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../../server/paths.js';
 import { MANUAL_TODO_GROUPS, normalizeManualProgress } from '../../../../../../manual-checklist.js';
@@ -47,7 +47,10 @@ const disabilities = payload.disabilities || [];
 const suggestedFixes = payload.suggestedFixes || { points: 0, tickets: [] };
 
 // Pull score history for the trend chart from prior runs of this domain.
-const allRuns = await listRunsForDomain(dbPool, REPORTS_BASE, domain);
+const allRuns = await listVisibleRunsForDomain(dbPool, REPORTS_BASE, domain, {
+  sessionToken: Astro.cookies.get('wcag_sid')?.value || '',
+  uiHint: Astro.cookies.get('wcag_ui')?.value || Astro.cookies.get('wcag_access')?.value,
+});
 const trend = allRuns
   .slice()
   .reverse()

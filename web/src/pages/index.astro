@@ -25,7 +25,7 @@ export const prerender = false;
             Run a free accessibility check on your page
           </h1>
           <p class="p-large muted" style="max-width: 620px;">
-            Enter a public URL. We scan one page for free — no sign-up, no waiting — and show a score plus the top issues as soon as the scan is complete.
+            Enter a public URL. One free snapshot per person — guests and new accounts share that same free scan.
             This is not a full audit or legal sign-off.
           </p>
         </div>
@@ -52,7 +52,7 @@ export const prerender = false;
               required
             />
             <p class="muted" style="font-size: 13px; margin-top: 12px;">
-              One public page per check. By starting a scan you confirm you are allowed to request this URL.
+              One free snapshot per visitor. By starting a scan you confirm you are allowed to request this URL.
             </p>
             <div id="guest-turnstile" style="margin-top: 18px;"></div>
           </div>
@@ -83,7 +83,7 @@ export const prerender = false;
           <span class="eyebrow"><span class="dot"></span>Your account · Pro pages or tokens</span>
           <h1 class="run-hero-title">Scan pages into your account</h1>
             <p class="p-large muted" style="max-width: 620px;">
-            Signed-in scans use Pro’s monthly page budget first, then tokens. Each URL is one page-scan. Up to 50 URLs per run.
+            Signed-in scans use your complimentary token first (if unused), then Pro’s monthly page budget, then paid tokens. Each URL is one page-scan. Up to 50 URLs per run.
           </p>
           <p id="customer-usage" class="muted" style="max-width: 620px; margin-top: 8px;"></p>
           <p class="muted" style="font-size: 13px; margin-top: 8px;">
@@ -580,7 +580,7 @@ export const prerender = false;
       });
       const data = await parseJsonResponse(res);
       if (!res.ok) {
-        showFormError(data.error || res.statusText || 'Request failed');
+        showFormError(data.error || res.statusText || 'Request failed', data.ctas);
         if (window.turnstile && turnstileWidgetId != null) window.turnstile.reset(turnstileWidgetId);
         return;
       }

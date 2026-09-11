@@ -168,7 +168,7 @@ describe('stripe fulfillment', () => {
       metadata: { userId: user.id, packId: 'pack_10', tokens: '10' },
     });
     assert.equal(unpaid, null);
-    assert.equal((await getTokenBalance(user.id)).tokens, 0);
+    assert.equal((await getTokenBalance(user.id)).tokens, 1);
 
     const lot = await fulfillCheckoutSession({
       id: 'cs_paid',
@@ -189,13 +189,13 @@ describe('stripe fulfillment', () => {
       payment_intent: 'pi_pack',
       metadata: { userId: user.id, packId: 'pack_10', tokens: '10' },
     });
-    assert.equal((await getTokenBalance(user.id)).tokens, 10);
+    assert.equal((await getTokenBalance(user.id)).tokens, 11);
 
     await handleStripeEvent({
       type: 'charge.refunded',
       data: { object: { payment_intent: 'pi_pack' } },
     });
-    assert.equal((await getTokenBalance(user.id)).tokens, 0);
+    assert.equal((await getTokenBalance(user.id)).tokens, 1);
   });
 
   it('does not fulfill an unpaid Pro checkout session', async () => {
@@ -222,6 +222,9 @@ describe('token entitlements', () => {
       email: 'entitlements@example.com',
       password: 'longenough1',
     });
+    const complimentary = await assertCustomerCanScan(user.id, { pages: 1 });
+    assert.equal(complimentary.pagesFromTokens, 1);
+    await consumeTokens(user.id, 1);
     await assert.rejects(() => assertCustomerCanScan(user.id, { pages: 1 }), /token|Pro/i);
 
     const expired = new Date(Date.now() - 86400000).toISOString();
@@ -331,13 +334,55 @@ describe('stripe HTTP', () => {
     const before = (await getTokenBalance(user.id)).tokens;
     const run = await fetch(`${origin}/api/run`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '203.0.113.10' },
       body: JSON.stringify({ url: 'https://example.com' }),
     });
     const body = await run.json();
     assert.equal(run.status, 200);
     assert.ok(body.guestToken);
     assert.equal((await getTokenBalance(user.id)).tokens, before);
+
+    const second = await fetch(`${origin}/api/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '203.0.113.10' },
+      body: JSON.stringify({ url: 'https://example.com' }),
+    });
+    const secondBody = await second.json();
+    assert.equal(second.status, 429);
+    assert.equal(secondBody.code, 'guest_freebie_used');
+  });
+
+  it('consumes the complimentary token before paid packs on a signed-in scan', async () => {
+    setQueueExecutor(async () => {});
+    const jar = new CookieJar();
+    const signup = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'consume-tokens@example.com', password: 'longenough1' }),
+    });
+    jar.store(signup.headers);
+    const account = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
+    const before = await account.json();
+    assert.equal(before.tokens.tokens, 1);
+    assert.equal(before.payments[0].status, 'freebie');
+    assert.equal(before.payments[0].description, '1 token');
+    await grantTokenPack({ userId: before.user.id, packId: 'pack_10', tokens: 10 });
+    const run = await fetch(`${origin}/api/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: jar.header(),
+        'X-CSRF-Token': jar.get('wcag_csrf'),
+      },
+      body: JSON.stringify({ urls: 'https://example.net' }),
+    });
+    const body = await run.json();
+    assert.equal(run.status, 200, body.error || '');
+    const after = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
+    const data = await after.json();
+    assert.equal(data.tokens.tokens, 10);
+    const freebie = data.payments.find((row) => row.status === 'freebie');
+    assert.equal(freebie.description, '0 tokens');
   });
 
   it('closes the test server', async () => {
