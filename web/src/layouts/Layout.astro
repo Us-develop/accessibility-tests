@@ -109,6 +109,15 @@ const gateLocked = authMode === 'required' && !staffHint;
       </button>
     </div>
     <LoginModal startLocked={gateLocked} />
+    {authMode === 'guest-ok' ? (
+      <footer class="site-legal">
+        <a href="/pricing">Pricing</a>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/cookies">Cookies</a>
+        <a href="https://about-us.be/contact/">Us-diensten</a>
+      </footer>
+    ) : null}
     <script is:inline>
       (function () {
         if (!document.documentElement.classList.contains('wcag-staff')) return;

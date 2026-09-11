@@ -152,13 +152,18 @@ export async function initDb() {
       name TEXT NOT NULL,
       max_pages_per_scan INT,
       max_scans_per_month INT,
+      max_pages_per_month INT,
       max_projects INT,
       features JSONB,
       price_cents INT,
+      yearly_price_cents INT,
       billing_interval TEXT,
       active BOOLEAN DEFAULT TRUE
     )
   `);
+  await dbPool.query(`ALTER TABLE plans ADD COLUMN IF NOT EXISTS max_pages_per_month INT`);
+  await dbPool.query(`ALTER TABLE plans ADD COLUMN IF NOT EXISTS yearly_price_cents INT`);
+  await dbPool.query(`ALTER TABLE plans ADD COLUMN IF NOT EXISTS billing_interval TEXT`);
 
   await dbPool.query(`
     CREATE TABLE IF NOT EXISTS projects (
@@ -183,6 +188,8 @@ export async function initDb() {
       current_period_end TIMESTAMPTZ,
       stripe_subscription_id TEXT,
       stripe_customer_id TEXT,
+      cancel_at_period_end BOOLEAN DEFAULT FALSE,
+      billing_interval TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -190,6 +197,10 @@ export async function initDb() {
   await dbPool.query(
     `CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_user_uidx ON subscriptions (user_id)`
   );
+  await dbPool.query(
+    `ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS cancel_at_period_end BOOLEAN DEFAULT FALSE`
+  );
+  await dbPool.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billing_interval TEXT`);
 
   await dbPool.query(`
     CREATE TABLE IF NOT EXISTS usage (
@@ -217,6 +228,27 @@ export async function initDb() {
   `);
   await dbPool.query(
     `CREATE INDEX IF NOT EXISTS payments_user_created_idx ON payments (user_id, created_at DESC)`
+  );
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS token_lots (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      pack_id TEXT,
+      tokens_granted INT NOT NULL,
+      tokens_remaining INT NOT NULL,
+      purchased_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      stripe_checkout_session_id TEXT,
+      stripe_payment_intent_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbPool.query(`CREATE INDEX IF NOT EXISTS token_lots_user_exp_idx ON token_lots (user_id, expires_at)`);
+  await dbPool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS token_lots_checkout_uidx
+       ON token_lots (stripe_checkout_session_id)
+     WHERE stripe_checkout_session_id IS NOT NULL`
   );
 
   await seedDefaultPlans();
@@ -625,6 +657,10 @@ export async function dbSetRunUserId(domain, runId, userId) {
   );
 }
 
+const PLAN_SELECT = `id, name, max_pages_per_scan, max_scans_per_month, max_pages_per_month, max_projects, features, price_cents, yearly_price_cents, billing_interval, active`;
+const SUB_SELECT = `id, user_id, plan_id, status, current_period_start, current_period_end,
+            stripe_subscription_id, stripe_customer_id, cancel_at_period_end, billing_interval, created_at, updated_at`;
+
 function mapPlanRow(row) {
   if (!row) return null;
   return {
@@ -632,29 +668,26 @@ function mapPlanRow(row) {
     name: row.name,
     maxPagesPerScan: row.max_pages_per_scan == null ? null : Number(row.max_pages_per_scan),
     maxScansPerMonth: row.max_scans_per_month == null ? null : Number(row.max_scans_per_month),
+    maxPagesPerMonth: row.max_pages_per_month == null ? null : Number(row.max_pages_per_month),
     maxProjects: row.max_projects == null ? null : Number(row.max_projects),
     features: row.features && typeof row.features === 'object' ? row.features : {},
     priceCents: row.price_cents == null ? 0 : Number(row.price_cents),
-    billingInterval: row.billing_interval || 'monthly',
+    yearlyPriceCents: row.yearly_price_cents == null ? 0 : Number(row.yearly_price_cents),
+    billingInterval: row.billing_interval || null,
     active: row.active !== false,
   };
 }
 
 export async function dbGetPlan(id) {
   if (!dbPool || !id) return null;
-  const { rows } = await dbPool.query(
-    `SELECT id, name, max_pages_per_scan, max_scans_per_month, max_projects, features, price_cents, billing_interval, active
-       FROM plans WHERE id = $1 LIMIT 1`,
-    [id]
-  );
+  const { rows } = await dbPool.query(`SELECT ${PLAN_SELECT} FROM plans WHERE id = $1 LIMIT 1`, [id]);
   return mapPlanRow(rows[0]);
 }
 
 export async function dbListPlans() {
   if (!dbPool) return [];
   const { rows } = await dbPool.query(
-    `SELECT id, name, max_pages_per_scan, max_scans_per_month, max_projects, features, price_cents, billing_interval, active
-       FROM plans WHERE active = TRUE ORDER BY price_cents ASC`
+    `SELECT ${PLAN_SELECT} FROM plans WHERE active = TRUE ORDER BY price_cents ASC`
   );
   return rows.map(mapPlanRow);
 }
@@ -664,25 +697,37 @@ export async function dbUpsertPlan(plan) {
   const { rows } = await dbPool.query(
     `
       INSERT INTO plans (
-        id, name, max_pages_per_scan, max_scans_per_month, max_projects, features, price_cents, billing_interval, active
-      ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
-      ON CONFLICT (id) DO NOTHING
-      RETURNING id, name, max_pages_per_scan, max_scans_per_month, max_projects, features, price_cents, billing_interval, active
+        id, name, max_pages_per_scan, max_scans_per_month, max_pages_per_month, max_projects, features,
+        price_cents, yearly_price_cents, billing_interval, active
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        max_pages_per_scan = EXCLUDED.max_pages_per_scan,
+        max_scans_per_month = EXCLUDED.max_scans_per_month,
+        max_pages_per_month = EXCLUDED.max_pages_per_month,
+        max_projects = EXCLUDED.max_projects,
+        features = EXCLUDED.features,
+        price_cents = EXCLUDED.price_cents,
+        yearly_price_cents = EXCLUDED.yearly_price_cents,
+        billing_interval = EXCLUDED.billing_interval,
+        active = EXCLUDED.active
+      RETURNING ${PLAN_SELECT}
     `,
     [
       plan.id,
       plan.name,
       plan.maxPagesPerScan,
       plan.maxScansPerMonth,
+      plan.maxPagesPerMonth,
       plan.maxProjects,
       JSON.stringify(plan.features || {}),
       plan.priceCents ?? 0,
-      plan.billingInterval || 'monthly',
+      plan.yearlyPriceCents ?? 0,
+      plan.billingInterval || null,
       plan.active !== false,
     ]
   );
-  if (rows[0]) return mapPlanRow(rows[0]);
-  return dbGetPlan(plan.id);
+  return mapPlanRow(rows[0]);
 }
 
 function mapSubscriptionRow(row) {
@@ -696,6 +741,8 @@ function mapSubscriptionRow(row) {
     currentPeriodEnd: isoOrNull(row.current_period_end),
     stripeSubscriptionId: row.stripe_subscription_id || null,
     stripeCustomerId: row.stripe_customer_id || null,
+    cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
+    billingInterval: row.billing_interval || null,
     createdAt: isoOrNull(row.created_at),
     updatedAt: isoOrNull(row.updated_at),
   };
@@ -703,11 +750,26 @@ function mapSubscriptionRow(row) {
 
 export async function dbGetSubscription(userId) {
   if (!dbPool || !userId) return null;
+  const { rows } = await dbPool.query(`SELECT ${SUB_SELECT} FROM subscriptions WHERE user_id = $1 LIMIT 1`, [
+    userId,
+  ]);
+  return mapSubscriptionRow(rows[0]);
+}
+
+export async function dbGetSubscriptionByStripeCustomer(customerId) {
+  if (!dbPool || !customerId) return null;
   const { rows } = await dbPool.query(
-    `SELECT id, user_id, plan_id, status, current_period_start, current_period_end,
-            stripe_subscription_id, stripe_customer_id, created_at, updated_at
-       FROM subscriptions WHERE user_id = $1 LIMIT 1`,
-    [userId]
+    `SELECT ${SUB_SELECT} FROM subscriptions WHERE stripe_customer_id = $1 LIMIT 1`,
+    [customerId]
+  );
+  return mapSubscriptionRow(rows[0]);
+}
+
+export async function dbGetSubscriptionByStripeSubscription(subscriptionId) {
+  if (!dbPool || !subscriptionId) return null;
+  const { rows } = await dbPool.query(
+    `SELECT ${SUB_SELECT} FROM subscriptions WHERE stripe_subscription_id = $1 LIMIT 1`,
+    [subscriptionId]
   );
   return mapSubscriptionRow(rows[0]);
 }
@@ -718,8 +780,9 @@ export async function dbUpsertSubscription(sub) {
     `
       INSERT INTO subscriptions (
         id, user_id, plan_id, status, current_period_start, current_period_end,
-        stripe_subscription_id, stripe_customer_id, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::timestamptz, NOW()), NOW())
+        stripe_subscription_id, stripe_customer_id, cancel_at_period_end, billing_interval,
+        created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11::timestamptz, NOW()), NOW())
       ON CONFLICT (user_id) DO UPDATE SET
         plan_id = EXCLUDED.plan_id,
         status = EXCLUDED.status,
@@ -727,19 +790,22 @@ export async function dbUpsertSubscription(sub) {
         current_period_end = EXCLUDED.current_period_end,
         stripe_subscription_id = COALESCE(EXCLUDED.stripe_subscription_id, subscriptions.stripe_subscription_id),
         stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, subscriptions.stripe_customer_id),
+        cancel_at_period_end = EXCLUDED.cancel_at_period_end,
+        billing_interval = COALESCE(EXCLUDED.billing_interval, subscriptions.billing_interval),
         updated_at = NOW()
-      RETURNING id, user_id, plan_id, status, current_period_start, current_period_end,
-                stripe_subscription_id, stripe_customer_id, created_at, updated_at
+      RETURNING ${SUB_SELECT}
     `,
     [
       sub.id,
       sub.userId,
-      sub.planId || 'free',
+      sub.planId || 'none',
       sub.status || 'active',
       sub.currentPeriodStart || null,
       sub.currentPeriodEnd || null,
       sub.stripeSubscriptionId || null,
       sub.stripeCustomerId || null,
+      Boolean(sub.cancelAtPeriodEnd),
+      sub.billingInterval || null,
       sub.createdAt || null,
     ]
   );
@@ -821,6 +887,16 @@ export async function dbInsertPayment(payment) {
   return mapPaymentRow(rows[0]);
 }
 
+export async function dbFindPaymentByStripeIntent(intentId) {
+  if (!dbPool || !intentId) return null;
+  const { rows } = await dbPool.query(
+    `SELECT id, user_id, amount_cents, currency, status, description, stripe_payment_intent_id, invoice_url, created_at
+       FROM payments WHERE stripe_payment_intent_id = $1 LIMIT 1`,
+    [intentId]
+  );
+  return mapPaymentRow(rows[0]);
+}
+
 export async function dbListPayments(userId, limit = 50) {
   if (!dbPool || !userId) return [];
   const { rows } = await dbPool.query(
@@ -829,6 +905,133 @@ export async function dbListPayments(userId, limit = 50) {
     [userId, limit]
   );
   return rows.map(mapPaymentRow);
+}
+
+function mapTokenLotRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    packId: row.pack_id || null,
+    tokensGranted: Number(row.tokens_granted || 0),
+    tokensRemaining: Number(row.tokens_remaining || 0),
+    purchasedAt: isoOrNull(row.purchased_at),
+    expiresAt: isoOrNull(row.expires_at),
+    stripeCheckoutSessionId: row.stripe_checkout_session_id || null,
+    stripePaymentIntentId: row.stripe_payment_intent_id || null,
+    createdAt: isoOrNull(row.created_at),
+  };
+}
+
+export async function dbListTokenLots(userId) {
+  if (!dbPool || !userId) return [];
+  const { rows } = await dbPool.query(
+    `SELECT id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
+            stripe_checkout_session_id, stripe_payment_intent_id, created_at
+       FROM token_lots
+      WHERE user_id = $1
+      ORDER BY expires_at ASC`,
+    [userId]
+  );
+  return rows.map(mapTokenLotRow);
+}
+
+export async function dbGetTokenLotByCheckoutSession(sessionId) {
+  if (!dbPool || !sessionId) return null;
+  const { rows } = await dbPool.query(
+    `SELECT id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
+            stripe_checkout_session_id, stripe_payment_intent_id, created_at
+       FROM token_lots WHERE stripe_checkout_session_id = $1 LIMIT 1`,
+    [sessionId]
+  );
+  return mapTokenLotRow(rows[0]);
+}
+
+export async function dbInsertTokenLot(lot) {
+  if (!dbPool || !lot?.id || !lot.userId) return null;
+  const { rows } = await dbPool.query(
+    `
+      INSERT INTO token_lots (
+        id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
+        stripe_checkout_session_id, stripe_payment_intent_id, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamptz, NOW()))
+      ON CONFLICT (stripe_checkout_session_id) WHERE stripe_checkout_session_id IS NOT NULL DO NOTHING
+      RETURNING id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
+                stripe_checkout_session_id, stripe_payment_intent_id, created_at
+    `,
+    [
+      lot.id,
+      lot.userId,
+      lot.packId || null,
+      lot.tokensGranted,
+      lot.tokensRemaining,
+      lot.purchasedAt || null,
+      lot.expiresAt,
+      lot.stripeCheckoutSessionId || null,
+      lot.stripePaymentIntentId || null,
+      lot.createdAt || null,
+    ]
+  );
+  if (rows[0]) return mapTokenLotRow(rows[0]);
+  return dbGetTokenLotByCheckoutSession(lot.stripeCheckoutSessionId);
+}
+
+export async function dbConsumeTokens(userId, amount) {
+  if (!dbPool || !userId) return { consumed: 0 };
+  const needed = Number(amount) || 0;
+  if (needed <= 0) return { consumed: 0 };
+  const client = await dbPool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT id, tokens_remaining
+         FROM token_lots
+        WHERE user_id = $1 AND tokens_remaining > 0 AND expires_at > NOW()
+        ORDER BY expires_at ASC
+        FOR UPDATE`,
+      [userId]
+    );
+    let left = needed;
+    for (const row of rows) {
+      if (left <= 0) break;
+      const take = Math.min(Number(row.tokens_remaining || 0), left);
+      await client.query(`UPDATE token_lots SET tokens_remaining = tokens_remaining - $2 WHERE id = $1`, [
+        row.id,
+        take,
+      ]);
+      left -= take;
+    }
+    await client.query('COMMIT');
+    return { consumed: needed - left };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbClawbackTokenLotByPaymentIntent(intentId) {
+  if (!dbPool || !intentId) return null;
+  const { rows } = await dbPool.query(
+    `UPDATE token_lots SET tokens_remaining = 0
+      WHERE stripe_payment_intent_id = $1
+      RETURNING id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
+                stripe_checkout_session_id, stripe_payment_intent_id, created_at`,
+    [intentId]
+  );
+  return mapTokenLotRow(rows[0]);
+}
+
+export async function dbSumTokenBalance(userId) {
+  if (!dbPool || !userId) return 0;
+  const { rows } = await dbPool.query(
+    `SELECT COALESCE(SUM(tokens_remaining), 0) AS tokens
+       FROM token_lots
+      WHERE user_id = $1 AND tokens_remaining > 0 AND expires_at > NOW()`,
+    [userId]
+  );
+  return Number(rows[0]?.tokens || 0);
 }
 
 export async function dbListRunsForUser(userId, limit = 200) {
@@ -860,6 +1063,10 @@ async function seedDefaultPlans() {
   for (const plan of DEFAULT_PLANS) {
     await dbUpsertPlan(plan);
   }
+  await dbPool.query(
+    `UPDATE subscriptions SET plan_id = 'none' WHERE plan_id IN ('free', 'starter', 'agency')`
+  );
+  await dbPool.query(`UPDATE plans SET active = FALSE WHERE id IN ('free', 'starter', 'agency')`);
 }
 
 async function migrateJsonStoresToPostgres() {

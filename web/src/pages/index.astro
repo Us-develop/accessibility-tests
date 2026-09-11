@@ -72,18 +72,27 @@ export const prerender = false;
         </form>
 
         <p class="muted guest-only" hidden={ssrSignedIn} style="font-size: 13px; margin-top: 16px; text-align: center;">
-          Prefer expert support? <a class="link" href="https://about-us.be/contact/">Talk to a WCAG expert</a>
+          <a class="link" href="/pricing">Buy tokens or subscribe to Pro</a>
+          ·
+          <a class="link" href="https://about-us.be/contact/">Talk to a WCAG expert</a>
           ·
           <a class="link" href="/signup">Create an account</a>
         </p>
 
         <div class="fade-up customer-only" hidden={!ssrCustomer} style="text-align: left; margin-bottom: 40px;">
-          <span class="eyebrow"><span class="dot"></span>Your account · 1 page saved to your projects</span>
-          <h1 class="run-hero-title">Scan a page into your account</h1>
+          <span class="eyebrow"><span class="dot"></span>Your account · Pro pages or tokens</span>
+          <h1 class="run-hero-title">Scan pages into your account</h1>
             <p class="p-large muted" style="max-width: 620px;">
-            Signed-in scans are saved to your projects. Sitemap and multi-page runs stay on the staff tool for now.
+            Signed-in scans use Pro’s monthly page budget first, then tokens. Each URL is one page-scan. Up to 50 URLs per run.
           </p>
           <p id="customer-usage" class="muted" style="max-width: 620px; margin-top: 8px;"></p>
+          <p class="muted" style="font-size: 13px; margin-top: 8px;">
+            <a class="link" href="/pricing">Pricing</a>
+            ·
+            <a class="link" href="/account">Buy extra tokens</a>
+            ·
+            <a class="link" href="https://about-us.be/contact/">Request Us services</a>
+          </p>
         </div>
 
         <form
@@ -96,17 +105,18 @@ export const prerender = false;
           style="padding: 0; overflow: hidden;"
         >
           <div style="padding: 32px 32px 28px;">
-            <label class="field-label" for="customer-url">Page URL</label>
-            <input
+            <label class="field-label" for="customer-url">Page URLs</label>
+            <textarea
               id="customer-url"
-              name="url"
-              class="input"
-              type="url"
-              inputmode="url"
-              autocomplete="url"
+              name="urls"
+              class="textarea"
               placeholder="https://example.com"
               required
-            />
+              style="min-height: 96px;"
+            ></textarea>
+            <p class="muted" style="font-size: 13px; margin-top: 12px;">
+              One public URL per line, same domain. Pro includes 300 pages/month; extra pages spend tokens.
+            </p>
             <input type="hidden" name="csrfToken" class="wcag-csrf-field" value="" />
           </div>
           <div
@@ -126,6 +136,8 @@ export const prerender = false;
 
         <p class="muted customer-only" hidden={!ssrCustomer} style="font-size: 12px; margin-top: 14px; text-align: center;">
           <a href="/account" class="link">Account</a>
+          ·
+          <a href="/pricing" class="link">Pricing</a>
           ·
           <a href="/audits" class="link">Your projects</a>
         </p>
@@ -331,17 +343,34 @@ export const prerender = false;
     return document.getElementById('form-err');
   }
 
-  function showFormError(message) {
+  function showFormError(message, ctas) {
     const errEl = formErrorEl();
     if (!errEl) return;
-    errEl.textContent = message;
+    errEl.replaceChildren();
+    errEl.append(document.createTextNode(message || 'Request failed'));
+    if (ctas && (ctas.tokens || ctas.pro || ctas.services)) {
+      errEl.append(document.createTextNode(' '));
+      const links = [
+        ctas.tokens ? ['Buy tokens', ctas.tokens] : null,
+        ctas.pro ? ['Subscribe to Pro', ctas.pro] : null,
+        ctas.services ? ['Request Us-diensten', ctas.services] : null,
+      ].filter(Boolean);
+      links.forEach((pair, index) => {
+        if (index) errEl.append(document.createTextNode(' · '));
+        const a = document.createElement('a');
+        a.className = 'link';
+        a.href = pair[1];
+        a.textContent = pair[0];
+        errEl.append(a);
+      });
+    }
     errEl.style.display = 'block';
   }
 
   function clearFormError() {
     const errEl = formErrorEl();
     if (!errEl) return;
-    errEl.textContent = '';
+    errEl.replaceChildren();
     errEl.style.display = 'none';
   }
 
@@ -388,6 +417,7 @@ export const prerender = false;
     const customer = document.getElementById('customer-url');
     const urls = document.getElementById('urls');
     if (guest instanceof HTMLInputElement && !guest.value) guest.value = url;
+    if (customer instanceof HTMLTextAreaElement && !customer.value) customer.value = url;
     if (customer instanceof HTMLInputElement && !customer.value) customer.value = url;
     if (urls instanceof HTMLTextAreaElement && !urls.value) urls.value = url;
     refreshHint();
@@ -410,13 +440,16 @@ export const prerender = false;
         return;
       }
       const data = await res.json().catch(() => ({}));
-      const used = Number(data.scansUsed || 0);
-      const max = data.plan?.maxScansPerMonth;
-      const planName = data.plan?.name || 'Free';
-      el.textContent =
-        max == null
-          ? `${planName} plan · ${used} scan(s) this month`
-          : `${planName} plan · ${used} of ${max} scans this month`;
+      const used = Number(data.pagesScanned || data.scansUsed || 0);
+      const tokensLeft = Number(data.tokens?.tokens || 0);
+      const isPro = data.plan?.id === 'pro' && ['active', 'trialing', 'past_due'].includes(data.subscription?.status);
+      if (isPro) {
+        el.textContent = `Pro · ${used}/300 pages this month · ${tokensLeft} token${tokensLeft === 1 ? '' : 's'}`;
+      } else if (tokensLeft > 0) {
+        el.textContent = `No Pro · ${tokensLeft} token${tokensLeft === 1 ? '' : 's'} left`;
+      } else {
+        el.textContent = 'No Pro · 0 tokens — buy a pack, subscribe, or request Us services.';
+      }
     } catch {
       el.textContent = '';
     }
@@ -561,9 +594,10 @@ export const prerender = false;
 
   async function submitCustomerForm(form) {
     clearFormError();
-    const url = String(new FormData(form).get('url') || '').trim();
+    const posted = new FormData(form);
+    const urls = String(posted.get('urls') || posted.get('url') || '').trim();
     const fd = new FormData();
-    fd.set('url', url);
+    fd.set('urls', urls);
     const token = csrfToken();
     if (token) fd.set('csrfToken', token);
     const btn = document.getElementById('customer-submit-btn');
@@ -582,7 +616,7 @@ export const prerender = false;
         return;
       }
       if (!res.ok) {
-        showFormError(data.error || res.statusText || 'Request failed');
+        showFormError(data.error || res.statusText || 'Request failed', data.ctas);
         return;
       }
       if (!goToRun(data, { guestFallback: true })) showFormError('Could not start the scan.');

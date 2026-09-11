@@ -22,7 +22,7 @@ const { readJsonStore, writeJsonStore } = await import('../server/json-store.mjs
 const { canAccessDomain } = await import('../server/projects.mjs');
 const { persistGuestToken } = await import('../server/guest.mjs');
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
-const { incrementUsage } = await import('../server/billing.mjs');
+const { grantTokenPack } = await import('../server/tokens.mjs');
 const { writeJob, deleteJob } = await import('../server/queue.mjs');
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -265,7 +265,7 @@ describe('account HTTP', () => {
     assert.equal(data.db, 'disabled');
   });
 
-  it('assigns the free plan and lets the customer edit details', async () => {
+  it('assigns no paid plan and lets the customer edit details', async () => {
     const jar = new CookieJar();
     const login = await fetch(`${origin}/api/auth/login`, {
       method: 'POST',
@@ -276,8 +276,8 @@ describe('account HTTP', () => {
     const account = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
     const data = await account.json();
     assert.equal(account.status, 200);
-    assert.equal(data.plan?.id, 'free');
-    assert.equal(data.usage?.maxScansPerMonth, 30);
+    assert.equal(data.plan?.id, 'none');
+    assert.equal(data.tokens?.tokens, 0);
 
     const saved = await fetch(`${origin}/api/account`, {
       method: 'PUT',
@@ -345,7 +345,7 @@ describe('account HTTP', () => {
     assert.match(text, /project_domain,scan_date,run_id,pages_scanned,score,status/);
   });
 
-  it('enforces the monthly scan limit', async () => {
+  it('rejects signed-in scans without Pro or tokens', async () => {
     const jar = new CookieJar();
     const login = await fetch(`${origin}/api/auth/login`, {
       method: 'POST',
@@ -353,9 +353,6 @@ describe('account HTTP', () => {
       body: JSON.stringify({ username: 'attached@example.com', password: 'newevenlonger1' }),
     });
     jar.store(login.headers);
-    const account = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
-    const data = await account.json();
-    await incrementUsage(data.user.id, { scans: 30, pages: 30 });
     const run = await fetch(`${origin}/api/run`, {
       method: 'POST',
       headers: {
@@ -367,7 +364,9 @@ describe('account HTTP', () => {
     });
     const body = await run.json();
     assert.equal(run.status, 429);
-    assert.match(body.error || '', /month/i);
+    assert.equal(body.code, 'empty_tokens');
+    assert.equal(body.ctas.services, 'https://about-us.be/contact/');
+    assert.match(body.error || '', /token|Pro|Us/i);
   });
 
   it('blocks a second customer scan while one is already queued', async () => {
@@ -380,6 +379,7 @@ describe('account HTTP', () => {
     jar.store(login.headers);
     const account = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
     const data = await account.json();
+    await grantTokenPack({ userId: data.user.id, packId: 'pack_10', tokens: 10 });
     writeJob({
       id: 'held.example:held-run',
       domain: 'held.example',

@@ -1,0 +1,112 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+
+export const prerender = false;
+const canceled = Astro.url.searchParams.get('billing') === 'cancel';
+---
+<Layout title="Pricing · Us accessibility scanner" indexable={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb="Pricing" />
+    <main class="app-main">
+      <article class="container-narrow page-article">
+        <span class="eyebrow"><span class="dot"></span>Prices excl. VAT · EUR</span>
+        <h1>Gratis snapshot, tokens, Pro, or Us-diensten</h1>
+        <p class="muted p-large prose-width prose-lead">
+          Scan one public page for free. Buy tokens for occasional full reports, subscribe to Pro for monthly page-scans,
+          or ask Us for manual testing and remediation.
+        </p>
+        <p id="pricing-msg" class="muted" role="status">{canceled ? 'Checkout was cancelled. No charge was made.' : ''}</p>
+
+        <div id="pricing-grid" class="pricing-grid">
+          <section class="card pricing-card" id="gratis">
+            <h2>Gratis snapshot</h2>
+            <p class="pricing-price">€0</p>
+            <p class="muted">1 public URL. Score and the top 3 issues. No account. Rate limits 3/hour and 10/day.</p>
+            <div class="pricing-cta">
+              <a class="btn btn-ghost" href="/">Scan this page for free</a>
+            </div>
+          </section>
+
+          <section class="card pricing-card" id="tokens">
+            <h2>Tokens</h2>
+            <p class="pricing-price">€1 <span>per URL-scan</span></p>
+            <p class="muted">Pay-per-scan packs. 1 token = 1 URL. Minimum 10. Unused tokens expire after 12 months. Full Pro deliverables for each spent token.</p>
+            <ul class="pricing-packs">
+              <li>10 tokens · €10</li>
+              <li>50 tokens · €45 (−10%)</li>
+              <li>100 tokens · €80 (−20%)</li>
+            </ul>
+            <div class="pricing-cta pricing-pack-actions">
+              <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_10">Buy 10</button>
+              <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_50">Buy 50</button>
+              <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_100">Buy 100</button>
+            </div>
+          </section>
+
+          <section class="card pricing-card" id="pro">
+            <h2>Pro</h2>
+            <p class="pricing-price">€49 <span>/ month</span></p>
+            <p class="muted">or €490 / year (2 months free). 300 page-scans/month, max 50 URLs per run, 1 concurrent scan, unlimited own projects, email support. Full UI: dashboard, history, statement, sales deck, developer guide, manual checklist, Jira.</p>
+            <div class="pricing-cta">
+              <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">Subscribe monthly</button>
+              <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">Subscribe yearly</button>
+            </div>
+          </section>
+
+          <section class="card pricing-card" id="us-diensten">
+            <h2>Us-diensten</h2>
+            <p class="pricing-price">Quote only</p>
+            <p class="muted">Manual AT testing, remediation, legally oriented statement, and training. No Stripe checkout — we scope this with you.</p>
+            <div class="pricing-cta">
+              <a class="btn btn-secondary" href="https://about-us.be/contact/">Talk to a WCAG expert</a>
+            </div>
+          </section>
+        </div>
+
+        <p class="muted" style="font-size: 13px; max-width: 640px; margin-top: 24px;">
+          Prices are exclusive of tax. Stripe Tax adds VAT when a Collecting registration and head office address exist.
+          Confirm obligations with your tax advisor. This is not legal tax advice.
+        </p>
+      </article>
+    </main>
+  </div>
+</Layout>
+<script>
+  const api = (p) => (typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(p) : p);
+  const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
+  const headers = () =>
+    typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' };
+
+  async function startCheckout(btn) {
+    const msg = document.getElementById('pricing-msg');
+    const kind = btn.getAttribute('data-kind');
+    const body =
+      kind === 'pack'
+        ? { kind: 'pack', packId: btn.getAttribute('data-pack') }
+        : { kind: 'pro', interval: btn.getAttribute('data-interval') || 'monthly' };
+    btn.disabled = true;
+    const auth = await fetch(api('/api/auth/status'), { credentials: creds }).then((r) => r.json()).catch(() => ({}));
+    if (auth.authenticated !== true || auth.role !== 'customer') {
+      window.location.href = '/signup?next=/pricing';
+      return;
+    }
+    const res = await fetch(api('/api/billing/checkout'), {
+      method: 'POST',
+      credentials: creds,
+      headers: headers(),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data.url) {
+      window.location.href = data.url;
+      return;
+    }
+    if (msg) msg.textContent = data.error || 'Could not start checkout.';
+    btn.disabled = false;
+  }
+
+  document.querySelectorAll('.pricing-checkout').forEach((btn) => {
+    btn.addEventListener('click', () => startCheckout(btn));
+  });
+</script>

@@ -1,0 +1,22 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+
+export const prerender = true;
+---
+<Layout title="Cookies · Us" indexable={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb="Cookies" />
+    <main class="app-main">
+      <article class="container-narrow page-article">
+        <p class="eyebrow"><span class="dot"></span>Lawyer review required</p>
+        <h1>Cookies</h1>
+        <p class="muted">Draft only. Us counsel must review. Last updated 11 September 2026.</p>
+        <div class="prose-width">
+          <p>We use strictly necessary cookies for signed-in sessions (<code>wcag_sid</code>), a UI hint (<code>wcag_ui</code>), CSRF protection, and an optional guest snapshot cookie. Cloudflare Turnstile may set cookies when it is enabled.</p>
+          <p>Stripe Checkout and the customer portal set cookies on stripe.com when you pay or manage billing.</p>
+        </div>
+      </article>
+    </main>
+  </div>
+</Layout>
