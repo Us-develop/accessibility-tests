@@ -17,7 +17,7 @@ describe('describeEls', () => {
     assert.equal(rows[0].tag, 'img');
     assert.equal(rows[0].id, 'hero');
     assert.equal(rows[0].className, 'banner wide');
-    assert.equal(rows[0].html, '');
+    assert.match(rows[0].html, /<img id="hero" class="banner wide">/);
     assert.match(rows[0].occurrenceLabel, /occurrence 1 of 2/);
   });
 
@@ -32,6 +32,40 @@ describe('describeEls', () => {
     ]);
     assert.equal(rows[0].tag, 'svg');
     assert.match(rows[0].html, /viewBox="0 0 24 24"/);
+  });
+
+  it('rebuilds markup from attributes when outerHTML is missing', () => {
+    const rows = describeEls([
+      {
+        tagName: 'SVG',
+        id: '',
+        className: { baseVal: '' },
+        getAttributeNames: () => ['viewBox', 'width', 'aria-hidden'],
+        getAttribute: (name) =>
+          ({ viewBox: '0 0 24 24', width: '32', 'aria-hidden': 'true' }[name]),
+        innerHTML: '<path d="M1 2"/>',
+      },
+    ]);
+    assert.equal(
+      rows[0].html,
+      '<svg viewBox="0 0 24 24" width="32" aria-hidden="true"><path d="M1 2"/></svg>'
+    );
+  });
+
+  it('still serializes after Function.toString() (page.evaluate has no module bindings)', () => {
+    const fn = new Function(`return (${describeEls.toString()})`)();
+    const rows = fn([
+      {
+        tagName: 'SVG',
+        id: '',
+        className: '',
+        getAttributeNames: () => ['viewBox', 'width'],
+        getAttribute: (name) => ({ viewBox: '0 0 24 24', width: '32' }[name]),
+        innerHTML: '<path d="M1 2"/>',
+      },
+    ]);
+    assert.match(rows[0].html, /viewBox="0 0 24 24"/);
+    assert.match(rows[0].html, /<path d="M1 2"\/>/);
   });
 });
 
@@ -64,6 +98,22 @@ describe('occurrenceDetailsFromCustom', () => {
       ['<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16"/></svg>']
     );
   });
+
+  it('shows element html when an svg has an id but no class', () => {
+    assert.deepEqual(
+      occurrenceDetailsFromCustom({
+        occurrences: [
+          {
+            tag: 'svg',
+            id: 'nav-toggle',
+            className: '',
+            html: '<svg id="nav-toggle" viewBox="0 0 24 24" width="32"><path d="M4 4h16"/></svg>',
+          },
+        ],
+      }),
+      ['<svg id="nav-toggle" viewBox="0 0 24 24" width="32"><path d="M4 4h16"/></svg>']
+    );
+  });
 });
 
 describe('occurrenceDetailsFromAxe', () => {
@@ -86,6 +136,16 @@ describe('formatOccurrenceDescriptor axe html', () => {
     assert.equal(
       formatOccurrenceDescriptor({ html: '<button>', target: ['form > button'] }),
       '<button> — form > button'
+    );
+  });
+
+  it('shows the element html when axe html has no class', () => {
+    assert.equal(
+      formatOccurrenceDescriptor({
+        html: '<svg id="icon" viewBox="0 0 24 24"><path d="M4 4h16"/></svg>',
+        target: ['header > svg'],
+      }),
+      '<svg id="icon" viewBox="0 0 24 24"><path d="M4 4h16"/></svg>'
     );
   });
 });

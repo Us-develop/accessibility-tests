@@ -99,19 +99,36 @@ function clipHtmlSnippet(html) {
 }
 
 /**
+ * True when markup is only a tag (optionally empty, optionally xmlns-only).
  * @param {string} html
  * @param {string} tag
  * @returns {boolean}
  */
-function isBareTagHtml(html, tag) {
+function isUnhelpfulHtml(html, tag) {
   const compact = String(html || '').replace(/\s+/g, '');
   const name = String(tag || 'element').toLowerCase();
-  return new RegExp(`^<${name}(?:\\s*/)?>$`, 'i').test(compact);
+  const xmlns = '(?:xmlns(?::[\\w-]+)?="[^"]*")*';
+  return (
+    new RegExp(`^<${name}${xmlns}(?:\\s*/)?>$`, 'i').test(compact) ||
+    new RegExp(`^<${name}${xmlns}></${name}>$`, 'i').test(compact)
+  );
 }
 
 /**
- * Format occurrence as "tag#id.class" when those exist.
- * If there is no id or class, prefer the element HTML so developers can find a bare <svg>.
+ * Drop selectors that are just the tag name — they do not help locate the node.
+ * @param {string} selector
+ * @param {string} tag
+ * @returns {string}
+ */
+function usefulSelector(selector, tag) {
+  const value = String(selector || '').trim();
+  if (!value || value === '—' || value === tag || value === 'element') return '';
+  return value;
+}
+
+/**
+ * Format occurrence as "tag#id.class" when a class exists.
+ * If there is no class, prefer the element HTML so developers can find a bare <svg>.
  * @param {object | null | undefined} occ
  * @returns {string}
  */
@@ -120,7 +137,7 @@ export function formatOccurrenceDescriptor(occ) {
   const label = occ.occurrenceLabel || '';
   const htmlSnippet = clipHtmlSnippet(occ.html);
   const sel = occ.selector || (Array.isArray(occ.target) ? occ.target[0] : occ.target);
-  const selector = sel != null ? String(sel) : '';
+  const selectorRaw = sel != null ? String(sel) : '';
 
   if (occ.tag != null) {
     const tag = (occ.tag || 'element').toLowerCase();
@@ -128,9 +145,11 @@ export function formatOccurrenceDescriptor(occ) {
     const classPart = occ.className
       ? '.' + String(occ.className).trim().split(/\s+/).filter(Boolean).join('.')
       : '';
-    if (idPart || classPart) return tag + idPart + classPart + label;
-    if (htmlSnippet && !isBareTagHtml(htmlSnippet, tag)) return htmlSnippet + label;
+    const selector = usefulSelector(selectorRaw, tag);
+    if (classPart) return tag + idPart + classPart + label;
+    if (htmlSnippet && !isUnhelpfulHtml(htmlSnippet, tag)) return htmlSnippet + label;
     if (selector) return (htmlSnippet ? `${htmlSnippet} — ${selector}` : selector) + label;
+    if (idPart) return tag + idPart + label;
     if (htmlSnippet) return htmlSnippet + label;
     return tag + label;
   }
@@ -141,15 +160,17 @@ export function formatOccurrenceDescriptor(occ) {
     const id = idMatch ? idMatch[1] : '';
     const classMatch = htmlSnippet.match(/\bclass=["']([^"']*)["']/i);
     const rawClass = classMatch ? classMatch[1] : '';
-    if (id || rawClass.trim()) {
-      const classPart = rawClass ? '.' + rawClass.trim().split(/\s+/).filter(Boolean).join('.') : '';
+    const selector = usefulSelector(selectorRaw, tag);
+    if (rawClass.trim()) {
+      const classPart = '.' + rawClass.trim().split(/\s+/).filter(Boolean).join('.');
       return tag + (id ? '#' + id : '') + classPart + label;
     }
-    if (htmlSnippet && !isBareTagHtml(htmlSnippet, tag)) return htmlSnippet + label;
+    if (htmlSnippet && !isUnhelpfulHtml(htmlSnippet, tag)) return htmlSnippet + label;
     if (selector) return (htmlSnippet ? `${htmlSnippet} — ${selector}` : selector) + label;
+    if (id) return tag + '#' + id + label;
     return htmlSnippet || tag;
   }
-  return selector || '—';
+  return usefulSelector(selectorRaw, '') || selectorRaw || '—';
 }
 
 /**
