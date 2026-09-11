@@ -6,6 +6,7 @@ export const US_SERVICES_URL = 'https://about-us.be/contact/';
 export const PRO_PAGES_PER_MONTH = 300;
 export const MAX_PAGES_PER_CUSTOMER_RUN = 50;
 export const TOKEN_TTL_MONTHS = 12;
+export const FREEBIE_PACK_ID = 'freebie';
 
 export const TOKEN_PACKS = [
   {

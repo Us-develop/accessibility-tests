@@ -36,7 +36,7 @@ AUTH_ENABLED=false npm start
 
 Staff can still sign in with `APP_USERNAME` / `APP_PASSWORD`. Customers sign up at `/signup` (email + hashed password, signed `wcag_sid` session, CSRF). Set **`SESSION_SECRET`** in production (defaults to a dev-only value derived from `APP_PASSWORD`). Guest 1-page snapshots can attach to the new account (`/signup?guest=TOKEN`).
 
-The public homepage stays the free 1-page **Gratis snapshot** unless someone is actually signed in. Signed-in scans use **Pro** (300 pages/month) then prepaid **tokens** (1 token = 1 URL, 12-month expiry). A second scan while one is queued or running returns 409. Empty Pro pages and tokens return 429 with buy / subscribe / Us-diensten CTAs. Pricing is at `/pricing`. Draft legal pages (`/terms`, `/privacy`, `/cookies`) are marked for lawyer review.
+The public homepage stays the free 1-page **Gratis snapshot** (one per person, guest or signed-in — not both) unless someone is actually signed in with remaining tokens or Pro. Complimentary token is spent first, then **Pro** (300 pages/month), then prepaid **tokens** (1 token = 1 URL, 12-month expiry). A second scan while one is queued or running returns 409. Empty Pro pages and tokens return 429 with buy / subscribe / Us-diensten CTAs. Pricing is at `/pricing`. Draft legal pages (`/terms`, `/privacy`, `/cookies`) are marked for lawyer review.
 
 ### How scans work (and limitations)
 

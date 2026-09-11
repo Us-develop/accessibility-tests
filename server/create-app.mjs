@@ -14,7 +14,7 @@ import { REPORTS_BASE } from './paths.js';
 import { dbPool, dbUpsertRun, dbGetRun, dbGetLatestRun, dbGetRunByGuestToken, dbInsertLead, dbListLeads } from './db.js';
 import { mergeReportData } from './report-data.js';
 import { readJsonIfExists, isValidReportId } from './fs-utils.js';
-import { listAuditEntries, listRunsForDomain } from './audit-list.js';
+import { listAuditEntries, listRunsForDomain, filterRunsForViewer } from './audit-list.js';
 import { getFtpConfig, ftpDownload, ftpUpload, persistReportArtifactsToFtp } from './ftp.js';
 import { normalizeManualProgress, resolvePersistedManualChecked } from '../manual-checklist.js';
 import { analysisCacheBody, anthropicConfigured, buildWcagAnalysisPayload } from '../anthropic-wcag-analysis.js';
@@ -28,7 +28,9 @@ import {
 } from './run-ids.js';
 import {
   assertPublicHttpUrl,
-  checkGuestRateLimit,
+  checkGuestFreeScan,
+  markGuestFreeScan,
+  guestFreebieClaimed,
   clientIp,
   guestIpHasRunningScan,
   isValidGuestToken,
@@ -52,7 +54,7 @@ import {
   setSessionCookies,
 } from './session.mjs';
 import { authenticateUser, getUserById } from './users.mjs';
-import { attachRunToUser, canAccessDomain, domainsForUser } from './projects.mjs';
+import { attachRunToUser, canAccessDomain, findProjectByDomain, listProjectsForUser } from './projects.mjs';
 import { registerAccountRoutes } from './account-routes.mjs';
 import { registerStripeRoutes, registerStripeWebhook } from './stripe-routes.mjs';
 import { assertCustomerCanScan, consumeScanEntitlement } from './billing.mjs';
@@ -1306,13 +1308,17 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
       const rawUrl = String(req.body?.url || req.body?.urls || '').trim();
       const canonical = await assertPublicHttpUrl(rawUrl);
       urls = [canonical];
-      checkGuestRateLimit(ip);
+      checkGuestFreeScan(req);
       if (guestIpHasRunningScan(ip)) {
         return res.status(409).json({ error: 'A free scan is already running from this network. Please wait for it to finish.' });
       }
     } catch (err) {
       const status = Number(err?.status) || 400;
-      return res.status(status).json({ error: err.message || 'Could not start the scan.' });
+      return res.status(status).json({
+        error: err.message || 'Could not start the scan.',
+        code: err.code || undefined,
+        ctas: err.ctas,
+      });
     }
   }
 
@@ -1392,7 +1398,11 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   }
   if (customerUser) {
     try {
-      const gate = await assertCustomerCanScan(customerUser.id, { pages: processedUrls, domain });
+      const gate = await assertCustomerCanScan(customerUser.id, {
+        pages: processedUrls,
+        domain,
+        guestFreebieUsed: guestFreebieClaimed(req),
+      });
       req._scanGate = gate;
     } catch (err) {
       const status = Number(err?.status) || 400;
@@ -1447,6 +1457,7 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   if (!fullReport) {
     trackGuestRunStart(ip);
     persistGuestToken(guestToken, { domain, runId, url: urls[0], ip });
+    markGuestFreeScan(req, res);
   }
   dbUpsertRun(domain, runId, { ...initialState, statementMeta }).catch((err) => {
     console.error(`[run ${domain}/${runId}] DB initial write failed:`, err.message);
@@ -1859,8 +1870,12 @@ app.get('/api/audits', async (req, res) => {
   try {
     let audits = await listAuditEntries(dbPool, REPORTS_BASE);
     if (req.access?.role === 'customer') {
-      const allowed = new Set(await domainsForUser(req.access.userId));
-      audits = audits.filter((row) => allowed.has(row.domain));
+      const projects = await listProjectsForUser(req.access.userId);
+      const allowed = new Set(projects.map((project) => project.domain));
+      const runCounts = new Map(projects.map((project) => [project.domain, (project.runIds || []).length]));
+      audits = audits
+        .filter((row) => allowed.has(row.domain))
+        .map((row) => ({ ...row, totalRuns: runCounts.get(row.domain) || 0 }));
     }
     return res.json({ audits });
   } catch (err) {
@@ -1875,7 +1890,13 @@ app.get('/api/audits/:domain/runs', async (req, res) => {
     return res.status(403).json({ error: 'You do not have access to this project.' });
   }
   try {
-    const runs = await listRunsForDomain(dbPool, REPORTS_BASE, domain);
+    const project =
+      req.access?.role === 'customer' ? await findProjectByDomain(req.access.userId, domain) : null;
+    const runs = filterRunsForViewer(await listRunsForDomain(dbPool, REPORTS_BASE, domain), {
+      role: req.access?.role,
+      userId: req.access?.userId,
+      allowedRunIds: project?.runIds,
+    });
     return res.json({ domain, runs });
   } catch (err) {
     return res.status(500).json({ error: err.message });

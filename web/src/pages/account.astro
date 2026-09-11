@@ -274,11 +274,12 @@ export const prerender = false;
           paymentsBody.innerHTML = payments
             .map((row) => {
               const date = row.createdAt ? new Date(row.createdAt).toLocaleDateString() : '—';
+              const freebie = row.status === 'freebie';
               return `<tr>
                 <td>${date}</td>
                 <td>${row.description || '—'}</td>
-                <td>${formatMoney(row.amountCents, row.currency)}</td>
-                <td>${row.status || '—'}</td>
+                <td>${freebie ? 'Free' : formatMoney(row.amountCents, row.currency)}</td>
+                <td>${freebie ? 'Freebie' : row.status || '—'}</td>
               </tr>`;
             })
             .join('');

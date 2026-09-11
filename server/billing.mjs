@@ -26,7 +26,7 @@ import {
   isActiveProSubscription,
   periodBounds,
 } from './plan-catalog.mjs';
-import { consumeTokens, getTokenBalance } from './tokens.mjs';
+import { consumeTokens, ensureFreebieLot, getFreebieLot, getTokenBalance } from './tokens.mjs';
 
 const PLANS_FILE = 'plans.json';
 const SUBS_FILE = 'subscriptions.json';
@@ -93,17 +93,19 @@ export async function upsertSubscription(sub) {
   return idx === -1 ? next : rows[idx];
 }
 
-export async function ensureCustomerSubscription(userId) {
+export async function ensureCustomerSubscription(userId, { guestFreebieUsed = false } = {}) {
   const existing = await getSubscription(userId);
   if (existing) {
     if (existing.planId === 'free' || existing.planId === 'starter' || existing.planId === 'agency') {
+      await ensureFreebieLot(userId, { guestFreebieUsed });
       return upsertSubscription({ ...existing, planId: NONE_PLAN_ID });
     }
+    await ensureFreebieLot(userId, { guestFreebieUsed });
     return existing;
   }
   await seedPlans();
   const { start, end } = periodBounds(currentPeriod());
-  return upsertSubscription({
+  const created = await upsertSubscription({
     id: randomBytes(10).toString('hex'),
     userId,
     planId: NONE_PLAN_ID,
@@ -116,6 +118,8 @@ export async function ensureCustomerSubscription(userId) {
     stripeCustomerId: null,
     createdAt: new Date().toISOString(),
   });
+  await ensureFreebieLot(userId, { guestFreebieUsed });
+  return created;
 }
 
 /** @deprecated Use ensureCustomerSubscription */
@@ -156,6 +160,23 @@ export async function listPayments(userId) {
   return loadList(PAYMENTS_FILE, 'payments')
     .filter((p) => p.userId === userId)
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+}
+
+export async function listPaymentsWithFreebie(userId) {
+  const payments = await listPayments(userId);
+  const freebie = await getFreebieLot(userId);
+  if (!freebie) return payments;
+  const remaining = Number(freebie.tokensRemaining || 0);
+  return [
+    {
+      createdAt: freebie.purchasedAt || freebie.createdAt,
+      description: `${remaining} token${remaining === 1 ? '' : 's'}`,
+      amountCents: 0,
+      currency: 'eur',
+      status: 'freebie',
+    },
+    ...payments,
+  ];
 }
 
 export async function insertPayment(payment) {
@@ -199,8 +220,8 @@ function emptyScanMessage() {
  * Guest scans never call this.
  * @returns {Promise<{ plan: object, usage: object, subscription: object, pagesFromPro: number, pagesFromTokens: number, tokens: object }>}
  */
-export async function assertCustomerCanScan(userId, { pages = 1, domain = '' } = {}) {
-  const subscription = await ensureCustomerSubscription(userId);
+export async function assertCustomerCanScan(userId, { pages = 1, domain = '', guestFreebieUsed = false } = {}) {
+  const subscription = await ensureCustomerSubscription(userId, { guestFreebieUsed });
   const pro = isActiveProSubscription(subscription);
   const plan = await getPlan(pro ? subscription.planId : NONE_PLAN_ID);
   const usage = await getUsage(userId, currentPeriod());

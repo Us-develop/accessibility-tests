@@ -24,6 +24,7 @@ const { persistGuestToken } = await import('../server/guest.mjs');
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
 const { grantTokenPack } = await import('../server/tokens.mjs');
 const { writeJob, deleteJob } = await import('../server/queue.mjs');
+const { filterRunsForViewer } = await import('../server/audit-list.js');
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -129,6 +130,21 @@ describe('tenancy', () => {
   it('customers cannot load domains they do not own', async () => {
     assert.equal(await canAccessDomain({ role: 'customer', userId: 'no-such-user' }, 'example.com'), false);
   });
+
+  it('customers only see their own domain runs', () => {
+    const runs = [
+      { runId: 'mine', userId: 'u1' },
+      { runId: 'staff', userId: 'staff' },
+      { runId: 'guest', userId: null },
+    ];
+    assert.equal(filterRunsForViewer(runs, { role: 'staff' }).length, 3);
+    assert.deepEqual(
+      filterRunsForViewer(runs, { role: 'customer', userId: 'u1', allowedRunIds: ['guest'] }).map((row) => row.runId),
+      ['mine', 'guest']
+    );
+    assert.equal(filterRunsForViewer(runs, { role: 'customer', userId: 'u1' }).length, 1);
+    assert.equal(filterRunsForViewer(runs, { role: 'guest' }).length, 0);
+  });
 });
 
 describe('account HTTP', () => {
@@ -163,6 +179,14 @@ describe('account HTTP', () => {
     assert.ok(jar.get('wcag_sid'));
     assert.ok(jar.get('wcag_csrf'));
     assert.equal(jar.get('wcag_ui'), 'c');
+
+    const account = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
+    const bundle = await account.json();
+    assert.equal(account.status, 200);
+    assert.equal(bundle.tokens.tokens, 1);
+    assert.equal(bundle.payments[0].status, 'freebie');
+    assert.equal(bundle.payments[0].description, '1 token');
+    assert.equal(bundle.payments[0].amountCents, 0);
 
     const status = await fetch(`${origin}/api/auth/status`, { headers: { cookie: jar.header() } });
     const st = await status.json();
@@ -255,6 +279,10 @@ describe('account HTTP', () => {
     const data = await account.json();
     assert.equal(account.status, 200);
     assert.equal(data.projects[0]?.domain, 'example.com');
+    const freebie = data.payments.find((row) => row.status === 'freebie');
+    assert.ok(freebie);
+    assert.equal(freebie.description, '0 tokens');
+    assert.equal(freebie.amountCents, 0);
   });
 
   it('exposes db health without a session', async () => {
@@ -278,6 +306,9 @@ describe('account HTTP', () => {
     assert.equal(account.status, 200);
     assert.equal(data.plan?.id, 'none');
     assert.equal(data.tokens?.tokens, 0);
+    const freebie = data.payments.find((row) => row.status === 'freebie');
+    assert.equal(freebie?.description, '0 tokens');
+    assert.equal(freebie?.status, 'freebie');
 
     const saved = await fetch(`${origin}/api/account`, {
       method: 'PUT',
@@ -353,6 +384,9 @@ describe('account HTTP', () => {
       body: JSON.stringify({ username: 'attached@example.com', password: 'newevenlonger1' }),
     });
     jar.store(login.headers);
+    const account = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
+    const data = await account.json();
+    assert.equal(data.tokens?.tokens, 0);
     const run = await fetch(`${origin}/api/run`, {
       method: 'POST',
       headers: {
