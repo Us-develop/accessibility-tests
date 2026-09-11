@@ -130,6 +130,15 @@ export function readAccessFromCookies(req) {
   return null;
 }
 
+/** Astro `Request` or Express-style `{ headers }` — used by SSR history/report pages. */
+export function accessFromWebRequest(request) {
+  const cookie =
+    typeof request?.headers?.get === 'function'
+      ? request.headers.get('cookie') || ''
+      : request?.headers?.cookie || '';
+  return readAccessFromCookies({ headers: { cookie } });
+}
+
 const CSRF_SAFE_PATHS = new Set([
   '/api/auth/login',
   '/api/auth/logout',

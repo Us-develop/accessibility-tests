@@ -14,7 +14,6 @@ import { REPORTS_BASE } from './paths.js';
 import { dbPool, dbUpsertRun, dbGetRun, dbGetLatestRun, dbGetRunByGuestToken, dbInsertLead, dbListLeads } from './db.js';
 import { mergeReportData } from './report-data.js';
 import { readJsonIfExists, isValidReportId } from './fs-utils.js';
-import { listAuditEntries, listRunsForDomain } from './audit-list.js';
 import { getFtpConfig, ftpDownload, ftpUpload, persistReportArtifactsToFtp } from './ftp.js';
 import { normalizeManualProgress, resolvePersistedManualChecked } from '../manual-checklist.js';
 import { analysisCacheBody, anthropicConfigured, buildWcagAnalysisPayload } from '../anthropic-wcag-analysis.js';
@@ -52,7 +51,8 @@ import {
   setSessionCookies,
 } from './session.mjs';
 import { authenticateUser, getUserById } from './users.mjs';
-import { attachRunToUser, canAccessDomain, domainsForUser } from './projects.mjs';
+import { attachRunToUser, canAccessDomain } from './projects.mjs';
+import { canAccessRun, listAuditEntriesForAccess, listRunsForAccess, viewerUserId } from './run-access.mjs';
 import { registerAccountRoutes } from './account-routes.mjs';
 import { assertCustomerCanScan, incrementUsage } from './billing.mjs';
 import {
@@ -75,10 +75,11 @@ function runKey(domain, runId) {
 }
 
 /** Find any in-memory running or queued run for a domain (used by /report/:domain/ redirects). */
-function findRunningRun(runStatusMap, domain) {
+function findRunningRun(runStatusMap, domain, userId = null) {
   for (const [key, value] of runStatusMap.entries()) {
     if (!key.startsWith(`${domain}:`)) continue;
     if (value?.status === 'running' || value?.status === 'queued') {
+      if (userId && value.userId !== userId) continue;
       const runId = key.slice(domain.length + 1);
       return { runId, state: value };
     }
@@ -1485,15 +1486,27 @@ async function resolveStatus({ domain, runId }) {
 }
 
 app.use(async (req, res, next) => {
-  const match = req.path.match(/^\/(?:api\/status|api\/report|api\/audits|report)\/([^/]+)/);
+  const match = req.path.match(/^\/(?:api\/status|api\/report|api\/audits|report)\/([^/]+)(?:\/([^/]+))?/);
   if (!match) return next();
   const domain = match[1];
   if (domain === 'leads' || !isValidDomain(domain)) return next();
-  if (await canAccessDomain(req.access, domain)) return next();
-  if (req.path.startsWith('/api/')) {
-    return res.status(403).json({ error: 'You do not have access to this project.' });
+  if (!(await canAccessDomain(req.access, domain))) {
+    if (req.path.startsWith('/api/')) {
+      return res.status(403).json({ error: 'You do not have access to this project.' });
+    }
+    return res.status(403).send('You do not have access to this project.');
   }
-  return res.status(403).send('You do not have access to this project.');
+  const segment = match[2] || '';
+  const reserved = new Set(['history', 'runs', 'leads']);
+  if (segment && !reserved.has(segment) && isValidRunId(segment)) {
+    if (!(await canAccessRun(req.access, domain, segment))) {
+      if (req.path.startsWith('/api/')) {
+        return res.status(403).json({ error: 'You do not have access to this scan.' });
+      }
+      return res.status(403).send('You do not have access to this scan.');
+    }
+  }
+  return next();
 });
 
 app.get('/api/status/:domain/:runId', async (req, res) => {
@@ -1508,19 +1521,8 @@ app.get('/api/status/:domain/:runId', async (req, res) => {
 app.get('/api/status/:id', async (req, res) => {
   const domain = req.params.id;
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
-  const running = findRunningRun(runStatus, domain);
-  let runId = running?.runId || null;
-  if (!runId) {
-    if (dbPool) {
-      try {
-        const latest = await dbGetLatestRun(domain);
-        if (latest) runId = latest.runId;
-      } catch (err) {
-        console.error(`[domain ${domain}] DB latest lookup failed:`, err.message);
-      }
-    }
-  }
-  if (!runId) runId = latestRunIdOnDisk(domain);
+  const running = findRunningRun(runStatus, domain, viewerUserId(req.access));
+  const runId = running?.runId || (await resolveLatestRunIdForDomain(domain, req.access));
   if (!runId) return res.status(404).json({ error: 'Run not found' });
   const out = await resolveStatus({ domain, runId });
   if (!out) return res.status(404).json({ error: 'Run not found' });
@@ -1825,11 +1827,7 @@ app.post('/api/jira/sprint', async (req, res) => {
 
 app.get('/api/audits', async (req, res) => {
   try {
-    let audits = await listAuditEntries(dbPool, REPORTS_BASE);
-    if (req.access?.role === 'customer') {
-      const allowed = new Set(await domainsForUser(req.access.userId));
-      audits = audits.filter((row) => allowed.has(row.domain));
-    }
+    const audits = await listAuditEntriesForAccess(req.access);
     return res.json({ audits });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1843,7 +1841,7 @@ app.get('/api/audits/:domain/runs', async (req, res) => {
     return res.status(403).json({ error: 'You do not have access to this project.' });
   }
   try {
-    const runs = await listRunsForDomain(dbPool, REPORTS_BASE, domain);
+    const runs = await listRunsForAccess(req.access, domain);
     return res.json({ domain, runs });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1897,13 +1895,18 @@ async function finalizeSuccessfulRun({
   return false;
 }
 
-async function resolveLatestRunIdForDomain(domain) {
+async function resolveLatestRunIdForDomain(domain, access) {
   if (!isValidDomain(domain)) return null;
+  const userId = viewerUserId(access);
   if (dbPool) {
     try {
-      const latest = await dbGetLatestRun(domain);
+      const latest = await dbGetLatestRun(domain, { userId });
       if (latest?.runId) return latest.runId;
     } catch {}
+  }
+  if (userId) {
+    const runs = await listRunsForAccess(access, domain);
+    return runs[0]?.runId || null;
   }
   return latestRunIdOnDisk(domain);
 }
@@ -2364,11 +2367,11 @@ app.get('/report/:domain/history/', (req, res, next) => next());
 app.get('/report/:domain', async (req, res) => {
   const domain = req.params.domain;
   if (!isValidDomain(domain)) return res.status(400).send('Invalid domain');
-  const running = findRunningRun(runStatus, domain);
+  const running = findRunningRun(runStatus, domain, viewerUserId(req.access));
   if (running) {
     return res.redirect(`${loadingPath}?domain=${encodeURIComponent(domain)}&runId=${encodeURIComponent(running.runId)}`);
   }
-  const runId = await resolveLatestRunIdForDomain(domain);
+  const runId = await resolveLatestRunIdForDomain(domain, req.access);
   if (!runId) return res.status(404).send('Report not found');
   const target = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`;
   return res.redirect(req.path.endsWith('/') ? 302 : 301, target);
@@ -2377,11 +2380,11 @@ app.get('/report/:domain', async (req, res) => {
 app.get('/report/:domain/', async (req, res) => {
   const domain = req.params.domain;
   if (!isValidDomain(domain)) return res.status(400).send('Invalid domain');
-  const running = findRunningRun(runStatus, domain);
+  const running = findRunningRun(runStatus, domain, viewerUserId(req.access));
   if (running) {
     return res.redirect(`${loadingPath}?domain=${encodeURIComponent(domain)}&runId=${encodeURIComponent(running.runId)}`);
   }
-  const runId = await resolveLatestRunIdForDomain(domain);
+  const runId = await resolveLatestRunIdForDomain(domain, req.access);
   if (!runId) return res.status(404).send('Report not found');
   return res.redirect(302, `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`);
 });

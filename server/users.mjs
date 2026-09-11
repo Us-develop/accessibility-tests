@@ -111,7 +111,11 @@ async function hydrateJsonSidecar(user) {
          FROM projects p
         WHERE r.user_id IS NULL
           AND r.id = p.domain
-          AND p.user_id = $1`,
+          AND p.user_id = $1
+          AND NOT EXISTS (
+            SELECT 1 FROM projects other
+             WHERE other.domain = r.id AND other.user_id <> $1
+          )`,
       [user.id]
     );
   } catch (err) {

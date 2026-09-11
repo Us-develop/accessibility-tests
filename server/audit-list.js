@@ -139,21 +139,30 @@ export async function listAuditEntries(dbPool, reportsBase) {
 
 /**
  * Per-domain history: every run we have, newest first. Merges DB rows + filesystem dirs.
+ * Pass `userId` to restrict to that customer's runs. Disk-only extras then need `allowedRunIds`.
  */
-export async function listRunsForDomain(dbPool, reportsBase, domain) {
+export async function listRunsForDomain(dbPool, reportsBase, domain, options = {}) {
   if (!isValidReportId(domain)) return [];
+  const userId = options.userId || null;
+  const allowedRunIds = options.allowedRunIds instanceof Set
+    ? options.allowedRunIds
+    : Array.isArray(options.allowedRunIds)
+      ? new Set(options.allowedRunIds)
+      : null;
   const byRun = new Map();
 
   if (dbPool) {
     try {
+      const params = userId ? [domain, userId] : [domain];
+      const userClause = userId ? 'AND user_id = $2' : '';
       const { rows } = await dbPool.query(
         `SELECT id, run_id, status, urls, processed_urls, requested_urls,
                 result_json, updated_at
            FROM runs
-          WHERE id = $1
+          WHERE id = $1 ${userClause}
           ORDER BY updated_at DESC
           LIMIT 200`,
-        [domain]
+        params
       );
       rows.forEach((row) => {
         const resultJson = row.result_json || null;
@@ -177,6 +186,7 @@ export async function listRunsForDomain(dbPool, reportsBase, domain) {
   try {
     listRunIdsForDomain(domain).forEach((runId) => {
       if (byRun.has(runId)) return;
+      if (userId && (!allowedRunIds || !allowedRunIds.has(runId))) return;
       const resultsFile = join(reportsBase, domain, runId, 'accessibility-results.json');
       const resultJson = readJsonIfExists(resultsFile);
       if (!resultJson) return;

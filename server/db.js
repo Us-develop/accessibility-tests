@@ -317,17 +317,20 @@ export async function dbGetRun(domain, runId) {
 }
 
 /** Fetch the latest run for a domain (by updated_at). */
-export async function dbGetLatestRun(domain) {
+export async function dbGetLatestRun(domain, options = {}) {
   if (!dbPool || !domain) return null;
+  const userId = options.userId || null;
+  const params = userId ? [domain, userId] : [domain];
+  const userClause = userId ? 'AND user_id = $2' : '';
   const { rows } = await dbPool.query(
     `SELECT id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
             notify_requested, notify_email, result_json, manual_progress_json, updated_at,
             tier, guest_token, user_id
        FROM runs
-      WHERE id = $1
+      WHERE id = $1 ${userClause}
       ORDER BY updated_at DESC
       LIMIT 1`,
-    [domain]
+    params
   );
   return mapRunRow(rows[0]);
 }
@@ -894,6 +897,7 @@ async function backfillRunUserIds() {
       FROM projects p
      WHERE r.user_id IS NULL
        AND r.id = p.domain
+       AND (SELECT COUNT(*) FROM projects x WHERE x.domain = r.id) = 1
   `);
 }
 

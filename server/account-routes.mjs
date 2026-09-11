@@ -78,10 +78,12 @@ async function scansForUser(userId, limit = 200) {
   const projects = await listProjectsForUser(userId);
   const out = [];
   for (const project of projects) {
-    const runs = await listRunsForDomain(null, REPORTS_BASE, project.domain);
     const allowed = new Set(project.runIds || []);
+    const runs = await listRunsForDomain(null, REPORTS_BASE, project.domain, {
+      userId,
+      allowedRunIds: allowed,
+    });
     for (const run of runs) {
-      if (allowed.size && !allowed.has(run.runId)) continue;
       out.push({
         project_domain: project.domain,
         scan_date: run.updatedAt ? new Date(run.updatedAt).toISOString() : '',
