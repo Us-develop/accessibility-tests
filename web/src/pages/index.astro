@@ -72,9 +72,10 @@ export const prerender = false;
         <div class="fade-up customer-only" hidden={!ssrCustomer} style="text-align: left; margin-bottom: 40px;">
           <span class="eyebrow"><span class="dot"></span>Your account · 1 page saved to your projects</span>
           <h1 class="run-hero-title">Scan a page into your account</h1>
-          <p class="p-large muted" style="max-width: 620px;">
+            <p class="p-large muted" style="max-width: 620px;">
             Signed-in scans are saved to your projects. Sitemap and multi-page runs stay on the staff tool for now.
           </p>
+          <p id="customer-usage" class="muted" style="max-width: 620px; margin-top: 8px;"></p>
         </div>
 
         <form id="customer-run-form" class="card customer-only" hidden={!ssrCustomer} style="padding: 0; overflow: hidden;">
@@ -328,12 +329,35 @@ export const prerender = false;
     fileNameEl.textContent = file ? file.name : 'No file selected';
   });
 
+  async function fillCustomerUsage() {
+    const el = document.getElementById('customer-usage');
+    if (!el) return;
+    try {
+      const res = await fetch(wcUrl('/api/account/usage'), { credentials: wcCreds() });
+      if (!res.ok) {
+        el.textContent = '';
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      const used = Number(data.scansUsed || 0);
+      const max = data.plan?.maxScansPerMonth;
+      const planName = data.plan?.name || 'Free';
+      el.textContent =
+        max == null
+          ? `${planName} plan · ${used} scan(s) this month`
+          : `${planName} plan · ${used} of ${max} scans this month`;
+    } catch {
+      el.textContent = '';
+    }
+  }
+
   async function refreshMode() {
     try {
       const res = await fetch(wcUrl('/api/auth/status'), { credentials: wcCreds() });
       const data = await res.json().catch(() => ({}));
       const signedIn = data.authEnabled === true && data.authenticated === true;
       applyRole(signedIn ? data.role || 'staff' : 'guest');
+      if (data.role === 'customer') await fillCustomerUsage();
     } catch {
       applyRole('guest');
     }
