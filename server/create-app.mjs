@@ -54,6 +54,7 @@ import {
 import { authenticateUser, getUserById } from './users.mjs';
 import { attachRunToUser, canAccessDomain, domainsForUser } from './projects.mjs';
 import { registerAccountRoutes } from './account-routes.mjs';
+import { registerStripeRoutes, registerStripeWebhook } from './stripe-routes.mjs';
 import { assertCustomerCanScan, incrementUsage } from './billing.mjs';
 import {
   customerHasActiveScan,
@@ -132,6 +133,7 @@ function isValidEmail(email) {
 function isIndexablePath(pathname) {
   if (pathname === '/' || pathname === '') return true;
   if (pathname === '/limitations') return true;
+  if (pathname === '/pricing') return true;
   if (pathname === '/signup' || pathname === '/forgot' || pathname === '/reset') return true;
   if (pathname === '/teaser' || pathname.startsWith('/teaser/')) return true;
   return false;
@@ -142,11 +144,13 @@ const PUBLIC_GET_PATHS = new Set([
   '/',
   '/loading',
   '/limitations',
+  '/pricing',
   '/signup',
   '/forgot',
   '/reset',
   '/teaser',
   '/api/config',
+  '/api/billing/config',
   '/api/health/db',
   '/robots.txt',
   '/favicon.png',
@@ -160,7 +164,7 @@ function isGuestOpenPath(req) {
     if (PUBLIC_GET_PREFIXES.some((prefix) => p.startsWith(prefix))) return true;
   }
   if (req.method === 'POST') {
-    if (p === '/api/run' || p === '/api/lead' || p === '/api/access-request') return true;
+    if (p === '/api/run' || p === '/api/lead' || p === '/api/access-request' || p === '/api/stripe/webhook') return true;
     if (p.startsWith('/api/auth/')) return true;
   }
   return false;
@@ -750,6 +754,8 @@ app.use((req, res, next) => {
   next();
 });
 
+registerStripeWebhook(app);
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
@@ -1250,6 +1256,7 @@ app.use((req, res, next) => {
 });
 
 registerAccountRoutes(app, { readGuestTokenRecord });
+registerStripeRoutes(app);
 
 app.post('/api/run', upload.single('file'), async (req, res) => {
   const staff = requestIsStaff(req);

@@ -36,7 +36,7 @@ AUTH_ENABLED=false npm start
 
 Staff can still sign in with `APP_USERNAME` / `APP_PASSWORD`. Customers sign up at `/signup` (email + hashed password, signed `wcag_sid` session, CSRF). Set **`SESSION_SECRET`** in production (defaults to a dev-only value derived from `APP_PASSWORD`). Guest 1-page snapshots can attach to the new account (`/signup?guest=TOKEN`).
 
-The public homepage stays the free 1-page scan unless someone is actually signed in. Signed-in customers share a restart-safe scan queue (`SCAN_MAX_CONCURRENT`, default 3, files under `reports/_queue/`) and one active scan per account. Monthly plan caps still return 429; a second scan while one is queued or running returns 409. Stripe Checkout and legal pages (`/terms`, `/privacy`, `/cookies`, `/pricing`) are not wired yet.
+The public homepage stays the free 1-page scan unless someone is actually signed in. Signed-in customers share a restart-safe scan queue (`SCAN_MAX_CONCURRENT`, default 3, files under `reports/_queue/`) and one active scan per account. Monthly plan caps still return 429; a second scan while one is queued or running returns 409. Paid plans go through Stripe Checkout (`/pricing`); legal pages (`/terms`, `/privacy`, `/cookies`) are not wired yet.
 
 ### How scans work (and limitations)
 
@@ -79,6 +79,24 @@ To store run status/results/manual checklist progress **and** customer accounts 
 When `DATABASE_URL` is set, the server creates `runs`, `leads`, `users`, `projects`, `plans`, `subscriptions`, `usage`, and `payments` tables. Existing `reports/_saas/users.json` and `projects.json` are copied in on first boot. Scan HTML/screenshots stay on disk under `reports/<domain>/<runId>/`.
 
 If `DATABASE_URL` is not set, accounts fall back to those JSON files (fine for local tests; not safe for a campaign).
+
+### Stripe billing
+
+Paid plans (Starter €29, Pro €79, Agency €199 per month) use **Stripe Checkout** in `mode: 'subscription'` and the **Customer Portal**. Do not put secret keys in git. Prefer a [restricted API key](https://docs.stripe.com/keys.md#manage-your-api-keys) (`rk_`) over `sk_`. Use a Stripe sandbox for development, not live keys.
+
+On the VPS, put these in `/etc/accessibility-db.env` (or a sibling env file loaded by systemd) and restart:
+
+| Variable | Purpose |
+| --- | --- |
+| `STRIPE_SECRET_KEY` | Restricted (preferred) or secret key. |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret for `POST /api/stripe/webhook`. Required — plan changes are applied from webhooks, not the success page. |
+| `STRIPE_PRICE_STARTER` / `STRIPE_PRICE_PRO` / `STRIPE_PRICE_AGENCY` | Price IDs from Dashboard or `node scripts/stripe-catalog.mjs`. |
+| `STRIPE_AUTOMATIC_TAX` | Default `true`. Stripe Tax still collects **€0** until Tax Settings have a head office address **and** an active Collecting registration for the customer’s country. |
+| `PUBLIC_BASE_URL` | Must be the live origin (`https://wcag.about-us.be`) so Checkout return URLs work. |
+
+Create one Stripe Product per plan (do not put Starter and Pro prices on the same product). Confirm a [product tax code](https://docs.stripe.com/tax/tax-codes) with your advisor before going live. Point a webhook endpoint at `https://wcag.about-us.be/api/stripe/webhook` for `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.*`, `invoice.paid`, and `invoice.payment_failed`.
+
+Until those env vars are set, `POST /api/billing/checkout` and the portal return **503**. `/pricing` still lists the catalog.
 
 Monitoring:
 

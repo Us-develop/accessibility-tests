@@ -1,0 +1,101 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+
+export const prerender = false;
+const canceled = Astro.url.searchParams.get('billing') === 'cancel';
+---
+<Layout title="Plans · Us" indexable={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb="Plans" />
+    <main class="app-main">
+      <article class="container-narrow page-article">
+        <span class="eyebrow"><span class="dot"></span>Monthly billing · EUR</span>
+        <h1>Plans for saved scans</h1>
+        <p class="muted p-large prose-width prose-lead">
+          The public homepage stays a free 1-page snapshot. Signed-in plans raise the monthly scan cap and pages per scan.
+          VAT is calculated by Stripe Tax when a registration is active in the customer’s country.
+        </p>
+        <p id="pricing-msg" class="muted" role="status">{canceled ? 'Checkout was cancelled. No charge was made.' : ''}</p>
+        <div id="pricing-grid" class="pricing-grid"></div>
+        <p class="muted" style="font-size: 13px; max-width: 640px; margin-top: 24px;">
+          Prices are exclusive of tax. Stripe Tax collects VAT/GST only after you add a
+          <a class="link" href="https://docs.stripe.com/tax/registering">Collecting registration</a>
+          and a head office address in the Stripe Dashboard. Confirm obligations with your tax advisor
+          (Belgium domestic VAT and Union OSS for EU B2C are the usual topics).
+        </p>
+      </article>
+    </main>
+  </div>
+</Layout>
+<script>
+  const api = (p) => (typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(p) : p);
+  const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
+  const headers = () =>
+    typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' };
+
+  function money(cents) {
+    return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR' }).format(Number(cents || 0) / 100);
+  }
+
+  function featureLine(plan) {
+    const scans = plan.maxScansPerMonth == null ? 'Unlimited scans / month' : `${plan.maxScansPerMonth} scans / month`;
+    const pages = plan.maxPagesPerScan == null ? 'Unlimited pages per scan' : `${plan.maxPagesPerScan} page(s) per scan`;
+    const projects = plan.maxProjects == null ? 'Unlimited projects' : `${plan.maxProjects} projects`;
+    return `${scans} · ${pages} · ${projects}`;
+  }
+
+  async function load() {
+    const grid = document.getElementById('pricing-grid');
+    const msg = document.getElementById('pricing-msg');
+    const [cfgRes, authRes] = await Promise.all([
+      fetch(api('/api/billing/config'), { credentials: creds }),
+      fetch(api('/api/auth/status'), { credentials: creds }),
+    ]);
+    const cfg = await cfgRes.json().catch(() => ({}));
+    const auth = await authRes.json().catch(() => ({}));
+    const customer = auth.authenticated === true && auth.role === 'customer';
+    const plans = Array.isArray(cfg.plans) ? cfg.plans : [];
+    if (!grid) return;
+    grid.innerHTML = plans
+      .map((plan) => {
+        const paid = plan.id !== 'free';
+        const cta = !paid
+          ? `<a class="btn btn-ghost" href="${customer ? '/' : '/signup'}">${customer ? 'Stay on Free' : 'Create a free account'}</a>`
+          : customer
+            ? `<button type="button" class="btn btn-primary pricing-checkout" data-plan="${plan.id}" ${plan.checkoutReady && cfg.configured ? '' : 'disabled'}>${cfg.configured ? 'Choose ' + plan.name : 'Billing not connected'}</button>`
+            : `<a class="btn btn-primary" href="/signup">Sign in to upgrade</a>`;
+        return `<section class="card pricing-card">
+          <h2>${plan.name}</h2>
+          <p class="pricing-price">${plan.priceCents ? money(plan.priceCents) + '<span> / month</span>' : '€0'}</p>
+          <p class="muted">${featureLine(plan)}</p>
+          <div class="pricing-cta">${cta}</div>
+        </section>`;
+      })
+      .join('');
+    grid.querySelectorAll('.pricing-checkout').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const planId = btn.getAttribute('data-plan');
+        btn.disabled = true;
+        const res = await fetch(api('/api/billing/checkout'), {
+          method: 'POST',
+          credentials: creds,
+          headers: headers(),
+          body: JSON.stringify({ planId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.url) {
+          window.location.href = data.url;
+          return;
+        }
+        if (msg) msg.textContent = data.error || 'Could not start checkout.';
+        btn.disabled = false;
+      });
+    });
+  }
+
+  load().catch(() => {
+    const msg = document.getElementById('pricing-msg');
+    if (msg) msg.textContent = 'Could not load plans.';
+  });
+</script>

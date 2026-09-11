@@ -17,6 +17,10 @@ export const prerender = false;
           <p id="plan-name" class="muted"></p>
           <div class="usage-bar" aria-hidden="true"><span id="usage-fill"></span></div>
           <p id="usage-label" class="muted"></p>
+          <div id="billing-actions" class="guest-cta-row" hidden>
+            <a class="btn btn-primary" href="/pricing">Change plan</a>
+            <button type="button" class="btn btn-ghost" id="manage-billing-btn">Manage billing</button>
+          </div>
         </section>
 
         <section id="contact-card" class="card stack-form account-section" hidden>
@@ -68,7 +72,7 @@ export const prerender = false;
 
         <section id="payments-card" class="card stack-form account-section" hidden>
           <h2>Payment history</h2>
-          <p id="payments-empty" class="muted">No payments yet. Stripe billing is not connected.</p>
+          <p id="payments-empty" class="muted">No payments yet.</p>
           <div class="table-wrap" id="payments-table-wrap" hidden>
             <table class="account-table">
               <thead>
@@ -173,6 +177,8 @@ export const prerender = false;
           ? `${used} scan(s) this month · unlimited on this plan`
           : `${used} of ${max} scans this month`;
       }
+      const billingActions = document.getElementById('billing-actions');
+      if (billingActions) billingActions.hidden = false;
     }
 
     const projects = Array.isArray(data.projects) ? data.projects : [];
@@ -281,6 +287,19 @@ export const prerender = false;
     const res = await fetch(api('/api/account/delete'), { method: 'POST', credentials: creds, headers: headers() });
     if (res.ok) window.location.href = '/';
   });
+
+  document.getElementById('manage-billing-btn')?.addEventListener('click', async () => {
+    const res = await fetch(api('/api/billing/portal'), { method: 'POST', credentials: creds, headers: headers() });
+    const data = await res.json().catch(() => ({}));
+    if (data.url) {
+      window.location.href = data.url;
+      return;
+    }
+    setMsg(data.error || 'Could not open the billing portal.');
+  });
+
+  const billingFlag = new URLSearchParams(window.location.search).get('billing');
+  if (billingFlag === 'success') setMsg('Payment received. Your plan updates as soon as Stripe confirms the subscription.');
 
   attachGuestIfPresent().finally(load);
 </script>

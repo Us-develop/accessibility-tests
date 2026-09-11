@@ -67,6 +67,8 @@ export const prerender = false;
           Prefer expert support? <a class="link" href="https://about-us.be/contact/">Talk to a WCAG expert</a>
           ·
           <a class="link" href="/signup">Create an account</a>
+          ·
+          <a class="link" href="/pricing">Plans</a>
         </p>
 
         <div class="fade-up customer-only" hidden={!ssrCustomer} style="text-align: left; margin-bottom: 40px;">
@@ -76,6 +78,9 @@ export const prerender = false;
             Signed-in scans are saved to your projects. Sitemap and multi-page runs stay on the staff tool for now.
           </p>
           <p id="customer-usage" class="muted" style="max-width: 620px; margin-top: 8px;"></p>
+          <p class="muted" style="max-width: 620px; margin-top: 8px;">
+            <a class="link" href="/pricing">View plans</a>
+          </p>
         </div>
 
         <form id="customer-run-form" class="card customer-only" hidden={!ssrCustomer} style="padding: 0; overflow: hidden;">
