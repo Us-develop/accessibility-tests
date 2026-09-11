@@ -16,6 +16,7 @@ process.env.AUTH_EMAIL_VERIFY = 'auto';
 process.env.DEFER_ROOT_LOGIN_TO_SHELL = 'true';
 
 const { listRunsForDomain } = await import('../server/audit-list.js');
+const { mergeRunIds } = await import('../server/db.js');
 const { attachRunToUser, upsertProject } = await import('../server/projects.mjs');
 const { canAccessRun, listAuditEntriesForAccess, listRunsForAccess, viewerUserId } = await import(
   '../server/run-access.mjs'
@@ -116,6 +117,18 @@ describe('history page wiring', () => {
     const api = readFileSync(join(repoRoot, 'server/create-app.mjs'), 'utf8');
     assert.match(api, /listRunsForAccess\(req\.access, domain\)/);
     assert.match(api, /canAccessRun\(req\.access, domain, segment\)/);
+    assert.match(api, /'manual-progress'/);
+    assert.match(api, /'urls'/);
+    assert.match(api, /resolveLatestRunIdForDomain\(domain, req\.access\)/);
+    const db = readFileSync(join(repoRoot, 'server/db.js'), 'utf8');
+    assert.match(db, /ADD COLUMN IF NOT EXISTS run_ids JSONB/);
+    assert.match(db, /runIdsForProject/);
+  });
+});
+
+describe('mergeRunIds', () => {
+  it('keeps stored disk attachments alongside owned db runs', () => {
+    assert.deepEqual(mergeRunIds(['db-run'], ['disk-run', 'db-run']), ['db-run', 'disk-run']);
   });
 });
 
@@ -215,6 +228,26 @@ describe('HTTP customer run isolation', () => {
         }
       );
       assert.notEqual(own.status, 403);
+
+      const urls = await fetch(`${origin}/api/report/${encodeURIComponent(domain)}/urls`, {
+        headers: { cookie: a.jar.header() },
+      });
+      const urlsBody = await urls.json();
+      assert.equal(urls.status, 200, JSON.stringify(urlsBody));
+      assert.equal(urlsBody.runId, runA);
+
+      const progress = await fetch(
+        `${origin}/api/report/${encodeURIComponent(domain)}/manual-progress`,
+        { headers: { cookie: a.jar.header() } }
+      );
+      assert.equal(progress.status, 200, await progress.text());
+
+      const otherUrls = await fetch(`${origin}/api/report/${encodeURIComponent(domain)}/urls`, {
+        headers: { cookie: b.jar.header() },
+      });
+      const otherUrlsBody = await otherUrls.json();
+      assert.equal(otherUrls.status, 200, JSON.stringify(otherUrlsBody));
+      assert.equal(otherUrlsBody.runId, runB);
 
       const staffJar = new CookieJar();
       const staffLogin = await fetch(`${origin}/api/auth/login`, {

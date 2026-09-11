@@ -47,18 +47,17 @@ export async function upsertProject({ userId, domain, name, runId }) {
   if (!userId || !d) return null;
   if (useDb()) {
     const existing = await dbFindProjectByDomain(userId, d);
+    const runIds = [...(existing?.runIds || [])];
+    if (runId && !runIds.includes(runId)) runIds.push(runId);
     const project = await dbUpsertProject({
       id: existing?.id || randomBytes(10).toString('hex'),
       userId,
       domain: d,
       name: String(name || existing?.name || d).slice(0, 200),
-      runIds: existing?.runIds || [],
+      runIds,
       createdAt: existing?.createdAt,
     });
     if (runId) await dbSetRunUserId(d, runId, userId);
-    if (project && runId && !project.runIds.includes(runId)) {
-      project.runIds = [...project.runIds, runId];
-    }
     return project;
   }
   const projects = load();

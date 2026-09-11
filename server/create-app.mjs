@@ -70,6 +70,16 @@ const DELIVERABLE_FILES = [
   'accessibility-statement.html',
 ];
 
+/** Path segments under /report|/api/report|/api/audits that are not run ids. */
+const RESERVED_REPORT_SEGMENTS = new Set([
+  'history',
+  'runs',
+  'leads',
+  'manual-progress',
+  'urls',
+  'wcag-analysis',
+]);
+
 function runKey(domain, runId) {
   return `${domain}:${runId}`;
 }
@@ -1497,8 +1507,7 @@ app.use(async (req, res, next) => {
     return res.status(403).send('You do not have access to this project.');
   }
   const segment = match[2] || '';
-  const reserved = new Set(['history', 'runs', 'leads']);
-  if (segment && !reserved.has(segment) && isValidRunId(segment)) {
+  if (segment && !RESERVED_REPORT_SEGMENTS.has(segment) && isValidRunId(segment)) {
     if (!(await canAccessRun(req.access, domain, segment))) {
       if (req.path.startsWith('/api/')) {
         return res.status(403).json({ error: 'You do not have access to this scan.' });
@@ -1974,7 +1983,7 @@ app.get('/api/report/:domain/:runId/manual-progress', async (req, res) => {
 app.get('/api/report/:id/manual-progress', async (req, res) => {
   const domain = req.params.id;
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
-  const runId = await resolveLatestRunIdForDomain(domain);
+  const runId = await resolveLatestRunIdForDomain(domain, req.access);
   if (!runId) return res.json({ checked: [] });
   res.json(await readManualProgress(domain, runId));
 });
@@ -2024,7 +2033,7 @@ app.get('/api/report/:domain/:runId/urls', async (req, res) => {
 app.get('/api/report/:id/urls', async (req, res) => {
   const domain = req.params.id;
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
-  const runId = await resolveLatestRunIdForDomain(domain);
+  const runId = await resolveLatestRunIdForDomain(domain, req.access);
   if (!runId) return res.status(404).json({ error: 'Report not found' });
   const out = await readUrlsForRun(domain, runId);
   if (!out) return res.status(404).json({ error: 'Report not found' });
@@ -2079,7 +2088,7 @@ app.put('/api/report/:domain/:runId/manual-progress', async (req, res) => {
 app.put('/api/report/:id/manual-progress', async (req, res) => {
   const domain = req.params.id;
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
-  const runId = await resolveLatestRunIdForDomain(domain);
+  const runId = await resolveLatestRunIdForDomain(domain, req.access);
   if (!runId) return res.status(404).json({ error: 'Report not found' });
   const checked = req.body?.checked;
   if (!Array.isArray(checked)) return res.status(400).json({ error: 'Body must include checked array' });

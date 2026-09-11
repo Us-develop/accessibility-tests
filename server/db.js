@@ -172,6 +172,7 @@ export async function initDb() {
     )
   `);
   await dbPool.query(`CREATE INDEX IF NOT EXISTS projects_user_idx ON projects (user_id)`);
+  await dbPool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS run_ids JSONB NOT NULL DEFAULT '[]'::jsonb`);
 
   await dbPool.query(`
     CREATE TABLE IF NOT EXISTS subscriptions (
@@ -534,6 +535,34 @@ export async function dbDeleteUser(id) {
   await dbPool.query(`DELETE FROM users WHERE id = $1`, [id]);
 }
 
+export function mergeRunIds(...lists) {
+  const out = [];
+  const seen = new Set();
+  for (const list of lists) {
+    if (!list) continue;
+    const items = Array.isArray(list) ? list : [];
+    for (const id of items) {
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+function parseRunIds(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 function mapProjectRow(row) {
   if (!row) return null;
   return {
@@ -541,75 +570,93 @@ function mapProjectRow(row) {
     userId: row.user_id,
     domain: row.domain,
     name: row.name || row.domain,
-    runIds: Array.isArray(row.run_ids) ? row.run_ids : [],
+    runIds: parseRunIds(row.run_ids),
     createdAt: isoOrNull(row.created_at),
     updatedAt: isoOrNull(row.updated_at),
   };
 }
 
+async function runIdsForProject(userId, domain, storedRunIds = []) {
+  if (!dbPool || !userId || !domain) return mergeRunIds(storedRunIds);
+  const stored = parseRunIds(storedRunIds);
+  const { rows: mine } = await dbPool.query(
+    `SELECT run_id FROM runs WHERE user_id = $1 AND id = $2 ORDER BY updated_at DESC`,
+    [userId, domain]
+  );
+  let blocked = new Set();
+  if (stored.length) {
+    const { rows: claimed } = await dbPool.query(
+      `SELECT run_id FROM runs
+        WHERE id = $1
+          AND run_id = ANY($2::text[])
+          AND user_id IS NOT NULL
+          AND user_id <> $3`,
+      [domain, stored, userId]
+    );
+    blocked = new Set(claimed.map((row) => row.run_id));
+  }
+  return mergeRunIds(
+    mine.map((row) => row.run_id),
+    stored.filter((id) => !blocked.has(id))
+  );
+}
+
 export async function dbUpsertProject(project) {
   if (!dbPool || !project?.id || !project.userId || !project.domain) return null;
+  const runIdsJson = Array.isArray(project.runIds) ? JSON.stringify(project.runIds) : null;
   const { rows } = await dbPool.query(
     `
-      INSERT INTO projects (id, user_id, domain, name, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()), NOW())
+      INSERT INTO projects (id, user_id, domain, name, run_ids, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, COALESCE($5::jsonb, '[]'::jsonb), COALESCE($6::timestamptz, NOW()), NOW())
       ON CONFLICT (user_id, domain) DO UPDATE SET
         name = COALESCE(EXCLUDED.name, projects.name),
+        run_ids = COALESCE(EXCLUDED.run_ids, projects.run_ids),
         updated_at = NOW()
-      RETURNING id, user_id, domain, name, created_at, updated_at
+      RETURNING id, user_id, domain, name, run_ids, created_at, updated_at
     `,
     [
       project.id,
       project.userId,
       String(project.domain).toLowerCase(),
       project.name || project.domain,
+      runIdsJson,
       project.createdAt || null,
     ]
   );
-  const mapped = mapProjectRow(rows[0]);
-  if (mapped) mapped.runIds = Array.isArray(project.runIds) ? project.runIds : [];
-  return mapped;
+  return mapProjectRow(rows[0]);
 }
 
 export async function dbListProjectsForUser(userId) {
   if (!dbPool || !userId) return [];
   const { rows } = await dbPool.query(
-    `SELECT id, user_id, domain, name, created_at, updated_at FROM projects WHERE user_id = $1 ORDER BY updated_at DESC`,
+    `SELECT id, user_id, domain, name, run_ids, created_at, updated_at FROM projects WHERE user_id = $1 ORDER BY updated_at DESC`,
     [userId]
   );
   const projects = rows.map(mapProjectRow);
-  const runRows = await dbPool.query(
-    `SELECT id AS domain, run_id FROM runs WHERE user_id = $1 ORDER BY updated_at DESC`,
-    [userId]
+  return Promise.all(
+    projects.map(async (project) => ({
+      ...project,
+      runIds: await runIdsForProject(userId, project.domain, project.runIds),
+    }))
   );
-  const byDomain = new Map();
-  for (const row of runRows.rows) {
-    if (!byDomain.has(row.domain)) byDomain.set(row.domain, []);
-    byDomain.get(row.domain).push(row.run_id);
-  }
-  return projects.map((p) => ({ ...p, runIds: byDomain.get(p.domain) || p.runIds || [] }));
 }
 
 export async function dbFindProjectByDomain(userId, domain) {
   if (!dbPool || !userId || !domain) return null;
   const { rows } = await dbPool.query(
-    `SELECT id, user_id, domain, name, created_at, updated_at FROM projects WHERE user_id = $1 AND domain = $2 LIMIT 1`,
+    `SELECT id, user_id, domain, name, run_ids, created_at, updated_at FROM projects WHERE user_id = $1 AND domain = $2 LIMIT 1`,
     [userId, String(domain).toLowerCase()]
   );
   const project = mapProjectRow(rows[0]);
   if (!project) return null;
-  const runRows = await dbPool.query(
-    `SELECT run_id FROM runs WHERE user_id = $1 AND id = $2 ORDER BY updated_at DESC`,
-    [userId, project.domain]
-  );
-  project.runIds = runRows.rows.map((r) => r.run_id);
+  project.runIds = await runIdsForProject(userId, project.domain, project.runIds);
   return project;
 }
 
 export async function dbGetProject(id) {
   if (!dbPool || !id) return null;
   const { rows } = await dbPool.query(
-    `SELECT id, user_id, domain, name, created_at, updated_at FROM projects WHERE id = $1 LIMIT 1`,
+    `SELECT id, user_id, domain, name, run_ids, created_at, updated_at FROM projects WHERE id = $1 LIMIT 1`,
     [id]
   );
   return mapProjectRow(rows[0]);
