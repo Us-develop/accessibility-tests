@@ -712,6 +712,28 @@ export async function dbGetSubscription(userId) {
   return mapSubscriptionRow(rows[0]);
 }
 
+export async function dbGetSubscriptionByStripeCustomer(customerId) {
+  if (!dbPool || !customerId) return null;
+  const { rows } = await dbPool.query(
+    `SELECT id, user_id, plan_id, status, current_period_start, current_period_end,
+            stripe_subscription_id, stripe_customer_id, created_at, updated_at
+       FROM subscriptions WHERE stripe_customer_id = $1 LIMIT 1`,
+    [customerId]
+  );
+  return mapSubscriptionRow(rows[0]);
+}
+
+export async function dbGetSubscriptionByStripeSubscription(subscriptionId) {
+  if (!dbPool || !subscriptionId) return null;
+  const { rows } = await dbPool.query(
+    `SELECT id, user_id, plan_id, status, current_period_start, current_period_end,
+            stripe_subscription_id, stripe_customer_id, created_at, updated_at
+       FROM subscriptions WHERE stripe_subscription_id = $1 LIMIT 1`,
+    [subscriptionId]
+  );
+  return mapSubscriptionRow(rows[0]);
+}
+
 export async function dbUpsertSubscription(sub) {
   if (!dbPool || !sub?.id || !sub.userId) return null;
   const { rows } = await dbPool.query(
@@ -817,6 +839,16 @@ export async function dbInsertPayment(payment) {
       payment.invoiceUrl || null,
       payment.createdAt || null,
     ]
+  );
+  return mapPaymentRow(rows[0]);
+}
+
+export async function dbFindPaymentByStripeIntent(intentId) {
+  if (!dbPool || !intentId) return null;
+  const { rows } = await dbPool.query(
+    `SELECT id, user_id, amount_cents, currency, status, description, stripe_payment_intent_id, invoice_url, created_at
+       FROM payments WHERE stripe_payment_intent_id = $1 LIMIT 1`,
+    [intentId]
   );
   return mapPaymentRow(rows[0]);
 }

@@ -6,8 +6,11 @@ import {
   dbGetUsage,
   dbIncrementUsage,
   dbInsertPayment,
+  dbFindPaymentByStripeIntent,
   dbListPayments,
   dbListPlans,
+  dbGetSubscriptionByStripeCustomer,
+  dbGetSubscriptionByStripeSubscription,
   dbUpsertPlan,
   dbUpsertSubscription,
 } from './db.js';
@@ -136,6 +139,26 @@ export async function insertPayment(payment) {
   rows.push(row);
   saveList(PAYMENTS_FILE, 'payments', rows);
   return row;
+}
+
+export async function getSubscriptionByStripeCustomer(customerId) {
+  if (!customerId) return null;
+  if (useDb()) return dbGetSubscriptionByStripeCustomer(customerId);
+  return loadList(SUBS_FILE, 'subscriptions').find((s) => s.stripeCustomerId === customerId) || null;
+}
+
+export async function getSubscriptionByStripeSubscription(subscriptionId) {
+  if (!subscriptionId) return null;
+  if (useDb()) return dbGetSubscriptionByStripeSubscription(subscriptionId);
+  return (
+    loadList(SUBS_FILE, 'subscriptions').find((s) => s.stripeSubscriptionId === subscriptionId) || null
+  );
+}
+
+export async function findPaymentByStripeIntent(intentId) {
+  if (!intentId) return null;
+  if (useDb()) return dbFindPaymentByStripeIntent(intentId);
+  return loadList(PAYMENTS_FILE, 'payments').find((p) => p.stripePaymentIntentId === intentId) || null;
 }
 
 /**

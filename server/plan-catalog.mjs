@@ -1,4 +1,4 @@
-/** Catalog of subscription plans. Stripe is not wired; prices are for display. */
+/** Catalog of subscription plans. Stripe Checkout uses STRIPE_PRICE_* env vars for paid tiers. */
 
 export const DEFAULT_PLANS = [
   {
