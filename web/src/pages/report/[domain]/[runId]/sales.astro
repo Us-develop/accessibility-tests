@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { buildAstroMainReportPayload } from '../../../../../../report-astro-payload.js';
 import { isValidReportId } from '../../../../../../server/fs-utils.js';
 import { runDir, isValidRunId } from '../../../../../../server/run-ids.js';
-import { listRunsForDomain } from '../../../../../../server/audit-list.js';
+import { listRunsForAccess } from '../../../../../../server/run-access.mjs';
+import { accessFromWebRequest } from '../../../../../../server/session.mjs';
 import { dbPool } from '../../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../../server/paths.js';
 import { combinedScoreWithManual } from '../../../../../../report-buckets.js';
@@ -59,7 +60,7 @@ try {
 const principles = payload.principles || [];
 const plainEnglish = payload.plainEnglish || { headline: '', cards: [] };
 
-const allRuns = await listRunsForDomain(dbPool, REPORTS_BASE, domain);
+const allRuns = await listRunsForAccess(accessFromWebRequest(Astro.request), domain, dbPool, REPORTS_BASE);
 const trend = allRuns
   .slice()
   .reverse()

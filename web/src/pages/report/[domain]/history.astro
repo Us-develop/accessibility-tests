@@ -3,7 +3,8 @@ import Layout from '../../../layouts/Layout.astro';
 import AppHeader from '../../../components/AppHeader.astro';
 import ScoreDonut from '../../../components/ScoreDonut.svelte';
 import TrendChart from '../../../components/TrendChart.svelte';
-import { listRunsForDomain } from '../../../../../server/audit-list.js';
+import { listRunsForAccess } from '../../../../../server/run-access.mjs';
+import { accessFromWebRequest } from '../../../../../server/session.mjs';
 import { dbPool } from '../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../server/paths.js';
 import { isValidReportId } from '../../../../../server/fs-utils.js';
@@ -17,7 +18,8 @@ if (!isValidReportId(domain)) {
   return new Response('Invalid domain', { status: 400, headers: { 'Content-Type': 'text/plain' } });
 }
 
-const runs = await listRunsForDomain(dbPool, REPORTS_BASE, domain);
+const access = accessFromWebRequest(Astro.request);
+const runs = await listRunsForAccess(access, domain, dbPool, REPORTS_BASE);
 
 const sortedNewestFirst = runs;
 const sortedOldestFirst = [...runs].reverse();
