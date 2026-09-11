@@ -2,11 +2,13 @@
  * Guest-tier helpers: public URL checks (SSRF), rate limits, Turnstile, tokens, scan caps.
  */
 import { lookup } from 'dns/promises';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'fs';
 import { BlockList, isIP } from 'net';
 import { join } from 'path';
 import { REPORTS_BASE } from './paths.js';
+import { readJsonStore, writeJsonStore } from './json-store.mjs';
+import { commercialCtas } from './plan-catalog.mjs';
 
 export const GUEST_TOKEN_RE = /^[a-f0-9]{32}$/;
 
@@ -31,8 +33,6 @@ privateNets.addAddress('::1', 'ipv6');
 privateNets.addSubnet('fc00::', 7, 'ipv6');
 privateNets.addSubnet('fe80::', 10, 'ipv6');
 
-/** @type {Map<string, number[]>} */
-const guestHitsByIp = new Map();
 /** @type {Map<string, number>} */
 const guestRunningByIp = new Map();
 
@@ -142,22 +142,56 @@ export async function assertPublicHttpUrl(raw) {
   return parsed.toString();
 }
 
-export function checkGuestRateLimit(ip) {
-  const hourLimit = parsePositiveIntEnv('GUEST_SCANS_PER_HOUR', 3);
-  const dayLimit = parsePositiveIntEnv('GUEST_SCANS_PER_DAY', 10);
-  const now = Date.now();
-  const hourAgo = now - 60 * 60 * 1000;
-  const dayAgo = now - 24 * 60 * 60 * 1000;
-  const key = ip || 'unknown';
-  const prev = (guestHitsByIp.get(key) || []).filter((t) => t > dayAgo);
-  const hourCount = prev.filter((t) => t > hourAgo).length;
-  if (hourCount >= hourLimit || prev.length >= dayLimit) {
-    const err = new Error('Too many free scans from this network. Try again later, or sign in.');
-    err.status = 429;
-    throw err;
+export function guestFreebieUsed(req) {
+  const raw = String(req?.headers?.cookie || '');
+  return /(?:^|;\s*)wcag_freebie=1(?:;|$)/.test(raw);
+}
+
+function guestIpKey(ip) {
+  return createHash('sha256').update(String(ip || 'unknown')).digest('hex').slice(0, 16);
+}
+
+function guestFreebieError() {
+  return Object.assign(new Error('You already used your free snapshot. Sign in or buy tokens for another scan.'), {
+    status: 429,
+    code: 'guest_freebie_used',
+    ctas: commercialCtas(),
+  });
+}
+
+function guestIpAlreadyUsed(ip) {
+  const key = guestIpKey(ip);
+  const data = readJsonStore('guest-freebies.json', { used: {} });
+  const used = data.used && typeof data.used === 'object' ? data.used : {};
+  return Boolean(used[key]);
+}
+
+/** Cookie or IP already claimed the one free guest snapshot. */
+export function guestFreebieClaimed(req) {
+  return guestFreebieUsed(req) || guestIpAlreadyUsed(clientIp(req));
+}
+
+/**
+ * One free guest snapshot per visitor (cookie + IP). Replaces the old 3/hour 10/day cap.
+ */
+export function checkGuestFreeScan(req) {
+  if (guestFreebieClaimed(req)) throw guestFreebieError();
+}
+
+export function markGuestFreeScan(req, res) {
+  const key = guestIpKey(clientIp(req));
+  const data = readJsonStore('guest-freebies.json', { used: {} });
+  const used = data.used && typeof data.used === 'object' ? data.used : {};
+  used[key] = new Date().toISOString();
+  writeJsonStore('guest-freebies.json', { used });
+  if (res && typeof res.append === 'function') {
+    res.append('Set-Cookie', 'wcag_freebie=1; Path=/; Max-Age=31536000; SameSite=Lax');
   }
-  prev.push(now);
-  guestHitsByIp.set(key, prev);
+}
+
+/** @deprecated Use checkGuestFreeScan */
+export function checkGuestRateLimit(ip) {
+  checkGuestFreeScan({ headers: {}, socket: { remoteAddress: ip } });
 }
 
 export function guestIpHasRunningScan(ip) {

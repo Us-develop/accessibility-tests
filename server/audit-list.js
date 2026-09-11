@@ -148,7 +148,7 @@ export async function listRunsForDomain(dbPool, reportsBase, domain) {
     try {
       const { rows } = await dbPool.query(
         `SELECT id, run_id, status, urls, processed_urls, requested_urls,
-                result_json, updated_at
+                result_json, updated_at, user_id
            FROM runs
           WHERE id = $1
           ORDER BY updated_at DESC
@@ -167,6 +167,7 @@ export async function listRunsForDomain(dbPool, reportsBase, domain) {
           issues: computeIssueCountFromResult(resultJson),
           source: 'db',
           score: scoreFromResult(resultJson),
+          userId: row.user_id || null,
         });
       });
     } catch (err) {
@@ -192,6 +193,7 @@ export async function listRunsForDomain(dbPool, reportsBase, domain) {
         issues: computeIssueCountFromResult(resultJson),
         source: 'file',
         score: scoreFromResult(resultJson),
+        userId: null,
       });
     });
   } catch (err) {
@@ -203,6 +205,17 @@ export async function listRunsForDomain(dbPool, reportsBase, domain) {
     const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
     return tb - ta;
   });
+}
+
+/** Customers only see runs attached to their account. Staff see the full domain. */
+export function filterRunsForViewer(runs, { role, userId, allowedRunIds } = {}) {
+  const list = Array.isArray(runs) ? runs : [];
+  if (role === 'staff') return list;
+  if (role === 'customer' && userId) {
+    const allowed = new Set(allowedRunIds || []);
+    return list.filter((run) => run.userId === userId || (run.runId && allowed.has(run.runId)));
+  }
+  return [];
 }
 
 /** Score 0–100 from this run's automated checks (vacuous passes excluded). Null if nothing scored. */

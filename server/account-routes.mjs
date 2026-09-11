@@ -12,16 +12,16 @@ import {
 } from './users.mjs';
 import { attachRunToUser, deleteProjectsForUser, listProjectsForUser } from './projects.mjs';
 import { clearSessionCookies, isHtmlFormPost, parseCookies, setSessionCookies } from './session.mjs';
-import { isValidGuestToken } from './guest.mjs';
+import { isValidGuestToken, guestFreebieClaimed } from './guest.mjs';
 import { sendAccountEmail } from '../server-email.js';
 import {
   currentPeriod,
   ensureCustomerSubscription,
   getPlan,
   getUsage,
-  listPayments,
+  listPaymentsWithFreebie,
 } from './billing.mjs';
-import { getTokenBalance } from './tokens.mjs';
+import { ensureFreebieLot, getTokenBalance } from './tokens.mjs';
 import { commercialCtas, isActiveProSubscription, PRO_PAGES_PER_MONTH } from './plan-catalog.mjs';
 import { dbListRunsForUser, dbPool } from './db.js';
 import { listRunsForDomain, scoreFromResult } from './audit-list.js';
@@ -98,13 +98,15 @@ async function scansForUser(userId, limit = 200) {
   return out.slice(0, limit);
 }
 
-async function accountBundle(user) {
-  const subscription = await ensureCustomerSubscription(user.id);
+async function accountBundle(user, req) {
+  const subscription = await ensureCustomerSubscription(user.id, {
+    guestFreebieUsed: guestFreebieClaimed(req),
+  });
   const pro = isActiveProSubscription(subscription);
   const plan = await getPlan(pro ? subscription.planId : 'none');
   const period = currentPeriod();
   const usage = await getUsage(user.id, period);
-  const payments = await listPayments(user.id);
+  const payments = await listPaymentsWithFreebie(user.id);
   const projects = await listProjectsForUser(user.id);
   const scans = await scansForUser(user.id, 50);
   const tokens = await getTokenBalance(user.id);
@@ -145,13 +147,18 @@ export function registerAccountRoutes(app, ctx) {
         name: req.body?.name,
       });
       const guestToken = String(req.body?.guestToken || '').trim();
+      let attached = false;
       if (isValidGuestToken(guestToken)) {
         guestCookie(res, guestToken);
         const binding = readGuestTokenRecord(guestToken);
         if (binding?.domain && binding?.runId) {
           await attachRunToUser(user.id, binding.domain, binding.runId);
+          attached = true;
         }
       }
+      await ensureFreebieLot(user.id, {
+        guestFreebieUsed: attached || guestFreebieClaimed(req),
+      });
       if (verifyToken) {
         const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(verifyToken)}`;
         await sendAccountEmail({
@@ -225,7 +232,7 @@ export function registerAccountRoutes(app, ctx) {
     if (!userId) return;
     const user = await getUserById(userId);
     if (!user) return res.status(401).json({ error: 'Sign in first.' });
-    return res.json(await accountBundle(user));
+    return res.json(await accountBundle(user, req));
   });
 
   app.put('/api/account', async (req, res) => {
@@ -279,7 +286,8 @@ export function registerAccountRoutes(app, ctx) {
   app.get('/api/account/payments', async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
-    return res.json({ payments: await listPayments(userId) });
+    await ensureCustomerSubscription(userId, { guestFreebieUsed: guestFreebieClaimed(req) });
+    return res.json({ payments: await listPaymentsWithFreebie(userId) });
   });
 
   app.get('/api/account/scans', async (req, res) => {
@@ -312,12 +320,12 @@ export function registerAccountRoutes(app, ctx) {
       res.setHeader('Content-Disposition', 'attachment; filename="us-accessibility-scans.csv"');
       return res.send([header, ...lines].join('\n'));
     }
-    const payload = {
+      const payload = {
       ...exportUserData(user),
       projects: await listProjectsForUser(user.id),
       scans,
       usage: await getUsage(user.id, currentPeriod()),
-      payments: await listPayments(user.id),
+      payments: await listPaymentsWithFreebie(user.id),
     };
     res.setHeader('Content-Disposition', 'attachment; filename="us-accessibility-export.json"');
     return res.json(payload);
@@ -340,6 +348,7 @@ export function registerAccountRoutes(app, ctx) {
     const binding = readGuestTokenRecord(token);
     if (!binding) return res.status(404).json({ error: 'That snapshot was not found.' });
     const project = await attachRunToUser(userId, binding.domain, binding.runId);
+    await ensureFreebieLot(userId, { guestFreebieUsed: true });
     return res.json({ ok: true, project });
   });
 }
