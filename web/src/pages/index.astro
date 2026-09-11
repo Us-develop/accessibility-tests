@@ -30,7 +30,15 @@ export const prerender = false;
           </p>
         </div>
 
-        <form id="guest-run-form" class="card guest-only" hidden={ssrSignedIn} style="padding: 0; overflow: hidden;">
+        <form
+          id="guest-run-form"
+          class="card guest-only"
+          method="post"
+          action="/api/run"
+          data-astro-reload
+          hidden={ssrSignedIn}
+          style="padding: 0; overflow: hidden;"
+        >
           <div style="padding: 32px 32px 28px;">
             <label class="field-label" for="guest-url">Page URL</label>
             <input
@@ -78,7 +86,15 @@ export const prerender = false;
           <p id="customer-usage" class="muted" style="max-width: 620px; margin-top: 8px;"></p>
         </div>
 
-        <form id="customer-run-form" class="card customer-only" hidden={!ssrCustomer} style="padding: 0; overflow: hidden;">
+        <form
+          id="customer-run-form"
+          class="card customer-only"
+          method="post"
+          action="/api/run"
+          data-astro-reload
+          hidden={!ssrCustomer}
+          style="padding: 0; overflow: hidden;"
+        >
           <div style="padding: 32px 32px 28px;">
             <label class="field-label" for="customer-url">Page URL</label>
             <input
@@ -91,6 +107,7 @@ export const prerender = false;
               placeholder="https://example.com"
               required
             />
+            <input type="hidden" name="csrfToken" class="wcag-csrf-field" value="" />
           </div>
           <div
             style="background: var(--us-ink); color: var(--us-cream); padding: 24px 32px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;"
@@ -124,7 +141,16 @@ export const prerender = false;
           </p>
         </div>
 
-        <form id="run-form" class="card staff-only" hidden={!ssrStaff} style="padding: 0; overflow: hidden;">
+        <form
+          id="run-form"
+          class="card staff-only"
+          method="post"
+          action="/api/run"
+          data-astro-reload
+          hidden={!ssrStaff}
+          style="padding: 0; overflow: hidden;"
+        >
+          <input type="hidden" name="csrfToken" class="wcag-csrf-field" value="" />
           <div style="padding: 32px 32px 36px;">
             <div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px;">
               <span style="font-family: var(--font-mono); font-size: 12px; color: var(--fg-3); letter-spacing: 0.04em;"
@@ -258,14 +284,6 @@ export const prerender = false;
 </Layout>
 
 <script>
-  const form = document.getElementById('run-form');
-  const guestForm = document.getElementById('guest-run-form');
-  const customerForm = document.getElementById('customer-run-form');
-  const urlsEl = document.getElementById('urls');
-  const hint = document.getElementById('url-hint');
-  const summary = document.getElementById('run-summary');
-  const errEl = document.getElementById('form-err');
-
   function wcUrl(path) {
     return typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(path) : path;
   }
@@ -274,6 +292,9 @@ export const prerender = false;
   }
   function wcHeaders(extra) {
     return typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders(extra) : extra || {};
+  }
+  function csrfToken() {
+    return typeof globalThis.wcagCsrfToken === 'function' ? globalThis.wcagCsrfToken() : '';
   }
 
   function applyRole(role) {
@@ -306,34 +327,84 @@ export const prerender = false;
     return {};
   }
 
+  function formErrorEl() {
+    return document.getElementById('form-err');
+  }
+
+  function showFormError(message) {
+    const errEl = formErrorEl();
+    if (!errEl) return;
+    errEl.textContent = message;
+    errEl.style.display = 'block';
+  }
+
+  function clearFormError() {
+    const errEl = formErrorEl();
+    if (!errEl) return;
+    errEl.textContent = '';
+    errEl.style.display = 'none';
+  }
+
   function countUrls() {
-    const t = urlsEl?.value || '';
-    const n = t.split(/[\n,]+/).map((s) => s.trim()).filter((s) => s.startsWith('http')).length;
-    return n;
+    const t = document.getElementById('urls')?.value || '';
+    return t.split(/[\n,]+/).map((s) => s.trim()).filter((s) => s.startsWith('http')).length;
   }
 
   function refreshHint() {
     const n = countUrls();
+    const hint = document.getElementById('url-hint');
+    const summary = document.getElementById('run-summary');
     if (hint) hint.textContent = `${n} URL${n === 1 ? '' : 's'} · one per line`;
     if (summary) summary.textContent = n ? `${n} URL(s) queued` : 'Add at least one URL';
   }
 
-  urlsEl?.addEventListener('input', refreshHint);
-  refreshHint();
+  function goToRun(data, { guestFallback = false } = {}) {
+    if (guestFallback && data.guestToken) {
+      window.location.href = wcUrl(`/loading?token=${encodeURIComponent(data.guestToken)}`);
+      return true;
+    }
+    const domain = data.domain || data.id || data.reportId;
+    const runId = data.runId;
+    if (domain && runId) {
+      window.location.href = wcUrl(`/loading?domain=${encodeURIComponent(domain)}&runId=${encodeURIComponent(runId)}`);
+      return true;
+    }
+    if (domain) {
+      window.location.href = wcUrl(`/report/${encodeURIComponent(domain)}/`);
+      return true;
+    }
+    return false;
+  }
 
-  const fileEl = document.getElementById('file');
-  const fileNameEl = document.getElementById('file-name');
-  fileEl?.addEventListener('change', () => {
-    if (!fileNameEl) return;
-    const file = fileEl.files && fileEl.files[0];
-    fileNameEl.textContent = file ? file.name : 'No file selected';
-  });
+  function prefillUrlFromQuery() {
+    let url = '';
+    try {
+      url = String(new URLSearchParams(window.location.search).get('url') || '').trim();
+    } catch {
+      return;
+    }
+    if (!url) return;
+    const guest = document.getElementById('guest-url');
+    const customer = document.getElementById('customer-url');
+    const urls = document.getElementById('urls');
+    if (guest instanceof HTMLInputElement && !guest.value) guest.value = url;
+    if (customer instanceof HTMLInputElement && !customer.value) customer.value = url;
+    if (urls instanceof HTMLTextAreaElement && !urls.value) urls.value = url;
+    refreshHint();
+  }
+
+  function syncCsrfFields() {
+    const token = csrfToken();
+    document.querySelectorAll('.wcag-csrf-field').forEach((el) => {
+      if (el instanceof HTMLInputElement) el.value = token;
+    });
+  }
 
   async function fillCustomerUsage() {
     const el = document.getElementById('customer-usage');
     if (!el) return;
     try {
-      const res = await fetch(wcUrl('/api/account/usage'), { credentials: wcCreds() });
+      const res = await fetch(wcUrl('/api/account/usage'), { credentials: wcCreds(), headers: wcHeaders() });
       if (!res.ok) {
         el.textContent = '';
         return;
@@ -384,7 +455,15 @@ export const prerender = false;
         s.onerror = () => reject(new Error('captcha'));
         document.head.appendChild(s);
       });
-      if (window.turnstile && turnstileWidgetId == null) {
+      if (window.turnstile) {
+        if (turnstileWidgetId != null) {
+          try {
+            window.turnstile.remove(turnstileWidgetId);
+          } catch {
+            /* widget already gone after a ClientRouter swap */
+          }
+          turnstileWidgetId = null;
+        }
         turnstileWidgetId = window.turnstile.render(mount, { sitekey: siteKey });
       }
     } catch {
@@ -392,17 +471,30 @@ export const prerender = false;
     }
   }
 
-  refreshMode();
-  maybeLoadTurnstile();
-  document.addEventListener('wcag:logged-in', (event) => {
-    applyRole(event.detail?.role || 'staff');
-  });
+  function bindPageUi() {
+    const urlsEl = document.getElementById('urls');
+    if (urlsEl) urlsEl.oninput = refreshHint;
+    const fileEl = document.getElementById('file');
+    const fileNameEl = document.getElementById('file-name');
+    if (fileEl) {
+      fileEl.onchange = () => {
+        if (!fileNameEl) return;
+        const file = fileEl.files && fileEl.files[0];
+        fileNameEl.textContent = file ? file.name : 'No file selected';
+      };
+    }
+    syncCsrfFields();
+    prefillUrlFromQuery();
+    refreshHint();
+    refreshMode();
+    maybeLoadTurnstile();
+  }
 
-  form?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!errEl) return;
-    errEl.style.display = 'none';
+  async function submitStaffForm(form) {
+    clearFormError();
     const fd = new FormData(form);
+    const token = csrfToken();
+    if (token) fd.set('csrfToken', token);
     try {
       const res = await fetch(wcUrl('/api/run'), {
         method: 'POST',
@@ -413,84 +505,38 @@ export const prerender = false;
       const data = await parseJsonResponse(res);
       if (res.status === 401) {
         document.dispatchEvent(new CustomEvent('wcag:login-required'));
-        errEl.textContent = data.error || 'Sign in to run an audit.';
-        errEl.style.display = 'block';
+        showFormError(data.error || 'Sign in to run an audit.');
         return;
       }
       if (!res.ok) {
         if (res.status === 403) {
-          errEl.textContent =
+          showFormError(
             data.error ||
-            'The server refused this request (403). If the response body mentions cross-site POST, you may be hitting Astro’s standalone listener: ensure `cd web && npm start` (run-server.mjs sets ASTRO_NODE_AUTOSTART), or open http://127.0.0.1:PORT instead of localhost. Otherwise: run the API on 3456, use the full stack build, and set PUBLIC_DEV_API_URL + RELAX_CORS_LOCALHOST for astro dev, or fix PUBLIC_APP_BASE.';
+              'The server refused this request (403). If the response body mentions cross-site POST, you may be hitting Astro’s standalone listener: ensure `cd web && npm start` (run-server.mjs sets ASTRO_NODE_AUTOSTART), or open http://127.0.0.1:PORT instead of localhost. Otherwise: run the API on 3456, use the full stack build, and set PUBLIC_DEV_API_URL + RELAX_CORS_LOCALHOST for astro dev, or fix PUBLIC_APP_BASE.'
+          );
         } else {
-          errEl.textContent = data.error || res.statusText || 'Request failed';
+          showFormError(data.error || res.statusText || 'Request failed');
         }
-        errEl.style.display = 'block';
         return;
       }
-      const domain = data.domain || data.id || data.reportId;
-      const runId = data.runId;
-      if (domain && runId) {
-        window.location.href = wcUrl(`/loading?domain=${encodeURIComponent(domain)}&runId=${encodeURIComponent(runId)}`);
-      } else if (domain) {
-        window.location.href = wcUrl(`/report/${encodeURIComponent(domain)}/`);
-      }
+      if (!goToRun(data)) showFormError('Could not start the audit.');
     } catch {
-      errEl.textContent = 'Network error — is the API running? For dev, start legacy server on port 3456.';
-      errEl.style.display = 'block';
+      showFormError('Network error — is the API running? For dev, start legacy server on port 3456.');
     }
-  });
+  }
 
-  guestForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!errEl) return;
-    errEl.style.display = 'none';
-    const url = String(new FormData(guestForm).get('url') || '').trim();
+  async function submitGuestForm(form) {
+    clearFormError();
+    const url = String(new FormData(form).get('url') || '').trim();
     const fd = new FormData();
     fd.set('url', url);
+    const csrf = csrfToken();
+    if (csrf) fd.set('csrfToken', csrf);
     if (window.turnstile && turnstileWidgetId != null) {
       const token = window.turnstile.getResponse(turnstileWidgetId);
       if (token) fd.set('turnstileToken', token);
     }
     const btn = document.getElementById('guest-submit-btn');
-    if (btn) btn.disabled = true;
-    try {
-      const res = await fetch(wcUrl('/api/run'), { method: 'POST', body: fd, credentials: wcCreds() });
-      const data = await parseJsonResponse(res);
-      if (!res.ok) {
-        errEl.textContent = data.error || res.statusText || 'Request failed';
-        errEl.style.display = 'block';
-        if (window.turnstile && turnstileWidgetId != null) window.turnstile.reset(turnstileWidgetId);
-        return;
-      }
-      if (data.guestToken) {
-        window.location.href = wcUrl(`/loading?token=${encodeURIComponent(data.guestToken)}`);
-        return;
-      }
-      const domain = data.domain || data.id || data.reportId;
-      const runId = data.runId;
-      if (domain && runId) {
-        window.location.href = wcUrl(`/loading?domain=${encodeURIComponent(domain)}&runId=${encodeURIComponent(runId)}`);
-        return;
-      }
-      errEl.textContent = 'Could not start the free scan.';
-      errEl.style.display = 'block';
-    } catch {
-      errEl.textContent = 'Network error — is the API running?';
-      errEl.style.display = 'block';
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  });
-
-  customerForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!errEl) return;
-    errEl.style.display = 'none';
-    const url = String(new FormData(customerForm).get('url') || '').trim();
-    const fd = new FormData();
-    fd.set('url', url);
-    const btn = document.getElementById('customer-submit-btn');
     if (btn) btn.disabled = true;
     try {
       const res = await fetch(wcUrl('/api/run'), {
@@ -501,25 +547,94 @@ export const prerender = false;
       });
       const data = await parseJsonResponse(res);
       if (!res.ok) {
-        errEl.textContent = data.error || res.statusText || 'Request failed';
-        errEl.style.display = 'block';
+        showFormError(data.error || res.statusText || 'Request failed');
+        if (window.turnstile && turnstileWidgetId != null) window.turnstile.reset(turnstileWidgetId);
         return;
       }
-      const domain = data.domain || data.id || data.reportId;
-      const runId = data.runId;
-      if (domain && runId) {
-        window.location.href = wcUrl(`/loading?domain=${encodeURIComponent(domain)}&runId=${encodeURIComponent(runId)}`);
-        return;
-      }
-      errEl.textContent = 'Could not start the scan.';
-      errEl.style.display = 'block';
+      if (!goToRun(data, { guestFallback: true })) showFormError('Could not start the free scan.');
     } catch {
-      errEl.textContent = 'Network error — is the API running?';
-      errEl.style.display = 'block';
+      showFormError('Network error — is the API running?');
     } finally {
       if (btn) btn.disabled = false;
     }
-  });
+  }
+
+  async function submitCustomerForm(form) {
+    clearFormError();
+    const url = String(new FormData(form).get('url') || '').trim();
+    const fd = new FormData();
+    fd.set('url', url);
+    const token = csrfToken();
+    if (token) fd.set('csrfToken', token);
+    const btn = document.getElementById('customer-submit-btn');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch(wcUrl('/api/run'), {
+        method: 'POST',
+        body: fd,
+        credentials: wcCreds(),
+        headers: wcHeaders(),
+      });
+      const data = await parseJsonResponse(res);
+      if (res.status === 401) {
+        document.dispatchEvent(new CustomEvent('wcag:login-required'));
+        showFormError(data.error || 'Sign in to run a scan.');
+        return;
+      }
+      if (!res.ok) {
+        showFormError(data.error || res.statusText || 'Request failed');
+        return;
+      }
+      if (!goToRun(data, { guestFallback: true })) showFormError('Could not start the scan.');
+    } catch {
+      showFormError('Network error — is the API running?');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  if (!globalThis.__wcagHomeScanBound) {
+    globalThis.__wcagHomeScanBound = true;
+    // Capture-phase delegation survives Astro ClientRouter swaps; GET forms otherwise
+    // navigate to /?url=... instead of starting a scan.
+    document.addEventListener(
+      'submit',
+      (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        if (form.id === 'run-form') {
+          event.preventDefault();
+          event.stopPropagation();
+          submitStaffForm(form);
+          return;
+        }
+        if (form.id === 'guest-run-form') {
+          event.preventDefault();
+          event.stopPropagation();
+          submitGuestForm(form);
+          return;
+        }
+        if (form.id === 'customer-run-form') {
+          event.preventDefault();
+          event.stopPropagation();
+          submitCustomerForm(form);
+        }
+      },
+      true
+    );
+    document.addEventListener('astro:page-load', bindPageUi);
+    document.addEventListener('wcag:logged-in', (event) => {
+      applyRole(event.detail?.role || 'staff');
+      syncCsrfFields();
+      if (event.detail?.role === 'customer') fillCustomerUsage();
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindPageUi);
+  } else {
+    bindPageUi();
+  }
 </script>
 
 <style>
