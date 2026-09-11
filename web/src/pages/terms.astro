@@ -1,0 +1,29 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+
+export const prerender = true;
+---
+<Layout title="Terms of use · Us" indexable={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb="Terms" />
+    <main class="app-main">
+      <article class="container-narrow page-article">
+        <p class="eyebrow"><span class="dot"></span>Lawyer review required</p>
+        <h1>Terms of use</h1>
+        <p class="muted">Draft only. Us counsel must review before this is a contract. Last updated 11 September 2026.</p>
+        <div class="prose-width">
+          <p>These draft terms apply to the Us accessibility scanner at wcag.about-us.be, operated by Us NV.</p>
+          <h2>What you get</h2>
+          <p>A gratis snapshot is a one-page automated check. Token and Pro scans produce fuller reports. Automated results are findings, not a WCAG conformance certificate or legal sign-off.</p>
+          <h2>Accounts and payment</h2>
+          <p>Token packs are prepaid and expire 12 months after purchase. Pro is a subscription billed monthly or yearly. Cancel at period end through the billing portal. Unused Pro pages do not roll over.</p>
+          <h2>Acceptable use</h2>
+          <p>Only scan URLs you are allowed to test. Do not use the service to attack, overload, or scan third-party sites without permission.</p>
+          <h2>Contact</h2>
+          <p>Questions: <a class="link" href="https://about-us.be/contact/">about-us.be/contact</a>.</p>
+        </div>
+      </article>
+    </main>
+  </div>
+</Layout>

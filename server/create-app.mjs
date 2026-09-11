@@ -54,7 +54,9 @@ import {
 import { authenticateUser, getUserById } from './users.mjs';
 import { attachRunToUser, canAccessDomain, domainsForUser } from './projects.mjs';
 import { registerAccountRoutes } from './account-routes.mjs';
-import { assertCustomerCanScan, incrementUsage } from './billing.mjs';
+import { registerStripeRoutes, registerStripeWebhook } from './stripe-routes.mjs';
+import { assertCustomerCanScan, consumeScanEntitlement } from './billing.mjs';
+import { MAX_PAGES_PER_CUSTOMER_RUN } from './plan-catalog.mjs';
 import {
   customerHasActiveScan,
   enqueueScanJob,
@@ -132,6 +134,9 @@ function isValidEmail(email) {
 function isIndexablePath(pathname) {
   if (pathname === '/' || pathname === '') return true;
   if (pathname === '/limitations') return true;
+  if (pathname === '/pricing' || pathname === '/terms' || pathname === '/privacy' || pathname === '/cookies') {
+    return true;
+  }
   if (pathname === '/signup' || pathname === '/forgot' || pathname === '/reset') return true;
   if (pathname === '/teaser' || pathname.startsWith('/teaser/')) return true;
   return false;
@@ -142,11 +147,16 @@ const PUBLIC_GET_PATHS = new Set([
   '/',
   '/loading',
   '/limitations',
+  '/pricing',
+  '/terms',
+  '/privacy',
+  '/cookies',
   '/signup',
   '/forgot',
   '/reset',
   '/teaser',
   '/api/config',
+  '/api/billing/config',
   '/api/health/db',
   '/robots.txt',
   '/favicon.png',
@@ -160,7 +170,9 @@ function isGuestOpenPath(req) {
     if (PUBLIC_GET_PREFIXES.some((prefix) => p.startsWith(prefix))) return true;
   }
   if (req.method === 'POST') {
-    if (p === '/api/run' || p === '/api/lead' || p === '/api/access-request') return true;
+    if (p === '/api/run' || p === '/api/lead' || p === '/api/access-request' || p === '/api/stripe/webhook') {
+      return true;
+    }
     if (p.startsWith('/api/auth/')) return true;
   }
   return false;
@@ -750,6 +762,8 @@ app.use((req, res, next) => {
   next();
 });
 
+registerStripeWebhook(app);
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
@@ -1250,6 +1264,7 @@ app.use((req, res, next) => {
 });
 
 registerAccountRoutes(app, { readGuestTokenRecord });
+registerStripeRoutes(app);
 
 app.post('/api/run', upload.single('file'), async (req, res) => {
   const staff = requestIsStaff(req);
@@ -1266,15 +1281,18 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     }
   } else if (customerUser) {
     if (req.file) {
-      return res.status(400).json({ error: 'Sitemap uploads stay on staff scans for now. Paste one public URL.' });
+      return res.status(400).json({
+        error: 'Sitemap uploads stay on staff scans for now. Paste public URLs from one domain.',
+      });
     }
     try {
-      const rawUrl = String(req.body?.url || req.body?.urls || '')
-        .split(/[\n,]+/)
-        .map((s) => s.trim())
-        .find(Boolean);
-      const canonical = await assertPublicHttpUrl(rawUrl);
-      urls = [canonical];
+      const raw = String(req.body?.urls || req.body?.url || '').trim();
+      const candidates = extractUrlsFromText(raw);
+      const next = [];
+      for (const candidate of candidates.length ? candidates : raw ? [raw] : []) {
+        next.push(await assertPublicHttpUrl(candidate));
+      }
+      urls = next;
     } catch (err) {
       const status = Number(err?.status) || 400;
       return res.status(status).json({ error: err.message || 'Could not start the scan.' });
@@ -1298,7 +1316,13 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     }
   }
 
-  const maxUrls = staff ? (process.env.MAX_URLS_PER_RUN ? parseInt(process.env.MAX_URLS_PER_RUN, 10) : 0) : 1;
+  const maxUrls = staff
+    ? process.env.MAX_URLS_PER_RUN
+      ? parseInt(process.env.MAX_URLS_PER_RUN, 10)
+      : 0
+    : customerUser
+      ? MAX_PAGES_PER_CUSTOMER_RUN
+      : 1;
 
   if (staff && req.file) {
     const buf = req.file.buffer;
@@ -1368,10 +1392,15 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   }
   if (customerUser) {
     try {
-      await assertCustomerCanScan(customerUser.id, { pages: processedUrls, domain });
+      const gate = await assertCustomerCanScan(customerUser.id, { pages: processedUrls, domain });
+      req._scanGate = gate;
     } catch (err) {
       const status = Number(err?.status) || 400;
-      return res.status(status).json({ error: err.message || 'Scan is not allowed on this plan.' });
+      return res.status(status).json({
+        error: err.message || 'Scan is not allowed on this plan.',
+        code: err.code || undefined,
+        ctas: err.ctas,
+      });
     }
   }
   const runId = newRunId();
@@ -1390,7 +1419,10 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
 
   if (customerUser) {
     await attachRunToUser(customerUser.id, domain, runId);
-    await incrementUsage(customerUser.id, { scans: 1, pages: processedUrls });
+    await consumeScanEntitlement(customerUser.id, {
+      pages: processedUrls,
+      pagesFromTokens: req._scanGate?.pagesFromTokens || 0,
+    });
   }
 
   const initialState = {

@@ -16,11 +16,13 @@ import { isValidGuestToken } from './guest.mjs';
 import { sendAccountEmail } from '../server-email.js';
 import {
   currentPeriod,
-  ensureFreeSubscription,
+  ensureCustomerSubscription,
   getPlan,
   getUsage,
   listPayments,
 } from './billing.mjs';
+import { getTokenBalance } from './tokens.mjs';
+import { commercialCtas, isActiveProSubscription, PRO_PAGES_PER_MONTH } from './plan-catalog.mjs';
 import { dbListRunsForUser, dbPool } from './db.js';
 import { listRunsForDomain, scoreFromResult } from './audit-list.js';
 import { REPORTS_BASE } from './paths.js';
@@ -97,24 +99,29 @@ async function scansForUser(userId, limit = 200) {
 }
 
 async function accountBundle(user) {
-  const subscription = await ensureFreeSubscription(user.id);
-  const plan = await getPlan(subscription.planId || 'free');
+  const subscription = await ensureCustomerSubscription(user.id);
+  const pro = isActiveProSubscription(subscription);
+  const plan = await getPlan(pro ? subscription.planId : 'none');
   const period = currentPeriod();
   const usage = await getUsage(user.id, period);
   const payments = await listPayments(user.id);
   const projects = await listProjectsForUser(user.id);
   const scans = await scansForUser(user.id, 50);
+  const tokens = await getTokenBalance(user.id);
   return {
     role: user.role,
     user: await getPublicUserById(user.id),
     projects,
     plan,
     subscription,
+    tokens,
+    ctas: commercialCtas(),
     usage: {
       period,
       scansUsed: usage.scansUsed,
       pagesScanned: usage.pagesScanned,
       maxScansPerMonth: plan?.maxScansPerMonth ?? null,
+      maxPagesPerMonth: pro ? PRO_PAGES_PER_MONTH : 0,
       maxPagesPerScan: plan?.maxPagesPerScan ?? null,
       maxProjects: plan?.maxProjects ?? null,
     },
@@ -209,6 +216,7 @@ export function registerAccountRoutes(app, ctx) {
         projects: [],
         plan: null,
         usage: null,
+        tokens: { tokens: 0, nextExpiresAt: null, lots: [] },
         payments: [],
         scans: [],
       });
@@ -251,16 +259,20 @@ export function registerAccountRoutes(app, ctx) {
   app.get('/api/account/usage', async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
-    const subscription = await ensureFreeSubscription(userId);
-    const plan = await getPlan(subscription.planId || 'free');
+    const subscription = await ensureCustomerSubscription(userId);
+    const pro = isActiveProSubscription(subscription);
+    const plan = await getPlan(pro ? subscription.planId : 'none');
     const period = currentPeriod();
     const usage = await getUsage(userId, period);
+    const tokens = await getTokenBalance(userId);
     return res.json({
       period,
       scansUsed: usage.scansUsed,
       pagesScanned: usage.pagesScanned,
       plan,
       subscription,
+      tokens,
+      ctas: commercialCtas(),
     });
   });
 

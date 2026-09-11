@@ -13,10 +13,28 @@ export const prerender = false;
         <p id="account-status" class="muted mt-1">Loading…</p>
 
         <section id="usage-card" class="card stack-form account-section" hidden>
-          <h2>Plan and usage</h2>
+          <h2>Subscription</h2>
           <p id="plan-name" class="muted"></p>
+          <p id="plan-status" class="muted"></p>
           <div class="usage-bar" aria-hidden="true"><span id="usage-fill"></span></div>
           <p id="usage-label" class="muted"></p>
+          <div id="billing-actions" class="guest-cta-row">
+            <a class="btn btn-primary" href="/pricing#pro">Subscribe to Pro</a>
+            <button type="button" class="btn btn-ghost" id="manage-billing-btn">Manage billing</button>
+          </div>
+          <p class="muted" style="font-size: 13px;">Cancel at the end of the billing period through Manage billing. You keep Pro until that date.</p>
+        </section>
+
+        <section id="tokens-card" class="card stack-form account-section" hidden>
+          <h2>Tokens</h2>
+          <p id="token-balance" class="muted"></p>
+          <p class="muted" style="font-size: 13px;">Buy extra tokens for occasional scans or to continue after this month’s Pro pages. Packs expire after 12 months.</p>
+          <div class="guest-cta-row">
+            <button type="button" class="btn btn-primary token-buy" data-pack="pack_10">Buy 10 · €10</button>
+            <button type="button" class="btn btn-primary token-buy" data-pack="pack_50">Buy 50 · €45</button>
+            <button type="button" class="btn btn-primary token-buy" data-pack="pack_100">Buy 100 · €80</button>
+            <a class="btn btn-secondary" href="https://about-us.be/contact/">Request Us services</a>
+          </div>
         </section>
 
         <section id="contact-card" class="card stack-form account-section" hidden>
@@ -68,7 +86,7 @@ export const prerender = false;
 
         <section id="payments-card" class="card stack-form account-section" hidden>
           <h2>Payment history</h2>
-          <p id="payments-empty" class="muted">No payments yet. Stripe billing is not connected.</p>
+          <p id="payments-empty" class="muted">No payments yet.</p>
           <div class="table-wrap" id="payments-table-wrap" hidden>
             <table class="account-table">
               <thead>
@@ -150,30 +168,52 @@ export const prerender = false;
     }
     if (status) status.textContent = `${data.user?.email || ''} · ${data.role}`;
 
-    const usageCard = document.getElementById('usage-card');
-    const contactCard = document.getElementById('contact-card');
-    const passwordCard = document.getElementById('password-card');
-    if (data.role === 'customer') {
-      if (usageCard) usageCard.hidden = false;
-      if (contactCard) contactCard.hidden = false;
-      if (passwordCard) passwordCard.hidden = false;
-      fillForm(document.getElementById('contact-form'), data.user);
-      const planName = document.getElementById('plan-name');
-      const usage = data.usage || {};
-      const plan = data.plan;
-      if (planName) planName.textContent = plan?.name ? `${plan.name} plan` : 'Free plan';
-      const used = Number(usage.scansUsed || 0);
-      const max = usage.maxScansPerMonth;
-      const pct = max ? Math.min(100, Math.round((used / max) * 100)) : 0;
-      const fill = document.getElementById('usage-fill');
-      if (fill) fill.style.width = max ? `${pct}%` : '0%';
-      const usageLabel = document.getElementById('usage-label');
-      if (usageLabel) {
-        usageLabel.textContent = max == null
-          ? `${used} scan(s) this month · unlimited on this plan`
-          : `${used} of ${max} scans this month`;
+      const usageCard = document.getElementById('usage-card');
+      const tokensCard = document.getElementById('tokens-card');
+      const contactCard = document.getElementById('contact-card');
+      const passwordCard = document.getElementById('password-card');
+      if (data.role === 'customer') {
+        if (usageCard) usageCard.hidden = false;
+        if (tokensCard) tokensCard.hidden = false;
+        if (contactCard) contactCard.hidden = false;
+        if (passwordCard) passwordCard.hidden = false;
+        fillForm(document.getElementById('contact-form'), data.user);
+        const planName = document.getElementById('plan-name');
+        const planStatus = document.getElementById('plan-status');
+        const usage = data.usage || {};
+        const sub = data.subscription || {};
+        const isPro = data.plan?.id === 'pro' && ['active', 'trialing', 'past_due'].includes(sub.status);
+        const interval = sub.billingInterval === 'yearly' ? 'billed yearly' : 'billed monthly';
+        if (planName) {
+          planName.textContent = isPro ? `Pro · ${interval}` : 'No Pro subscription';
+        }
+        if (planStatus) {
+          if (isPro && sub.cancelAtPeriodEnd && sub.currentPeriodEnd) {
+            planStatus.textContent = `Cancels on ${new Date(sub.currentPeriodEnd).toLocaleDateString()} — you keep Pro until then.`;
+          } else if (isPro && sub.currentPeriodEnd) {
+            planStatus.textContent = `Active until ${new Date(sub.currentPeriodEnd).toLocaleDateString()}.`;
+          } else {
+            planStatus.textContent = 'Buy tokens or subscribe to Pro to run full scans.';
+          }
+        }
+        const used = Number(usage.pagesScanned || 0);
+        const max = isPro ? Number(usage.maxPagesPerMonth || 300) : 0;
+        const pct = max ? Math.min(100, Math.round((used / max) * 100)) : 0;
+        const fill = document.getElementById('usage-fill');
+        if (fill) fill.style.width = max ? `${pct}%` : '0%';
+        const usageLabel = document.getElementById('usage-label');
+        if (usageLabel) {
+          usageLabel.textContent = isPro
+            ? `${used} of ${max} pages this month`
+            : 'Pro pages apply after you subscribe.';
+        }
+        const tokenBalance = document.getElementById('token-balance');
+        const tokensLeft = Number(data.tokens?.tokens || 0);
+        const expires = data.tokens?.nextExpiresAt
+          ? ` Next lot expires ${new Date(data.tokens.nextExpiresAt).toLocaleDateString()}.`
+          : '';
+        if (tokenBalance) tokenBalance.textContent = `${tokensLeft} token${tokensLeft === 1 ? '' : 's'} left.${expires}`;
       }
-    }
 
     const projects = Array.isArray(data.projects) ? data.projects : [];
     if (list) {
@@ -281,6 +321,39 @@ export const prerender = false;
     const res = await fetch(api('/api/account/delete'), { method: 'POST', credentials: creds, headers: headers() });
     if (res.ok) window.location.href = '/';
   });
+
+  document.getElementById('manage-billing-btn')?.addEventListener('click', async () => {
+    const res = await fetch(api('/api/billing/portal'), { method: 'POST', credentials: creds, headers: headers() });
+    const data = await res.json().catch(() => ({}));
+    if (data.url) {
+      window.location.href = data.url;
+      return;
+    }
+    setMsg(data.error || 'Could not open the billing portal.');
+  });
+
+  document.querySelectorAll('.token-buy').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const res = await fetch(api('/api/billing/checkout'), {
+        method: 'POST',
+        credentials: creds,
+        headers: headers(),
+        body: JSON.stringify({ kind: 'pack', packId: btn.getAttribute('data-pack') }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setMsg(data.error || 'Could not start checkout.');
+      btn.disabled = false;
+    });
+  });
+
+  const billingFlag = new URLSearchParams(window.location.search).get('billing');
+  if (billingFlag === 'success') setMsg('Payment received. Tokens and Pro update as soon as Stripe confirms the webhook.');
+  if (billingFlag === 'portal') setMsg('Back from billing. Subscription changes apply when Stripe confirms them.');
 
   attachGuestIfPresent().finally(load);
 </script>

@@ -1,0 +1,23 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+
+export const prerender = true;
+---
+<Layout title="Privacy · Us" indexable={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb="Privacy" />
+    <main class="app-main">
+      <article class="container-narrow page-article">
+        <p class="eyebrow"><span class="dot"></span>Lawyer review required</p>
+        <h1>Privacy notice</h1>
+        <p class="muted">Draft only. Us counsel must review. Last updated 11 September 2026.</p>
+        <div class="prose-width">
+          <p>Us NV processes account data (email, contact details, hashed password), scan URLs, reports, usage, and payment records. Stripe processes card payments. We do not store full card numbers.</p>
+          <p>Guest snapshots are keyed by an unguessable token and an IP-based rate limit. Signed-in scans are stored on your account.</p>
+          <p>Contact: <a class="link" href="https://about-us.be/contact/">about-us.be/contact</a>.</p>
+        </div>
+      </article>
+    </main>
+  </div>
+</Layout>

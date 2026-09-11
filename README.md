@@ -36,7 +36,7 @@ AUTH_ENABLED=false npm start
 
 Staff can still sign in with `APP_USERNAME` / `APP_PASSWORD`. Customers sign up at `/signup` (email + hashed password, signed `wcag_sid` session, CSRF). Set **`SESSION_SECRET`** in production (defaults to a dev-only value derived from `APP_PASSWORD`). Guest 1-page snapshots can attach to the new account (`/signup?guest=TOKEN`).
 
-The public homepage stays the free 1-page scan unless someone is actually signed in. Signed-in customers share a restart-safe scan queue (`SCAN_MAX_CONCURRENT`, default 3, files under `reports/_queue/`) and one active scan per account. Monthly plan caps still return 429; a second scan while one is queued or running returns 409. Stripe Checkout and legal pages (`/terms`, `/privacy`, `/cookies`, `/pricing`) are not wired yet.
+The public homepage stays the free 1-page **Gratis snapshot** unless someone is actually signed in. Signed-in scans use **Pro** (300 pages/month) then prepaid **tokens** (1 token = 1 URL, 12-month expiry). A second scan while one is queued or running returns 409. Empty Pro pages and tokens return 429 with buy / subscribe / Us-diensten CTAs. Pricing is at `/pricing`. Draft legal pages (`/terms`, `/privacy`, `/cookies`) are marked for lawyer review.
 
 ### How scans work (and limitations)
 
@@ -76,9 +76,37 @@ To store run status/results/manual checklist progress **and** customer accounts 
 - Set **`DATABASE_URL`** in the server environment (on the live VPS this lives in `/etc/accessibility-db.env`, loaded by the systemd drop-in — not `Environment=` with a password that contains `*` or `%`).
 - Optional for SSL-required connections: **`DATABASE_SSL=true`**. Localhost Postgres does **not** need SSL.
 
-When `DATABASE_URL` is set, the server creates `runs`, `leads`, `users`, `projects`, `plans`, `subscriptions`, `usage`, and `payments` tables. Existing `reports/_saas/users.json` and `projects.json` are copied in on first boot. Scan HTML/screenshots stay on disk under `reports/<domain>/<runId>/`.
+When `DATABASE_URL` is set, the server creates `runs`, `leads`, `users`, `projects`, `plans`, `subscriptions`, `usage`, `payments`, and `token_lots` tables. Existing `reports/_saas/users.json` and `projects.json` are copied in on first boot. Scan HTML/screenshots stay on disk under `reports/<domain>/<runId>/`.
 
 If `DATABASE_URL` is not set, accounts fall back to those JSON files (fine for local tests; not safe for a campaign).
+
+### Stripe billing
+
+Sellable Stripe items are **one Product each**: token pack 10, pack 50, pack 100, and **one** Pro product with monthly + yearly Prices. Do not put pack prices on the Pro product. Token packs use Checkout `mode: 'payment'`; Pro uses `mode: 'subscription'`. Fulfilment is from **webhooks**, not the success page. Prefer a [restricted API key](https://docs.stripe.com/keys.md#manage-your-api-keys) (`rk_`) over `sk_`. Never commit secrets.
+
+On the VPS, put these in `/etc/accessibility-db.env` (or a sibling env file loaded by systemd) and restart `accessibility.service`:
+
+| Variable | Purpose |
+| --- | --- |
+| `STRIPE_SECRET_KEY` | Restricted sandbox key first (`rk_test_…`). |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret for `POST /api/stripe/webhook`. |
+| `STRIPE_PRICE_PACK_10` / `_50` / `_100` | One-time pack Price IDs. |
+| `STRIPE_PRICE_PRO_MONTHLY` / `STRIPE_PRICE_PRO_YEARLY` | Pro Price IDs on the single Pro product. |
+| `STRIPE_AUTOMATIC_TAX` | Default `false`. Set `true` only after Tax Settings have a **head office** and **Collecting** registrations (Belgium domestic + Union OSS — confirm with your advisor). Until then Stripe collects €0 with no error. |
+| `PUBLIC_BASE_URL` | `https://wcag.about-us.be` |
+
+Create sandbox Products with `node scripts/stripe-catalog.mjs` (uses placeholder tax code `txcd_10103001` SaaS – Business Use until the advisor confirms). Point a webhook at `https://wcag.about-us.be/api/stripe/webhook` for `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.*`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.refund.updated`.
+
+Customer Portal: allow card update, monthly/yearly switch, and **cancel at period end**. Do not enable pause. Until keys are set, checkout and portal return **503**. `/pricing` still lists the catalog.
+
+Us-diensten (manual AT, remediation, training) has **no Stripe SKU** — link to https://about-us.be/contact/.
+
+After this change is merged to `development`, publish as **`deploy`** (not `debian`):
+
+1. Put the Stripe variables above in `/etc/accessibility-db.env` (`chmod 600`). Leave `STRIPE_AUTOMATIC_TAX=false` until Tax Settings have a Belgian head office and Collecting registrations. Do not open Postgres `5432` to the internet.
+2. In Stripe Dashboard → Developers → Webhooks, add `https://wcag.about-us.be/api/stripe/webhook` for the events listed above. Copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
+3. Dashboard → Tax: set the Belgian head office. Ask the advisor to record **Belgium domestic + Union OSS**, then set `STRIPE_AUTOMATIC_TAX=true`. Threshold monitoring starts at the first **live** payment. Live Products/Prices and live `rk_` only after that confirmation.
+4. `sudo -u deploy git pull --ff-only origin development`, `sudo -H -u deploy npm ci` (lockfile changed), `sudo -H -u deploy npm run build --prefix web`, `sudo systemctl restart accessibility.service`.
 
 Monitoring:
 
