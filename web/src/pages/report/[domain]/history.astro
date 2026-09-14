@@ -46,7 +46,7 @@ function formatRunId(runId: string): string {
 }
 ---
 
-<Layout title={`${domain} · audit history`}>
+<Layout title={`${domain} · audit history`} description={`Audit history and score trend for ${domain}.`}>
   <div class="app-shell">
     <AppHeader domain={domain} runId={null} active="history" />
     <main id="main" class="app-main" tabindex="-1">
@@ -86,14 +86,14 @@ function formatRunId(runId: string): string {
                 <span class="muted" style="font-size: 13px;">{trendPoints.length} audits</span>
               </div>
             <div class="history-trend-wrap">
-              <TrendChart client:load data={trendPoints} width={1180} height={180} />
+              <TrendChart data={trendPoints} width={1180} height={180} />
             </div>
             </div>
           )}
 
           {latest && (
             <div class="latest-strip">
-              <ScoreDonut client:load score={latest.score ?? 0} size={88} stroke={9} showLabel={false} />
+              <ScoreDonut score={latest.score ?? 0} size={88} stroke={9} showLabel={false} />
               <div>
                 <div class="eyebrow" style="color: rgba(255,255,255,0.6);">
                   <span class="dot" style="background: #8DFFB7;"></span>Latest audit

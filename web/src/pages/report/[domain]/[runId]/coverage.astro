@@ -26,7 +26,7 @@ if (!existsSync(resultsPath)) {
 const primaryHost = domain.replace(/^www\./, '');
 ---
 
-<Layout title={`WCAG coverage · ${primaryHost}`}>
+<Layout title={`WCAG coverage · ${primaryHost}`} description={`WCAG 2.2 coverage matrix for ${primaryHost} from this automated run.`}>
   <div class="app-shell">
     <AppHeader domain={domain} runId={runId} active="coverage" />
     <main id="main" class="app-main" tabindex="-1">

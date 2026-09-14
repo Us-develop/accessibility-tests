@@ -4,7 +4,55 @@
  * Pulled from the Figma styleguide ("Us – Design System").
  * ──────────────────────────────────────────────────────────────────*/
 
-@import url("https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..700&family=Public+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap");
+/* Self-hosted latin woff2. Owners / Owners Wide files go in /fonts/owners/ (see Layout.astro). */
+@font-face {
+  font-family: "Public Sans";
+  src: url("/fonts/public-sans-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Public Sans";
+  src: url("/fonts/public-sans-400-italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Public Sans";
+  src: url("/fonts/public-sans-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Public Sans";
+  src: url("/fonts/public-sans-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Archivo";
+  src: url("/fonts/archivo-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Archivo";
+  src: url("/fonts/archivo-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 :root {
   /* ─────────  PRIMARY (the only big-fill brand color besides B&W)  ───────── */
@@ -78,10 +126,10 @@
   --status-info:        #6257E8;
 
   /* ─────────  TYPE (Us Web profile: Owners + Public Sans, Archivo fallback)  ─ */
-  --font-display:       "owners-wide", "Archivo", system-ui, sans-serif;
+  --font-display:       "owners-wide", "Archivo", "Public Sans", system-ui, sans-serif;
   --font-body:          "Public Sans", system-ui, sans-serif;
-  --font-button:        "owners", "Archivo", system-ui, sans-serif;
-  --font-quote:         "ivypresto-display", "Archivo", Georgia, serif;
+  --font-button:        "owners", "Archivo", "Public Sans", system-ui, sans-serif;
+  --font-quote:         "ivypresto-display", "Archivo", "Public Sans", Georgia, serif;
   --font-mono:          ui-monospace, "SF Mono", monospace;
 
   /* fluid heading clamps – mobile → desktop  */

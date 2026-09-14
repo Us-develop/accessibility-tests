@@ -8,7 +8,7 @@ const company = companyIdentity();
 const contactEmail = company.email || '';
 const updated = '14 September 2026';
 ---
-<Layout title="Accessibility statement · Us" indexable={true} authMode="guest-ok">
+<Layout title="Accessibility statement · Us" description="Accessibility statement for the Us accessibility scanner. We aim to meet WCAG 2.2 Level AA on our own product." noindex={false} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Accessibility" />
     <main id="main" class="app-main" tabindex="-1">
@@ -42,10 +42,6 @@ const updated = '14 September 2026';
           <h2>Known issues</h2>
           <p>These remain after the work in this statement's current date:</p>
           <ul>
-            <li>
-              Heading webfonts still load from Adobe Typekit. That is a third-party request until
-              fonts are self-hosted.
-            </li>
             <li>
               Signed-in report surfaces (history, coverage, the sales deck, statement, and developer
               HTML) are not in the public self-scan set. Some of those views still use a 16:9 canvas

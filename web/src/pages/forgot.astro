@@ -4,7 +4,7 @@ import AppHeader from '../components/AppHeader.astro';
 export const prerender = false;
 const sent = Astro.url.searchParams.get('sent') === '1';
 ---
-<Layout title="Reset password · Us" indexable={false} authMode="guest-ok">
+<Layout title="Reset password · Us" description="Request a password reset link for your Us accessibility scanner account." noindex={true} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Password" />
     <main id="main" class="app-main" tabindex="-1">

@@ -9,7 +9,7 @@ interface Props {
 const { startLocked = true } = Astro.props;
 const LOGIN_TILE_IMAGES = Array.from({ length: 10 }, (_, i) => {
   const n = String(i + 1).padStart(2, '0');
-  return `/assets/login-tiles/tile-${n}.png`;
+  return `/assets/login-tiles/tile-${n}`;
 });
 const LOGIN_TILE_COL_COUNT = 6;
 const LOGIN_TILE_ROW_COUNT = 8;
@@ -43,12 +43,22 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
               <div class="wcag-login-tiles-track-col">
                 <div class="wcag-login-tiles-stack">
                   {cells.map((src) => (
-                    <div class="wcag-login-tiles-cell" style={{ backgroundImage: `url('${src}')` }} />
+                    <div
+                      class="wcag-login-tiles-cell"
+                      style={{
+                        backgroundImage: `image-set(url('${src}.webp') type('image/webp'), url('${src}.png') type('image/png'))`,
+                      }}
+                    />
                   ))}
                 </div>
                 <div class="wcag-login-tiles-stack">
                   {cells.map((src) => (
-                    <div class="wcag-login-tiles-cell" style={{ backgroundImage: `url('${src}')` }} />
+                    <div
+                      class="wcag-login-tiles-cell"
+                      style={{
+                        backgroundImage: `image-set(url('${src}.webp') type('image/webp'), url('${src}.png') type('image/png'))`,
+                      }}
+                    />
                   ))}
                 </div>
               </div>

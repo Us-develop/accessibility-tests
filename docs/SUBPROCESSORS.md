@@ -12,6 +12,6 @@ Processors that may handle personal data for the Us accessibility scanner. Conta
 | Anthropic | Optional WCAG coverage write-up when `ANTHROPIC_API_KEY` is set | US |
 | Atlassian | Optional Jira OAuth when a staff user connects a project | EU/US |
 
-We do not use a third-party webfont CDN. Typefaces are self-hosted after the font task.
+We do not use a third-party webfont CDN. Typefaces are self-hosted.
 
 <!-- COUNSEL: confirm each processor’s DPA and transfer tool before go-live. -->

@@ -195,9 +195,38 @@
     <div class="holo-stage">
       <div aria-hidden="true" class="halo"></div>
 
-      <img src="/assets/holo-ring-1.png" alt="" class="ring ring-1" />
-      <img src="/assets/holo-ring-2.png" alt="" class="ring ring-2" />
-      <img src="/assets/holo-swirl.png" alt="" class="ring swirl" />
+      <picture class="ring ring-1">
+        <source type="image/webp" srcset="/assets/holo-ring-1.webp" />
+        <img
+          src="/assets/holo-ring-1.png"
+          alt=""
+          width="900"
+          height="516"
+          decoding="async"
+        />
+      </picture>
+      <picture class="ring ring-2">
+        <source type="image/webp" srcset="/assets/holo-ring-2.webp" />
+        <img
+          src="/assets/holo-ring-2.png"
+          alt=""
+          width="900"
+          height="516"
+          decoding="async"
+          loading="lazy"
+        />
+      </picture>
+      <picture class="ring swirl">
+        <source type="image/webp" srcset="/assets/holo-swirl.webp" />
+        <img
+          src="/assets/holo-swirl.png"
+          alt=""
+          width="900"
+          height="516"
+          decoding="async"
+          loading="lazy"
+        />
+      </picture>
 
       {#each [0, 1, 2, 3, 4, 5] as i (i)}
         {@const angle = (i / 6) * Math.PI * 2 + progress / 40}
@@ -422,8 +451,14 @@
     animation: pulse-soft 5s ease-in-out infinite;
   }
   .ring {
+    display: block;
     user-select: none;
     pointer-events: none;
+  }
+  .ring img {
+    width: 100%;
+    height: auto;
+    display: block;
   }
   .ring-1 {
     position: relative;

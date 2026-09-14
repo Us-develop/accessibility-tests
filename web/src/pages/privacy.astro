@@ -9,7 +9,7 @@ const company = companyIdentity();
 const controller = company.legalName || 'the controller';
 const contactEmail = company.email || 'the contact address below';
 ---
-<Layout title="Privacy notice · Us" indexable={true} authMode="guest-ok">
+<Layout title="Privacy notice · Us" description="Privacy notice for the Us accessibility scanner: controller, purposes, retention, subprocessors, transfers, and your rights." noindex={false} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Privacy" />
     <main id="main" class="app-main" tabindex="-1">
@@ -52,7 +52,6 @@ const contactEmail = company.email || 'the contact address below';
             Cloudflare Turnstile when captcha is enabled, Anthropic for optional WCAG write-ups, and Atlassian when you connect Jira.
             Typefaces are self-hosted; we do not send font requests to a third-party font CDN.
           </p>
-          <!-- COUNSEL: Adobe Typekit is still referenced in Layout.astro until Task 10 self-hosts fonts. -->
 
           <h2>Transfers outside the EU</h2>
           <p>

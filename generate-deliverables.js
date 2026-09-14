@@ -134,12 +134,7 @@ export function generateDeveloperAdvice(data, outputDir) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Developer guide · ${escapeHtml(reportData.urls?.[0] || 'Accessibility')}</title>
-  <link rel="preconnect" href="https://use.typekit.net" crossorigin>
-  <link rel="stylesheet" href="https://use.typekit.net/dbo7deg.css">
-  <link rel="stylesheet" href="https://use.typekit.net/rgx8kmt.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..700&family=Public+Sans:ital,wght@0,300..900;1,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/tokens.css">
   <style>
     :root {
       --us-cream: #F5F4E5; --us-ink: #19191B; --us-white: #FFFFFF;

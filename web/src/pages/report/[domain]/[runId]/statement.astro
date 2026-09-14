@@ -61,7 +61,7 @@ function nextYear(s: string): string {
 }
 ---
 
-<Layout title={`Accessibility statement · ${company}`}>
+<Layout title={`Accessibility statement · ${company}`} description={`Draft automated accessibility statement for ${company}. Not a legal conformance claim.`}>
   <div class="app-shell">
     <AppHeader domain={domain} runId={runId} active="statement" />
     <main id="main" class="app-main" tabindex="-1">
@@ -103,7 +103,7 @@ function nextYear(s: string): string {
             <section style="margin-bottom: 28px;">
               <h2 class="statement-h2">2. Conformance status</h2>
               <div class="conformance-row">
-                <ScoreDonut client:load score={payload.scoreClamp} size={84} stroke={8} showLabel={false} />
+                <ScoreDonut score={payload.scoreClamp} size={84} stroke={8} showLabel={false} />
                 <div>
                   <div style="font-family: var(--font-display); font-weight: 700; font-size: 22px; margin-bottom: 2px;">{conformance}</div>
                   <div style="font-size: 14px; color: var(--fg-2);">

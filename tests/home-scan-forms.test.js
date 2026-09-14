@@ -14,7 +14,6 @@ const accountAstro = readFileSync(join(repoRoot, 'web/src/pages/account.astro'),
 const a11yPage = readFileSync(join(repoRoot, 'web/src/pages/accessibility.astro'), 'utf8');
 const appCss = readFileSync(join(repoRoot, 'web/public/styles/app.css'), 'utf8');
 const tokensCss = readFileSync(join(repoRoot, 'web/public/styles/tokens.css'), 'utf8');
-const createApp = readFileSync(join(repoRoot, 'server/create-app.mjs'), 'utf8');
 const runTestsJs = readFileSync(join(repoRoot, 'run-tests.js'), 'utf8');
 const selfScan = readFileSync(join(repoRoot, 'scripts/self-scan.mjs'), 'utf8');
 
@@ -85,10 +84,12 @@ describe('own product accessibility markup', () => {
   });
 
   it('publishes an indexable accessibility statement', () => {
-    assert.match(a11yPage, /indexable=\{true\}/);
+    assert.match(a11yPage, /noindex=\{false\}/);
     assert.match(a11yPage, /WCAG 2\.2 Level AA/);
-    assert.match(createApp, /p === '\/accessibility'/);
-    assert.match(createApp, /Allow: \/accessibility/);
+    const indexable = readFileSync(join(repoRoot, 'server/indexable-paths.mjs'), 'utf8');
+    const robots = readFileSync(join(repoRoot, 'server/seo-routes.mjs'), 'utf8');
+    assert.match(indexable, /\/accessibility/);
+    assert.match(robots, /Disallow: \$\{path\}/);
   });
 
   it('lets run-tests.js load the page origin even on loopback', () => {
