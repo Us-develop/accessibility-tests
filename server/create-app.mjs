@@ -9,13 +9,13 @@ import { spawn } from 'child_process';
 import { createHash, timingSafeEqual } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { sendRunNotificationEmail, createSmtpTransport, sendAccessRequestEmail, sendLeadEmail } from '../server-email.js';
+import { sendRunNotificationEmail, createSmtpTransport, sendAccessRequestEmail, sendLeadEmail, assertProductionMailFrom } from '../server-email.js';
 import { REPORTS_BASE } from './paths.js';
 import { dbPool, dbUpsertRun, dbGetRun, dbGetLatestRun, dbGetRunByGuestToken, dbInsertLead, dbListLeads } from './db.js';
 import { mergeReportData } from './report-data.js';
 import { readJsonIfExists, isValidReportId } from './fs-utils.js';
 import { listAuditEntries, listRunsForDomain, filterRunsForViewer } from './audit-list.js';
-import { getFtpConfig, ftpDownload, ftpUpload, persistReportArtifactsToFtp } from './ftp.js';
+import { getFtpConfig, ftpDownload, ftpUpload, persistReportArtifactsToFtp, assertProductionFtpSecure } from './ftp.js';
 import { normalizeManualProgress, resolvePersistedManualChecked } from '../manual-checklist.js';
 import { analysisCacheBody, anthropicConfigured, buildWcagAnalysisPayload } from '../anthropic-wcag-analysis.js';
 import {
@@ -69,6 +69,7 @@ import { registerStripeRoutes, registerStripeWebhook } from './stripe-routes.mjs
 import { registerRetentionRoutes } from './retention.mjs';
 import { warnStripeTaxCodeIfUnset } from './stripe.mjs';
 import { assertCompanyIdentityForProduction } from './company.mjs';
+import { assertProductionPublicBaseUrl, publicBaseUrl } from './config.mjs';
 import { recordConsent } from './consents.mjs';
 import { LEGAL_PRIVACY_VERSION } from './legal-versions.mjs';
 import { consumeAndQueueCustomerScan, refundScanEntitlement, rememberRunEntitlement } from './billing.mjs';
@@ -132,11 +133,36 @@ let APP_USERNAME = '';
 let APP_PASSWORD = '';
 let AUTH_COOKIE_SAMESITE = 'Lax';
 
-// In-memory run status (running, done, error)
+// In-memory run status (running, queued, done, error). `resultJson` lives on disk/DB, not here.
 const runStatus = new Map();
 const wcagAnalysisInflight = new Map();
-/** Run IDs we already attempted to notify (success or skip) */
-const notificationAttempted = new Set();
+/** Run keys we already attempted to notify (success or skip) → attempted-at ms */
+const notificationAttempted = new Map();
+const RUN_STATUS_TTL_MS = 60 * 60 * 1000;
+
+function evictTerminalRunState(now = Date.now()) {
+  for (const [key, value] of runStatus.entries()) {
+    if (value?.status !== 'done' && value?.status !== 'error') continue;
+    const finishedAt = Number(value.finishedAt || 0);
+    if (finishedAt && now - finishedAt >= RUN_STATUS_TTL_MS) runStatus.delete(key);
+  }
+  for (const [key, attemptedAt] of notificationAttempted.entries()) {
+    if (now - Number(attemptedAt || 0) >= RUN_STATUS_TTL_MS) notificationAttempted.delete(key);
+  }
+}
+
+function rememberRunStatus(key, state) {
+  const next = { ...(state || {}) };
+  delete next.resultJson;
+  if (next.status === 'done' || next.status === 'error') {
+    next.finishedAt = next.finishedAt || Date.now();
+  } else {
+    delete next.finishedAt;
+  }
+  runStatus.set(key, next);
+  evictTerminalRunState();
+  return next;
+}
 
 function clipEmail(s, max = 200) {
   if (typeof s !== 'string') return '';
@@ -193,7 +219,6 @@ const PUBLIC_GET_PATHS = new Set([
   '/api/health/db',
   '/robots.txt',
   '/favicon.png',
-  '/design-system.css',
   '/api/__test/throw',
 ]);
 
@@ -286,7 +311,7 @@ function runStatePatch(domain, runId, patch) {
   const key = runKey(domain, runId);
   const prev = runStatus.get(key) || {};
   const next = { ...prev, ...patch, domain, runId };
-  runStatus.set(key, next);
+  rememberRunStatus(key, next);
   dbUpsertRun(domain, runId, next).catch((err) => {
     console.error(`[run ${domain}/${runId}] DB state update failed:`, err.message);
   });
@@ -300,15 +325,13 @@ function runStatePatch(domain, runId, patch) {
 
 async function maybeSendRunEmail(domain, runId) {
   const key = runKey(domain, runId);
+  evictTerminalRunState();
   if (notificationAttempted.has(key)) return;
   const cur = runStatus.get(key);
   if (!cur?.notifyRequested || !cur.notifyEmail) return;
   if (cur.status !== 'done' && cur.status !== 'error') return;
-  notificationAttempted.add(key);
-  const base = (process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3456}`).replace(
-    /\/$/,
-    ''
-  );
+  notificationAttempted.set(key, Date.now());
+  const base = publicBaseUrl();
   const reportUrl = `${base}/report/${domain}/${runId}/`;
   if (!createSmtpTransport()) {
     console.warn(
@@ -482,6 +505,9 @@ export function createAccessibilityApp(repoRoot, options = {}) {
   }
   sessionSecret();
   assertCompanyIdentityForProduction();
+  assertProductionMailFrom();
+  assertProductionPublicBaseUrl();
+  assertProductionFtpSecure();
   warnStripeTaxCodeIfUnset();
   const sameSiteRaw = String(process.env.AUTH_COOKIE_SAMESITE || 'Lax').trim();
   AUTH_COOKIE_SAMESITE = ['Lax', 'Strict', 'None'].includes(sameSiteRaw) ? sameSiteRaw : 'Lax';
@@ -744,7 +770,7 @@ export function createAccessibilityApp(repoRoot, options = {}) {
     if (!job?.domain || !job?.runId) continue;
     const existing = runStatus.get(runKey(job.domain, job.runId));
     if (!existing) {
-      runStatus.set(runKey(job.domain, job.runId), {
+      rememberRunStatus(runKey(job.domain, job.runId), {
         domain: job.domain,
         runId: job.runId,
         status: 'queued',
@@ -1003,6 +1029,18 @@ app.use((req, res, next) => {
   next();
 });
 
+async function loadResultJson(domain, runId) {
+  if (dbPool) {
+    try {
+      const row = await dbGetRun(domain, runId);
+      if (row?.resultJson) return row.resultJson;
+    } catch (err) {
+      console.error(`[run ${domain}/${runId}] DB result read failed:`, err.message);
+    }
+  }
+  return readJsonIfExists(join(runDirOf(domain, runId), 'accessibility-results.json'));
+}
+
 app.get('/robots.txt', (_req, res) => {
   res.type('text/plain');
   res.send(
@@ -1028,12 +1066,6 @@ app.get('/robots.txt', (_req, res) => {
       '',
     ].join('\n')
   );
-});
-
-app.get('/design-system.css', (_req, res) => {
-  const p = join(repoRoot, 'public', 'design-system.css');
-  if (existsSync(p)) res.sendFile(p);
-  else res.status(404).send('/* design-system.css not found */');
 });
 
 app.get('/auth/login', (req, res) => {
@@ -1472,7 +1504,7 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
             ...queuedState,
             statementMeta: {},
           });
-          runStatus.set(key, queuedState);
+          rememberRunStatus(key, queuedState);
         }
       );
       scanEntitlement = reserved.entitlement;
@@ -1515,7 +1547,7 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
       entitlement: scanEntitlement,
     };
     notificationAttempted.delete(key);
-    runStatus.set(key, initialState);
+    rememberRunStatus(key, initialState);
     if (!fullReport) {
       trackGuestRunStart(ip);
       persistGuestToken(guestToken, { domain, runId, url: urls[0], ip });
@@ -1576,8 +1608,7 @@ async function resolveStatus({ domain, runId }) {
     try {
       const dbStatus = await dbGetRun(domain, runId);
       if (dbStatus) {
-        status = dbStatus;
-        runStatus.set(key, dbStatus);
+        status = rememberRunStatus(key, dbStatus);
       }
     } catch (err) {
       console.error(`[run ${domain}/${runId}] DB status lookup failed:`, err.message);
@@ -1682,19 +1713,7 @@ app.get('/api/guest/:token/teaser', async (req, res) => {
   if (out.status !== 'done') {
     return res.status(409).json({ error: 'Scan is not finished yet.', status: out.status });
   }
-  const key = runKey(binding.domain, binding.runId);
-  let resultJson = runStatus.get(key)?.resultJson || null;
-  if (!resultJson && dbPool) {
-    try {
-      const row = await dbGetRun(binding.domain, binding.runId);
-      resultJson = row?.resultJson || null;
-    } catch (err) {
-      console.error('[teaser] DB read failed:', err.message);
-    }
-  }
-  if (!resultJson) {
-    resultJson = readJsonIfExists(join(runDirOf(binding.domain, binding.runId), 'accessibility-results.json'));
-  }
+  const resultJson = await loadResultJson(binding.domain, binding.runId);
   if (!resultJson) return res.status(404).json({ error: 'Results are not available yet.' });
   const teaser = buildTeaserPayload(resultJson, {
     domain: binding.domain,
@@ -1727,15 +1746,7 @@ app.post('/api/lead', leadIpLimit, async (req, res) => {
       try {
         const out = await resolveStatus({ domain: binding.domain, runId: binding.runId });
         if (out?.status === 'done') {
-          const key = runKey(binding.domain, binding.runId);
-          let resultJson = runStatus.get(key)?.resultJson || null;
-          if (!resultJson && dbPool) {
-            const row = await dbGetRun(binding.domain, binding.runId);
-            resultJson = row?.resultJson || null;
-          }
-          if (!resultJson) {
-            resultJson = readJsonIfExists(join(runDirOf(binding.domain, binding.runId), 'accessibility-results.json'));
-          }
+          const resultJson = await loadResultJson(binding.domain, binding.runId);
           if (resultJson) {
             const teaser = buildTeaserPayload(resultJson, { domain, url: scannedUrl });
             score = teaser.score;

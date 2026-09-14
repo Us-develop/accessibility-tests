@@ -1,0 +1,18 @@
+[Unit]
+Description=Accessibility tests (Astro SSR + Express API)
+After=network.target
+
+[Service]
+User=deploy
+WorkingDirectory=/srv/accessibility-tests
+ExecStart=/usr/bin/node web/run-server.mjs
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/accessibility.env
+KillMode=control-group
+TimeoutStopSec=30
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

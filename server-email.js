@@ -11,6 +11,7 @@ export function createSmtpTransport() {
     host,
     port: parseInt(process.env.SMTP_PORT || '587', 10),
     secure: process.env.SMTP_SECURE === 'true',
+    requireTLS: true,
     auth: process.env.SMTP_USER
       ? {
           user: process.env.SMTP_USER,
@@ -18,6 +19,16 @@ export function createSmtpTransport() {
         }
       : undefined,
   });
+}
+
+export function assertProductionMailFrom() {
+  if (process.env.NODE_ENV !== 'production') return;
+  const from = String(process.env.MAIL_FROM || '').trim();
+  if (!from || /@localhost$/i.test(from)) {
+    throw new Error(
+      'MAIL_FROM is required in production and must not end with @localhost (see .env.example).'
+    );
+  }
 }
 
 function recipientDomain(to) {

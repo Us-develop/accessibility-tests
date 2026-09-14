@@ -1,6 +1,6 @@
 # Setup guide — run locally first
 
-Use this checklist on your machine. **No cloud host (Render or otherwise) is required.**
+Use this checklist on your machine. **No cloud host is required.**
 
 Full detail lives in [README.md](README.md).
 
@@ -8,7 +8,7 @@ Full detail lives in [README.md](README.md).
 
 ## Prerequisites
 
-- **Node.js** 18 or newer (`node -v`)
+- **Node.js** 20 or newer (`node -v`)
 - **npm**
 
 ---
@@ -91,4 +91,4 @@ node run-tests.js --report --urls="https://example.com"
 
 ## Production / hosted deploy
 
-Do this **later** when you have a Node-capable host (VPS, Combell Node, etc.): install deps, install Chromium on the server, set `APP_PASSWORD`, `PORT`, optional `DATABASE_URL`. If the browser UI is served from a **different origin** than the API, configure `<meta name="accessibility-app-base" ...>` as described in [README.md](README.md).
+Do this **later** on the OVH VPS (see **[deploy/README.md](deploy/README.md)**): install deps, install Chromium on the server, set `APP_PASSWORD`, `PORT=3000`, `MAIL_FROM`, `PUBLIC_BASE_URL`, and `DATABASE_URL`. If the browser UI is served from a **different origin** than the API, configure `<meta name="accessibility-app-base" ...>` as described in [README.md](README.md).

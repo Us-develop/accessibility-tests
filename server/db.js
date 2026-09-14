@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { readFileSync } from 'node:fs';
 import pg from 'pg';
-import { readJsonStore } from './json-store.mjs';
+import { archiveJsonStore, readJsonStore } from './json-store.mjs';
 import { DEFAULT_PLANS } from './plan-catalog.mjs';
 
 const { Pool } = pg;
@@ -8,8 +9,8 @@ const txAls = new AsyncLocalStorage();
 /** @type {Map<string, Promise<unknown>>} */
 const jsonUserLocks = new Map();
 
-function parseBooleanEnv(name, defaultValue = false) {
-  const raw = process.env[name];
+function parseBooleanEnv(name, defaultValue = false, env = process.env) {
+  const raw = env[name];
   if (raw == null) return defaultValue;
   const value = String(raw).trim().toLowerCase();
   if (['1', 'true', 'yes', 'on'].includes(value)) return true;
@@ -17,15 +18,29 @@ function parseBooleanEnv(name, defaultValue = false) {
   return defaultValue;
 }
 
-const DATABASE_URL = process.env.DATABASE_URL || '';
-const DB_SSL = parseBooleanEnv('DATABASE_SSL', false);
+/**
+ * Pool options for `pg`. Returns null when DATABASE_URL is unset.
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+export function buildDbPoolConfig(env = process.env) {
+  const connectionString = String(env.DATABASE_URL || '').trim();
+  if (!connectionString) return null;
+  const sslOn = parseBooleanEnv('DATABASE_SSL', false, env);
+  const caPath = String(env.DATABASE_CA || '').trim();
+  return {
+    connectionString,
+    ssl: sslOn
+      ? { rejectUnauthorized: true, ca: caPath ? readFileSync(caPath) : undefined }
+      : undefined,
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    statement_timeout: 30000,
+  };
+}
 
-export const dbPool = DATABASE_URL
-  ? new Pool({
-      connectionString: DATABASE_URL,
-      ssl: DB_SSL ? { rejectUnauthorized: false } : undefined,
-    })
-  : null;
+const poolConfig = buildDbPoolConfig();
+export const dbPool = poolConfig ? new Pool(poolConfig) : null;
 
 function txQuery(text, values) {
   const client = txAls.getStore() || dbPool;
@@ -798,32 +813,7 @@ export async function dbUpsertUser(user) {
         updated_at = NOW()
       RETURNING ${USER_COLUMNS}
     `,
-    [
-      user.id,
-      String(user.email || '').trim().toLowerCase(),
-      user.name || '',
-      user.role || 'customer',
-      user.passwordHash,
-      user.emailVerified === true,
-      user.verifyToken || null,
-      user.verifyExpiresAt || null,
-      user.resetToken || null,
-      user.resetExpiresAt || null,
-      user.phone || '',
-      user.company || '',
-      user.vatNumber || '',
-      user.addressLine1 || '',
-      user.addressLine2 || '',
-      user.city || '',
-      user.postalCode || '',
-      user.country || '',
-      user.customerType === 'business' ? 'business' : 'consumer',
-      Number(user.sessionVersion) > 0 ? Number(user.sessionVersion) : 1,
-      user.pendingEmail || null,
-      user.pendingEmailToken || null,
-      user.pendingEmailExpiresAt || null,
-      user.createdAt || null,
-    ]
+    userInsertValues(user)
   );
   return mapUserRow(rows[0]);
 }
@@ -1582,28 +1572,100 @@ async function seedDefaultPlans() {
   await txQuery(`UPDATE plans SET active = FALSE WHERE id IN ('free', 'starter', 'agency')`);
 }
 
-async function migrateJsonStoresToPostgres() {
-  if (!dbPool) return;
+function userInsertValues(user) {
+  return [
+    user.id,
+    String(user.email || '').trim().toLowerCase(),
+    user.name || '',
+    user.role || 'customer',
+    user.passwordHash,
+    user.emailVerified === true,
+    user.verifyToken || null,
+    user.verifyExpiresAt || null,
+    user.resetToken || null,
+    user.resetExpiresAt || null,
+    user.phone || '',
+    user.company || '',
+    user.vatNumber || '',
+    user.addressLine1 || '',
+    user.addressLine2 || '',
+    user.city || '',
+    user.postalCode || '',
+    user.country || '',
+    user.customerType === 'business' ? 'business' : 'consumer',
+    Number(user.sessionVersion) > 0 ? Number(user.sessionVersion) : 1,
+    user.pendingEmail || null,
+    user.pendingEmailToken || null,
+    user.pendingEmailExpiresAt || null,
+    user.createdAt || null,
+  ];
+}
+
+/**
+ * One-shot copy of reports/_saas/users.json and projects.json into Postgres.
+ * Insert-only (`ON CONFLICT DO NOTHING`) so an existing `password_hash` is never overwritten.
+ * After a pass, the JSON files are renamed to `*.imported`.
+ * @param {{ query?: typeof txQuery }} [options]
+ */
+export async function migrateJsonStoresToPostgres(options = {}) {
+  const query = options.query || (dbPool ? txQuery : null);
+  if (!query) return { users: 0, projects: 0 };
+  let usersCopied = 0;
+  let projectsCopied = 0;
   const userData = readJsonStore('users.json', { users: [] });
   const users = Array.isArray(userData.users) ? userData.users : [];
   for (const user of users) {
-    if (!user?.id || !user.email) continue;
+    if (!user?.id || !user.email || !user.passwordHash) continue;
     try {
-      await dbUpsertUser(user);
+      const result = await query(
+        `
+          INSERT INTO users (
+            id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
+            reset_token, reset_expires_at, phone, company, vat_number, address_line1, address_line2,
+            city, postal_code, country, customer_type, session_version, pending_email, pending_email_token,
+            pending_email_expires_at, created_at, updated_at
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8,
+            $9, $10, $11, $12, $13, $14, $15,
+            $16, $17, $18, $19, $20, $21, $22,
+            $23, COALESCE($24::timestamptz, NOW()), NOW()
+          )
+          ON CONFLICT DO NOTHING
+        `,
+        userInsertValues(user)
+      );
+      if (result?.rowCount) usersCopied += 1;
     } catch (err) {
       console.error(`[migrate] user ${user.id} failed:`, err.message);
     }
   }
+  archiveJsonStore('users.json');
   const projectData = readJsonStore('projects.json', { projects: [] });
   const projects = Array.isArray(projectData.projects) ? projectData.projects : [];
   for (const project of projects) {
     if (!project?.id || !project.userId || !project.domain) continue;
     try {
-      await dbUpsertProject(project);
+      const result = await query(
+        `
+          INSERT INTO projects (id, user_id, domain, name, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()), NOW())
+          ON CONFLICT DO NOTHING
+        `,
+        [
+          project.id,
+          project.userId,
+          String(project.domain).toLowerCase(),
+          project.name || project.domain,
+          project.createdAt || null,
+        ]
+      );
+      if (result?.rowCount) projectsCopied += 1;
     } catch (err) {
       console.error(`[migrate] project ${project.id} failed:`, err.message);
     }
   }
+  archiveJsonStore('projects.json');
+  return { users: usersCopied, projects: projectsCopied };
 }
 
 

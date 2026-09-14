@@ -44,12 +44,6 @@ export default defineConfig({
           secure: false,
           cookieDomainRewrite: '',
         },
-        '/design-system.css': {
-          target: 'http://127.0.0.1:3456',
-          changeOrigin: true,
-          secure: false,
-          cookieDomainRewrite: '',
-        },
       },
     },
   },
