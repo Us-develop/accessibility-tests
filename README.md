@@ -41,8 +41,9 @@ Staff sign in with `APP_USERNAME` / `APP_PASSWORD` (cookie session only — no H
 | `AUTH_ENABLED` | yes (keep `true`) | `false` only for local demos. |
 | `APP_USERNAME` | yes | Staff login username. No default. |
 | `APP_PASSWORD` | yes | Staff login password, ≥12 characters. Server exits if missing when auth is on. |
-| `SESSION_SECRET` | yes | HMAC key for `wcag_sid`, ≥32 characters. Server exits if missing when auth is on or `NODE_ENV=production`. |
+| `SESSION_SECRET` | yes | HMAC key for `wcag_sid`, ≥32 characters, and HKDF input for encrypting `reports/<domain>/jira-oauth.json` at rest. Server exits if missing when auth is on or `NODE_ENV=production`. |
 | `STAFF_SESSION_VERSION` | no (default `1`) | Bump to invalidate all staff sessions after rotating `APP_PASSWORD`. |
+| `DEBUG_ENDPOINTS` | no (default off) | Set `true` to enable staff-only `/api/debug/*` routes. Default off; staff still get 404 when unset. |
 | `AUTH_COOKIE_SECURE` | yes (`true` on HTTPS) | Cookie `Secure` flag. Forced `true` when `NODE_ENV=production`; may be `false` only outside production. |
 | `TRUST_PROXY_HOPS` | no (default `1`) | Express `trust proxy` hop count (Caddy sits in front). |
 | `WCAG_DISABLE_RATE_LIMIT` | no | Set `1` only in automated tests. Do not set in production. |

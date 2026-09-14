@@ -8,6 +8,27 @@ export function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
+/** 403 JSON unless the request already has a staff session (`req.access.role`). */
+export function requireStaff(req, res, next) {
+  if (req.access?.role !== 'staff') {
+    return res.status(403).json({ error: 'Staff only.' });
+  }
+  return next();
+}
+
+export function debugEndpointsEnabled() {
+  const raw = String(process.env.DEBUG_ENDPOINTS || '').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(raw);
+}
+
+/** 404 JSON unless DEBUG_ENDPOINTS is enabled (default off). */
+export function requireDebugEndpoints(req, res, next) {
+  if (!debugEndpointsEnabled()) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  return next();
+}
+
 function wrapIfAsync(fn) {
   if (typeof fn !== 'function') return fn;
   if (fn.length >= 4) return fn;
