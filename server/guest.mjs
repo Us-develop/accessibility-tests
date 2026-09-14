@@ -1,37 +1,17 @@
 /**
- * Guest-tier helpers: public URL checks (SSRF), rate limits, Turnstile, tokens, scan caps.
+ * Guest-tier helpers: rate limits, Turnstile, tokens, scan caps.
+ * Public URL / SSRF checks live in `url-guard.mjs`.
  */
-import { lookup } from 'dns/promises';
 import { createHash, randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, readdirSync, unlinkSync } from 'fs';
-import { BlockList, isIP } from 'net';
 import { join } from 'path';
 import { REPORTS_BASE } from './paths.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 import { commercialCtas } from './plan-catalog.mjs';
 
+export { assertPublicHttpUrl } from './url-guard.mjs';
+
 export const GUEST_TOKEN_RE = /^[a-f0-9]{32}$/;
-
-const BLOCKED_HOSTS = new Set([
-  'localhost',
-  'localhost.',
-  'metadata.google.internal',
-  'metadata.google.internal.',
-  'kubernetes.default',
-  'kubernetes.default.svc',
-]);
-
-const privateNets = new BlockList();
-privateNets.addSubnet('0.0.0.0', 8, 'ipv4');
-privateNets.addSubnet('10.0.0.0', 8, 'ipv4');
-privateNets.addSubnet('127.0.0.0', 8, 'ipv4');
-privateNets.addSubnet('169.254.0.0', 16, 'ipv4');
-privateNets.addSubnet('172.16.0.0', 12, 'ipv4');
-privateNets.addSubnet('192.168.0.0', 16, 'ipv4');
-privateNets.addSubnet('100.64.0.0', 10, 'ipv4');
-privateNets.addAddress('::1', 'ipv6');
-privateNets.addSubnet('fc00::', 7, 'ipv6');
-privateNets.addSubnet('fe80::', 10, 'ipv6');
 
 /** @type {Map<string, number>} */
 const guestRunningByIp = new Map();
@@ -69,72 +49,6 @@ export function newGuestToken() {
 
 export function clientIp(req) {
   return String(req?.ip || '').slice(0, 128);
-}
-
-function normalizeIp(ip) {
-  let value = String(ip || '').trim().toLowerCase();
-  if (value.startsWith('::ffff:')) value = value.slice(7);
-  return value;
-}
-
-function isBlockedIp(ip) {
-  const value = normalizeIp(ip);
-  if (!value) return true;
-  const kind = isIP(value);
-  if (kind === 4) return privateNets.check(value, 'ipv4');
-  if (kind === 6) return privateNets.check(value, 'ipv6');
-  return true;
-}
-
-function isBlockedHostname(hostname) {
-  const host = String(hostname || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\.$/, '');
-  if (!host) return true;
-  if (BLOCKED_HOSTS.has(host) || BLOCKED_HOSTS.has(`${host}.`)) return true;
-  if (host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.local')) return true;
-  if (isIP(host) && isBlockedIp(host)) return true;
-  return false;
-}
-
-/**
- * Guest scans: a single public http(s) URL. Rejects private/reserved IPs after DNS lookup.
- * @param {string} raw
- * @returns {Promise<string>} canonical URL
- */
-export async function assertPublicHttpUrl(raw) {
-  const input = String(raw || '').trim();
-  if (!input || input.length > 2048) {
-    throw Object.assign(new Error('Enter a single public http(s) URL.'), { status: 400 });
-  }
-  let parsed;
-  try {
-    parsed = new URL(input);
-  } catch {
-    throw Object.assign(new Error('Enter a valid URL, including https://.'), { status: 400 });
-  }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw Object.assign(new Error('Only http and https URLs can be scanned.'), { status: 400 });
-  }
-  if (parsed.username || parsed.password) {
-    throw Object.assign(new Error('URLs with credentials are not allowed.'), { status: 400 });
-  }
-  const hostname = parsed.hostname;
-  if (isBlockedHostname(hostname)) {
-    throw Object.assign(new Error('That host cannot be scanned.'), { status: 400 });
-  }
-  let records;
-  try {
-    records = await lookup(hostname, { all: true });
-  } catch {
-    throw Object.assign(new Error('Could not resolve that hostname.'), { status: 400 });
-  }
-  if (!records.length || records.some((r) => isBlockedIp(r.address))) {
-    throw Object.assign(new Error('That host cannot be scanned.'), { status: 400 });
-  }
-  parsed.hash = '';
-  return parsed.toString();
 }
 
 export function guestFreebieUsed(req) {

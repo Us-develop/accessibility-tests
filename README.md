@@ -47,12 +47,15 @@ Staff sign in with `APP_USERNAME` / `APP_PASSWORD` (cookie session only — no H
 | `AUTH_COOKIE_SECURE` | yes (`true` on HTTPS) | Cookie `Secure` flag. Forced `true` when `NODE_ENV=production`; may be `false` only outside production. |
 | `TRUST_PROXY_HOPS` | no (default `1`) | Express `trust proxy` hop count (Caddy sits in front). |
 | `WCAG_DISABLE_RATE_LIMIT` | no | Set `1` only in automated tests. Do not set in production. |
+| `SCANNER_NO_SANDBOX` | no (default off) | Set `true` only if Chromium cannot start because the host forbids the process sandbox (user namespaces / seccomp). Production Docker runs as `USER node` so this should stay unset. |
 
 The public homepage stays the free 1-page **Gratis snapshot** (one per person, guest or signed-in — not both) unless someone is actually signed in with remaining tokens or Pro. Complimentary token is spent first, then **Pro** (300 pages/month), then prepaid **tokens** (1 token = 1 URL, 12-month expiry). A second scan while one is queued or running returns 409. Empty Pro pages and tokens return 429 with buy / subscribe / Us-diensten CTAs. Pricing is at `/pricing`. Draft legal pages (`/terms`, `/privacy`, `/cookies`) are marked for lawyer review.
 
 ### How scans work (and limitations)
 
 - **Page load:** URLs open with `domcontentloaded` (see `PAGE_GOTO_TIMEOUT_MS`, optional `WAIT_FOR_NETWORKIDLE` in the test runner and server-spawned runs).
+- **Public URLs only:** Every scan URL (guest, customer, staff textarea, CSV, sitemap, other file) is checked with `assertPublicHttpUrl` before it is accepted. Private, loopback, link-local, metadata, and other reserved addresses are dropped with a per-URL reason. The Playwright child re-checks DNS before navigation and aborts requests (including redirect chains) that leave that allowlist.
+- **Scanner UA / motion:** Pages load as `AccessibilityScanner/1.0 (+https://<PUBLIC_BASE_URL>)` with `prefers-reduced-motion: reduce` and animations/transitions disabled before axe runs.
 - **Media:** `BLOCK_MEDIA_REQUESTS` (default `true`) skips video/audio fetches, which can change layout or behavior on media-heavy pages.
 - **Assisted review:** The suite combines axe-core (WCAG 2.2 A/AA tags), custom heuristics, and a manual checklist. It is **not** a complete WCAG audit or legal sign-off. See `/limitations` in the web UI.
 - **Reports:** Axe results are placed in **one primary checklist chapter** per rule (so chapter charts do not double-count the same axe issue). Use the per-page violation list for the canonical axe finding list.

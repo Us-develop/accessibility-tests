@@ -2,16 +2,23 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFile
 import { join } from 'path';
 import { REPORTS_BASE } from './paths.js';
 import { parsePositiveIntEnv } from './guest.mjs';
+import { assertPublicHttpUrl } from './url-guard.mjs';
 
 const QUEUE_DIR = () => join(REPORTS_BASE, '_queue');
 
 /** @type {(job: object) => Promise<void> | void} */
 let executor = null;
+/** @type {(job: object, err?: Error) => void} */
+let jobErrorHandler = null;
 let draining = false;
 let drainQueued = false;
 
 export function setQueueExecutor(fn) {
   executor = fn;
+}
+
+export function setQueueJobErrorHandler(fn) {
+  jobErrorHandler = typeof fn === 'function' ? fn : null;
 }
 
 function ensureQueueDir() {
@@ -138,9 +145,27 @@ export function kickQueue() {
   });
 }
 
+async function assertJobUrlsPublic(job) {
+  const urls = Array.isArray(job?.urls) ? job.urls : [];
+  for (const url of urls) {
+    await assertPublicHttpUrl(url);
+  }
+}
+
 function spawnJob(job) {
   const run = async () => {
     try {
+      try {
+        await assertJobUrlsPublic(job);
+      } catch {
+        job.status = 'error';
+        job.error = 'blocked_target';
+        writeJob(job);
+        if (typeof jobErrorHandler === 'function') {
+          jobErrorHandler(job);
+        }
+        return;
+      }
       await executor(job);
     } catch (err) {
       job.status = 'error';

@@ -26,7 +26,6 @@ import {
   latestRunIdOnDisk,
 } from './run-ids.js';
 import {
-  assertPublicHttpUrl,
   checkGuestFreeScan,
   markGuestFreeScan,
   guestFreebieClaimed,
@@ -44,6 +43,15 @@ import {
   appendLeadFile,
   readLeadFileRows,
 } from './guest.mjs';
+import {
+  assertPublicHttpUrl,
+  buildScanProcessEnv,
+  collectUrlCandidates,
+  fetchSitemapDocument,
+  filterPublicHttpUrls,
+  looksLikeUrlCandidate,
+  setUrlGuardLookup,
+} from './url-guard.mjs';
 import { buildTeaserPayload } from './teaser-payload.mjs';
 import {
   clearSessionCookies,
@@ -68,6 +76,7 @@ import {
   listJobs,
   recoverInterruptedJobs,
   setQueueExecutor,
+  setQueueJobErrorHandler,
 } from './queue.mjs';
 import {
   errorMiddleware,
@@ -309,13 +318,6 @@ const upload = multer({
   limits: { fileSize: 1024 * 1024 },
 });
 
-function extractUrlsFromText(text) {
-  if (!text || typeof text !== 'string') return [];
-  const urlRegex = /https?:\/\/[^\s"'<>,\|]+/g;
-  const matches = text.match(urlRegex) || [];
-  return [...new Set(matches.map((u) => u.replace(/[.,;:!?)]+$/, '')))];
-}
-
 function normalizeDomainFromUrl(input) {
   try {
     const u = new URL(input);
@@ -338,7 +340,7 @@ function parseCsv(buffer) {
   for (const line of lines) {
     const parts = line.split(/[,\t]/).map((p) => p.trim().replace(/^["']|["']$/g, ''));
     for (const p of parts) {
-      if (p.startsWith('http')) urls.push(p);
+      if (looksLikeUrlCandidate(p)) urls.push(p);
     }
   }
   return [...new Set(urls)];
@@ -365,6 +367,9 @@ function extractLocs(text) {
 async function parseSitemapBuffer(buffer, opts = {}) {
   const maxDepth = Number.isFinite(opts.maxDepth) ? opts.maxDepth : 3;
   const maxUrls = Number.isFinite(opts.maxUrls) && opts.maxUrls > 0 ? opts.maxUrls : 5000;
+  const urlGuard = opts.urlGuard || {};
+  /** @type {{ url: string, reason: string }[]} */
+  const rejected = Array.isArray(opts.rejected) ? opts.rejected : [];
 
   /** @type {Set<string>} */
   const pageUrls = new Set();
@@ -387,36 +392,40 @@ async function parseSitemapBuffer(buffer, opts = {}) {
       }
       for (const loc of locs) {
         if (pageUrls.size >= maxUrls) break;
-        if (!/^https?:\/\//i.test(loc)) continue;
         if (loc.toLowerCase().endsWith('.gz')) {
           console.warn(`[sitemap] skipping gzip child sitemap (not supported): ${loc}`);
+          rejected.push({ url: loc, reason: 'Gzip child sitemaps are not supported.' });
           continue;
         }
         if (seenSitemaps.has(loc)) continue;
         seenSitemaps.add(loc);
         try {
-          const res = await fetch(loc, { redirect: 'follow' });
-          if (!res.ok) {
-            console.warn(`[sitemap] HTTP ${res.status} for ${loc}`);
-            continue;
-          }
-          const childText = await res.text();
-          await walk(childText, depth + 1, loc);
+          await assertPublicHttpUrl(loc, urlGuard);
         } catch (err) {
-          console.warn(`[sitemap] failed to fetch ${loc}: ${err?.message || err}`);
+          rejected.push({ url: loc, reason: err?.message || 'That host cannot be scanned.' });
+          continue;
         }
+        const childText = await fetchSitemapDocument(loc, urlGuard);
+        if (childText == null) {
+          rejected.push({ url: loc, reason: 'Sitemap fetch was skipped (blocked, redirect, timeout, or too large).' });
+          continue;
+        }
+        await walk(childText, depth + 1, loc);
       }
     } else {
       for (const loc of locs) {
         if (pageUrls.size >= maxUrls) break;
-        if (!/^https?:\/\//i.test(loc)) continue;
-        pageUrls.add(loc);
+        try {
+          pageUrls.add(await assertPublicHttpUrl(loc, urlGuard));
+        } catch (err) {
+          rejected.push({ url: loc, reason: err?.message || 'That host cannot be scanned.' });
+        }
       }
     }
   }
 
   await walk(buffer.toString('utf8'), 0, null);
-  return [...pageUrls];
+  return { urls: [...pageUrls], rejected };
 }
 
 const STATEMENT_MAX = 2000;
@@ -440,10 +449,15 @@ function parseStatementMeta(body) {
   };
 }
 
-export function createAccessibilityApp(repoRoot) {
+export function createAccessibilityApp(repoRoot, options = {}) {
   if (typeof repoRoot !== 'string' || !repoRoot) {
     throw new Error('createAccessibilityApp(repoRoot): repoRoot must be a non-empty path string');
   }
+  const urlGuard = {
+    lookup: options.lookup,
+    fetch: options.sitemapFetch,
+  };
+  const spawnImpl = typeof options.spawn === 'function' ? options.spawn : spawn;
   AUTH_ENABLED = parseBooleanEnv('AUTH_ENABLED', true);
   APP_USERNAME = String(process.env.APP_USERNAME || '').trim();
   APP_PASSWORD = String(process.env.APP_PASSWORD || '').trim();
@@ -493,7 +507,7 @@ export function createAccessibilityApp(repoRoot) {
     });
     const urlsArg = (Array.isArray(urls) ? urls : []).join('\n');
     return new Promise((resolve) => {
-      const child = spawn(
+      const child = spawnImpl(
         process.execPath,
         [
           join(repoRoot, 'run-tests.js'),
@@ -504,6 +518,7 @@ export function createAccessibilityApp(repoRoot) {
         {
           cwd: repoRoot,
           stdio: ['ignore', 'pipe', 'pipe'],
+          env: buildScanProcessEnv(process.env),
         }
       );
 
@@ -695,7 +710,17 @@ export function createAccessibilityApp(repoRoot) {
   }
 
   recoverInterruptedJobs();
+  if (typeof options.lookup === 'function') {
+    setUrlGuardLookup(options.lookup);
+  }
   setQueueExecutor((job) => launchScanProcess(job));
+  setQueueJobErrorHandler((job) => {
+    if (!job?.domain || !job?.runId) return;
+    runStatePatch(job.domain, job.runId, {
+      status: 'error',
+      error: job.error || 'blocked_target',
+    });
+  });
   for (const job of listJobs()) {
     if (!job?.domain || !job?.runId) continue;
     const existing = runStatus.get(runKey(job.domain, job.runId));
@@ -1249,12 +1274,15 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   const customerUser = customer ? await getUserById(req.access.userId) : null;
   const fullReport = staff || Boolean(customerUser);
   const ip = clientIp(req);
-  let urls = [];
+  /** @type {string[]} */
+  const candidates = [];
+  /** @type {{ url: string, reason: string }[]} */
+  let rejected = [];
 
   if (staff) {
     const urlText = req.body?.urls || '';
     if (urlText.trim()) {
-      urls = extractUrlsFromText(urlText);
+      candidates.push(...collectUrlCandidates(urlText));
     }
   } else if (customerUser) {
     if (req.file) {
@@ -1262,31 +1290,15 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
         error: 'Sitemap uploads stay on staff scans for now. Paste public URLs from one domain.',
       });
     }
-    try {
-      const raw = String(req.body?.urls || req.body?.url || '').trim();
-      const candidates = extractUrlsFromText(raw);
-      const next = [];
-      for (const candidate of candidates.length ? candidates : raw ? [raw] : []) {
-        next.push(await assertPublicHttpUrl(candidate));
-      }
-      urls = next;
-    } catch (err) {
-      const status = Number(err?.status) || 400;
-      return res.status(status).json({ error: err.message || 'Could not start the scan.' });
-    }
+    const raw = String(req.body?.urls || req.body?.url || '').trim();
+    const extracted = collectUrlCandidates(raw);
+    candidates.push(...(extracted.length ? extracted : raw ? [raw] : []));
   } else {
     if (req.file) {
       return res.status(400).json({ error: 'File uploads are available after you sign in.' });
     }
     try {
       await verifyTurnstileIfConfigured(req.body?.turnstileToken || req.body?.['cf-turnstile-response'], ip);
-      const rawUrl = String(req.body?.url || req.body?.urls || '').trim();
-      const canonical = await assertPublicHttpUrl(rawUrl);
-      urls = [canonical];
-      checkGuestFreeScan(req);
-      if (guestIpHasRunningScan(ip)) {
-        return res.status(409).json({ error: 'A free scan is already running from this network. Please wait for it to finish.' });
-      }
     } catch (err) {
       const status = Number(err?.status) || 400;
       return res.status(status).json({
@@ -1295,6 +1307,8 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
         ctas: err.ctas,
       });
     }
+    const rawUrl = String(req.body?.url || req.body?.urls || '').trim();
+    candidates.push(rawUrl);
   }
 
   const maxUrls = staff
@@ -1309,30 +1323,53 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     const buf = req.file.buffer;
     const name = (req.file.originalname || '').toLowerCase();
     if (name.endsWith('.csv')) {
-      urls = [...urls, ...parseCsv(buf)];
+      candidates.push(...parseCsv(buf));
     } else if (name.endsWith('.xml')) {
       try {
         const fromSitemap = await parseSitemapBuffer(buf, {
           maxUrls: maxUrls > 0 ? maxUrls * 2 : 5000,
+          urlGuard,
+          rejected,
         });
-        urls = [...urls, ...fromSitemap];
+        candidates.push(...fromSitemap.urls);
       } catch (err) {
         return res.status(400).json({ error: `Could not parse sitemap: ${err?.message || err}` });
       }
     } else {
-      urls = [...urls, ...extractUrlsFromText(buf.toString('utf8'))];
+      candidates.push(...collectUrlCandidates(buf.toString('utf8')));
     }
   }
 
-  urls = [...new Set(urls)].filter((u) => u.startsWith('http'));
+  const filtered = await filterPublicHttpUrls(candidates, urlGuard);
+  rejected = [...rejected, ...filtered.rejected];
+  let urls = filtered.accepted;
   const requestedUrls = urls.length;
 
   if (urls.length === 0) {
+    const firstReason = rejected[0]?.reason;
     return res.status(400).json({
-      error: staff
-        ? 'No valid URLs provided. Add URLs in the text area or upload a CSV/XML file.'
-        : 'Enter one public http(s) URL to scan.',
+      error: firstReason
+        || (staff
+          ? 'No valid URLs provided. Add URLs in the text area or upload a CSV/XML file.'
+          : 'Enter one public http(s) URL to scan.'),
+      rejected,
     });
+  }
+
+  if (!staff && !customerUser) {
+    try {
+      checkGuestFreeScan(req);
+      if (guestIpHasRunningScan(ip)) {
+        return res.status(409).json({ error: 'A free scan is already running from this network. Please wait for it to finish.' });
+      }
+    } catch (err) {
+      const status = Number(err?.status) || 400;
+      return res.status(status).json({
+        error: err.message || 'Could not start the scan.',
+        code: err.code || undefined,
+        ctas: err.ctas,
+      });
+    }
   }
 
   if (maxUrls > 0 && urls.length > maxUrls) {
@@ -1465,6 +1502,7 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
     maxUrls: maxUrls > 0 ? maxUrls : null,
     guestToken: guestToken || undefined,
     teaser: !fullReport,
+    rejected: rejected.length ? rejected : undefined,
   });
 });
 
