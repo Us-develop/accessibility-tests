@@ -109,6 +109,7 @@ export async function initDb() {
   await dbPool.query(`CREATE INDEX IF NOT EXISTS leads_created_idx ON leads (created_at DESC)`);
 
   await dbPool.query(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS user_id TEXT`);
+  await dbPool.query(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
   await dbPool.query(
     `CREATE INDEX IF NOT EXISTS runs_user_created_idx ON runs (user_id, created_at DESC)`
   );
@@ -135,11 +136,17 @@ export async function initDb() {
       country TEXT,
       session_version INTEGER NOT NULL DEFAULT 1,
       customer_type TEXT NOT NULL DEFAULT 'consumer',
+      pending_email TEXT,
+      pending_email_token TEXT,
+      pending_email_expires_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
   await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1`);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email TEXT`);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email_token TEXT`);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email_expires_at TIMESTAMPTZ`);
   await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT`);
   await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT`);
   await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vat_number TEXT`);
@@ -162,13 +169,21 @@ export async function initDb() {
       id SERIAL PRIMARY KEY,
       user_id TEXT NULL,
       email TEXT NULL,
-      kind TEXT NOT NULL CHECK (kind IN ('terms', 'privacy', 'withdrawal_waiver', 'lead_privacy')),
+      kind TEXT NOT NULL CHECK (kind IN ('terms', 'privacy', 'withdrawal_waiver', 'lead_privacy', 'deletion')),
       version TEXT NOT NULL,
       accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       ip_hash TEXT,
       user_agent TEXT,
       context JSONB
     )
+  `);
+  await dbPool.query(`ALTER TABLE consents DROP CONSTRAINT IF EXISTS consents_kind_check`);
+  await dbPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE consents ADD CONSTRAINT consents_kind_check
+        CHECK (kind IN ('terms', 'privacy', 'withdrawal_waiver', 'lead_privacy', 'deletion'));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
   `);
   await dbPool.query(`CREATE INDEX IF NOT EXISTS consents_user_idx ON consents (user_id, accepted_at DESC)`);
   await dbPool.query(`CREATE INDEX IF NOT EXISTS consents_email_idx ON consents (email, accepted_at DESC)`);
@@ -601,6 +616,9 @@ function mapUserRow(row) {
     country: row.country || '',
     customerType: row.customer_type === 'business' ? 'business' : 'consumer',
     sessionVersion: Number(row.session_version) > 0 ? Number(row.session_version) : 1,
+    pendingEmail: row.pending_email || null,
+    pendingEmailToken: row.pending_email_token || null,
+    pendingEmailExpiresAt: isoOrNull(row.pending_email_expires_at),
     createdAt: isoOrNull(row.created_at),
     updatedAt: isoOrNull(row.updated_at),
   };
@@ -608,7 +626,8 @@ function mapUserRow(row) {
 
 const USER_COLUMNS = `id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
             reset_token, reset_expires_at, phone, company, vat_number, address_line1, address_line2,
-            city, postal_code, country, customer_type, session_version, created_at, updated_at`;
+            city, postal_code, country, customer_type, session_version, pending_email, pending_email_token,
+            pending_email_expires_at, created_at, updated_at`;
 
 export async function dbGetUserById(id) {
   if (!dbPool || !id) return null;
@@ -630,11 +649,13 @@ export async function dbUpsertUser(user) {
       INSERT INTO users (
         id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
         reset_token, reset_expires_at, phone, company, vat_number, address_line1, address_line2,
-        city, postal_code, country, customer_type, session_version, created_at, updated_at
+        city, postal_code, country, customer_type, session_version, pending_email, pending_email_token,
+        pending_email_expires_at, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13, $14, $15,
-        $16, $17, $18, $19, $20, COALESCE($21::timestamptz, NOW()), NOW()
+        $16, $17, $18, $19, $20, $21, $22,
+        $23, COALESCE($24::timestamptz, NOW()), NOW()
       )
       ON CONFLICT (id) DO UPDATE SET
         email = EXCLUDED.email,
@@ -656,6 +677,9 @@ export async function dbUpsertUser(user) {
         country = EXCLUDED.country,
         customer_type = EXCLUDED.customer_type,
         session_version = EXCLUDED.session_version,
+        pending_email = EXCLUDED.pending_email,
+        pending_email_token = EXCLUDED.pending_email_token,
+        pending_email_expires_at = EXCLUDED.pending_email_expires_at,
         updated_at = NOW()
       RETURNING ${USER_COLUMNS}
     `,
@@ -680,6 +704,9 @@ export async function dbUpsertUser(user) {
       user.country || '',
       user.customerType === 'business' ? 'business' : 'consumer',
       Number(user.sessionVersion) > 0 ? Number(user.sessionVersion) : 1,
+      user.pendingEmail || null,
+      user.pendingEmailToken || null,
+      user.pendingEmailExpiresAt || null,
       user.createdAt || null,
     ]
   );
@@ -1196,6 +1223,130 @@ export async function dbListRunsForUser(userId, limit = 200) {
     userId: row.user_id,
     tier: row.tier || null,
   }));
+}
+
+export async function dbAnonymizeRunsForUser(userId) {
+  if (!dbPool || !userId) return [];
+  const { rows } = await dbPool.query(
+    `UPDATE runs
+        SET user_id = NULL, deleted_at = NOW()
+      WHERE user_id = $1
+      RETURNING id, run_id`,
+    [userId]
+  );
+  return rows.map((row) => ({ domain: row.id, runId: row.run_id }));
+}
+
+export async function dbListGuestRunsOlderThan(cutoff) {
+  if (!dbPool || !cutoff) return [];
+  const { rows } = await dbPool.query(
+    `SELECT id, run_id, guest_token
+       FROM runs
+      WHERE user_id IS NULL
+        AND (guest_token IS NOT NULL OR tier = 'guest')
+        AND created_at < $1::timestamptz
+        AND (deleted_at IS NULL OR deleted_at < $1::timestamptz)`,
+    [cutoff instanceof Date ? cutoff.toISOString() : cutoff]
+  );
+  return rows.map((row) => ({ domain: row.id, runId: row.run_id, guestToken: row.guest_token || null }));
+}
+
+export async function dbDeleteRun(domain, runId) {
+  if (!dbPool || !domain || !runId) return false;
+  const { rowCount } = await dbPool.query(`DELETE FROM runs WHERE id = $1 AND run_id = $2`, [domain, runId]);
+  return rowCount > 0;
+}
+
+export async function dbListLeadsByEmail(email) {
+  if (!dbPool || !email) return [];
+  const { rows } = await dbPool.query(
+    `SELECT id, name, company, email, phone, message, scanned_url, domain, run_token, score, source, cta, emailed, created_at
+       FROM leads WHERE lower(email) = $1 ORDER BY created_at DESC`,
+    [String(email).trim().toLowerCase()]
+  );
+  return rows.map(mapLeadRow);
+}
+
+export async function dbDeleteLeadsByEmail(email) {
+  if (!dbPool || !email) return 0;
+  const { rowCount } = await dbPool.query(`DELETE FROM leads WHERE lower(email) = $1`, [
+    String(email).trim().toLowerCase(),
+  ]);
+  return rowCount || 0;
+}
+
+export async function dbDeleteLeadById(id) {
+  if (!dbPool || id == null || id === '') return false;
+  const { rowCount } = await dbPool.query(`DELETE FROM leads WHERE id = $1`, [id]);
+  return (rowCount || 0) > 0;
+}
+
+export async function dbDeleteLeadsOlderThan(cutoff) {
+  if (!dbPool || !cutoff) return 0;
+  const { rowCount } = await dbPool.query(`DELETE FROM leads WHERE created_at < $1::timestamptz`, [
+    cutoff instanceof Date ? cutoff.toISOString() : cutoff,
+  ]);
+  return rowCount || 0;
+}
+
+export async function dbDeleteConsentsForAccount({ userId = null, email = null } = {}) {
+  if (!dbPool) return 0;
+  const clauses = ['kind <> \'deletion\''];
+  const params = [];
+  const orParts = [];
+  if (userId) {
+    params.push(userId);
+    orParts.push(`user_id = $${params.length}`);
+  }
+  if (email) {
+    params.push(String(email).trim().toLowerCase());
+    orParts.push(`email = $${params.length}`);
+  }
+  if (!orParts.length) return 0;
+  clauses.push(`(${orParts.join(' OR ')})`);
+  const { rowCount } = await dbPool.query(`DELETE FROM consents WHERE ${clauses.join(' AND ')}`, params);
+  return rowCount || 0;
+}
+
+export async function dbClearExpiredAuthTokens(now = new Date()) {
+  if (!dbPool) return { verify: 0, reset: 0, pendingEmail: 0 };
+  const iso = now instanceof Date ? now.toISOString() : now;
+  const verify = await dbPool.query(
+    `UPDATE users SET verify_token = NULL, verify_expires_at = NULL
+      WHERE verify_token IS NOT NULL AND verify_expires_at IS NOT NULL AND verify_expires_at < $1::timestamptz`,
+    [iso]
+  );
+  const reset = await dbPool.query(
+    `UPDATE users SET reset_token = NULL, reset_expires_at = NULL
+      WHERE reset_token IS NOT NULL AND reset_expires_at IS NOT NULL AND reset_expires_at < $1::timestamptz`,
+    [iso]
+  );
+  const pending = await dbPool.query(
+    `UPDATE users SET pending_email = NULL, pending_email_token = NULL, pending_email_expires_at = NULL
+      WHERE pending_email_token IS NOT NULL AND pending_email_expires_at IS NOT NULL AND pending_email_expires_at < $1::timestamptz`,
+    [iso]
+  );
+  return {
+    verify: verify.rowCount || 0,
+    reset: reset.rowCount || 0,
+    pendingEmail: pending.rowCount || 0,
+  };
+}
+
+export async function dbDeleteExpiredTokenLots(cutoff) {
+  if (!dbPool || !cutoff) return 0;
+  const { rowCount } = await dbPool.query(`DELETE FROM token_lots WHERE expires_at < $1::timestamptz`, [
+    cutoff instanceof Date ? cutoff.toISOString() : cutoff,
+  ]);
+  return rowCount || 0;
+}
+
+export async function dbGetUserByPendingEmailToken(token) {
+  if (!dbPool || !token) return null;
+  const { rows } = await dbPool.query(`SELECT ${USER_COLUMNS} FROM users WHERE pending_email_token = $1 LIMIT 1`, [
+    token,
+  ]);
+  return mapUserRow(rows[0]);
 }
 
 async function seedDefaultPlans() {

@@ -94,14 +94,14 @@ export async function upsertSubscription(sub) {
   return idx === -1 ? next : rows[idx];
 }
 
-export async function ensureCustomerSubscription(userId, { guestFreebieUsed = false } = {}) {
+export async function ensureCustomerSubscription(userId, { guestFreebieUsed = false, emailVerified = true } = {}) {
   const existing = await getSubscription(userId);
   if (existing) {
     if (existing.planId === 'free' || existing.planId === 'starter' || existing.planId === 'agency') {
-      await ensureFreebieLot(userId, { guestFreebieUsed });
+      if (emailVerified) await ensureFreebieLot(userId, { guestFreebieUsed });
       return upsertSubscription({ ...existing, planId: NONE_PLAN_ID });
     }
-    await ensureFreebieLot(userId, { guestFreebieUsed });
+    if (emailVerified) await ensureFreebieLot(userId, { guestFreebieUsed });
     return existing;
   }
   await seedPlans();
@@ -119,7 +119,7 @@ export async function ensureCustomerSubscription(userId, { guestFreebieUsed = fa
     stripeCustomerId: null,
     createdAt: new Date().toISOString(),
   });
-  await ensureFreebieLot(userId, { guestFreebieUsed });
+  if (emailVerified) await ensureFreebieLot(userId, { guestFreebieUsed });
   return created;
 }
 

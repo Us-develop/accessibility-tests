@@ -136,6 +136,18 @@ function tokenDir() {
   return join(REPORTS_BASE, '_guest-tokens');
 }
 
+export function guestIpHashSalt() {
+  return String(process.env.GUEST_IP_HASH_SALT || process.env.SESSION_SECRET || 'guest-ip-salt');
+}
+
+/** Salted SHA-256 of a guest IP. Already-hashed 64-hex values are left unchanged. */
+export function hashGuestIp(ip) {
+  const raw = String(ip || '').trim();
+  if (!raw) return null;
+  if (/^[a-f0-9]{64}$/i.test(raw)) return raw.toLowerCase();
+  return createHash('sha256').update(`guest-ip:${guestIpHashSalt()}:${raw}`).digest('hex');
+}
+
 export function persistGuestToken(token, payload) {
   if (!isValidGuestToken(token)) return;
   const dir = tokenDir();
@@ -149,7 +161,7 @@ export function persistGuestToken(token, payload) {
         domain: payload.domain,
         runId: payload.runId,
         url: payload.url || null,
-        ip: payload.ip || null,
+        ip: hashGuestIp(payload.ip) || null,
         createdAt,
         expiresAt,
       },
@@ -198,37 +210,106 @@ export function readGuestTokenRecord(token, now = new Date()) {
  * (and later from the retention job).
  * @returns {{ scanned: number, pruned: number }}
  */
-export function pruneExpiredGuestTokens(now = new Date()) {
+export function listGuestTokenRecords() {
   const dir = tokenDir();
-  if (!existsSync(dir)) return { scanned: 0, pruned: 0 };
-  let scanned = 0;
-  let pruned = 0;
+  if (!existsSync(dir)) return [];
   let names = [];
   try {
     names = readdirSync(dir);
   } catch {
-    return { scanned: 0, pruned: 0 };
+    return [];
   }
+  const out = [];
   for (const name of names) {
     if (!name.endsWith('.json')) continue;
-    scanned += 1;
+    const token = name.slice(0, -'.json'.length);
     const file = join(dir, name);
-    let expired = true;
     try {
       const data = JSON.parse(readFileSync(file, 'utf8'));
-      expired = isGuestTokenExpired(data, now);
+      out.push({ token, file, ...data });
     } catch {
-      expired = true;
-    }
-    if (!expired) continue;
-    try {
-      unlinkSync(file);
-      pruned += 1;
-    } catch {
-      /* leave it for the next pass */
+      out.push({ token, file, unreadable: true });
     }
   }
-  return { scanned, pruned };
+  return out;
+}
+
+export function deleteGuestTokenFile(token) {
+  if (!isValidGuestToken(token)) return false;
+  const file = join(tokenDir(), `${token}.json`);
+  if (!existsSync(file)) return false;
+  try {
+    unlinkSync(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function deleteGuestBindingsForRuns(runs) {
+  const wanted = new Set(
+    (runs || [])
+      .filter((row) => row?.domain && row?.runId)
+      .map((row) => `${String(row.domain).toLowerCase()}::${row.runId}`)
+  );
+  if (!wanted.size) return 0;
+  let deleted = 0;
+  for (const rec of listGuestTokenRecords()) {
+    const key = `${String(rec.domain || '').toLowerCase()}::${rec.runId || ''}`;
+    if (!wanted.has(key)) continue;
+    if (deleteGuestTokenFile(rec.token)) deleted += 1;
+  }
+  return deleted;
+}
+
+export function guestBindingsForRuns(runs) {
+  const wanted = new Set(
+    (runs || [])
+      .filter((row) => row?.domain && row?.runId)
+      .map((row) => `${String(row.domain).toLowerCase()}::${row.runId}`)
+  );
+  if (!wanted.size) return [];
+  return listGuestTokenRecords()
+    .filter((rec) => wanted.has(`${String(rec.domain || '').toLowerCase()}::${rec.runId || ''}`))
+    .map((rec) => ({
+      token: rec.token,
+      domain: rec.domain || null,
+      runId: rec.runId || null,
+      url: rec.url || null,
+      createdAt: rec.createdAt || null,
+      expiresAt: rec.expiresAt || null,
+    }));
+}
+
+export function pruneExpiredGuestTokens(now = new Date()) {
+  const records = listGuestTokenRecords();
+  let pruned = 0;
+  for (const rec of records) {
+    const expired = rec.unreadable || isGuestTokenExpired(rec, now);
+    if (!expired) continue;
+    if (deleteGuestTokenFile(rec.token)) pruned += 1;
+  }
+  return { scanned: records.length, pruned };
+}
+
+const TWELVE_MONTHS_MS = 365 * 24 * 60 * 60 * 1000;
+
+export function pruneGuestFreebies(now = new Date(), maxAgeMs = TWELVE_MONTHS_MS) {
+  const data = readJsonStore('guest-freebies.json', { used: {} });
+  const used = data.used && typeof data.used === 'object' ? data.used : {};
+  const cutoff = now.getTime() - maxAgeMs;
+  let pruned = 0;
+  const next = {};
+  for (const [key, value] of Object.entries(used)) {
+    const ts = Date.parse(value);
+    if (!Number.isFinite(ts) || ts < cutoff) {
+      pruned += 1;
+      continue;
+    }
+    next[key] = value;
+  }
+  if (pruned) writeJsonStore('guest-freebies.json', { used: next });
+  return { scanned: Object.keys(used).length, pruned };
 }
 
 function leadsFile() {
@@ -238,7 +319,9 @@ function leadsFile() {
 export function appendLeadFile(row) {
   const dir = REPORTS_BASE;
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  appendFileSync(leadsFile(), `${JSON.stringify(row)}\n`, 'utf8');
+  const stored = { ...row, id: row?.id || randomBytes(8).toString('hex') };
+  appendFileSync(leadsFile(), `${JSON.stringify(stored)}\n`, 'utf8');
+  return stored;
 }
 
 export function readLeadFileRows(limit = 200) {
@@ -261,6 +344,80 @@ export function readLeadFileRows(limit = 200) {
   }
 }
 
+function rewriteLeadFile(rows) {
+  const file = leadsFile();
+  if (!rows.length) {
+    if (existsSync(file)) unlinkSync(file);
+    return;
+  }
+  const dir = REPORTS_BASE;
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(file, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8');
+}
+
+function allLeadFileRows() {
+  const file = leadsFile();
+  if (!existsSync(file)) return [];
+  try {
+    const rows = [];
+    for (const line of readFileSync(file, 'utf8').split('\n').filter(Boolean)) {
+      try {
+        rows.push(JSON.parse(line));
+      } catch {
+        /* skip */
+      }
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+export function leadsForEmail(email) {
+  const needle = String(email || '').trim().toLowerCase();
+  if (!needle) return [];
+  return allLeadFileRows().filter((row) => String(row?.email || '').trim().toLowerCase() === needle);
+}
+
+export function deleteLeadsByEmail(email) {
+  const needle = String(email || '').trim().toLowerCase();
+  if (!needle) return 0;
+  const rows = allLeadFileRows();
+  const kept = rows.filter((row) => String(row?.email || '').trim().toLowerCase() !== needle);
+  const deleted = rows.length - kept.length;
+  if (deleted) rewriteLeadFile(kept);
+  return deleted;
+}
+
+export function deleteLeadFileById(id) {
+  const needle = String(id || '').trim();
+  if (!needle) return false;
+  const rows = allLeadFileRows();
+  const kept = rows.filter((row) => String(row?.id ?? '') !== needle);
+  if (kept.length === rows.length) return false;
+  rewriteLeadFile(kept);
+  return true;
+}
+
+export function pruneLeadFileRows(now = new Date(), maxAgeMs = TWELVE_MONTHS_MS) {
+  const cutoff = now.getTime() - maxAgeMs;
+  const rows = allLeadFileRows();
+  const kept = [];
+  let pruned = 0;
+  for (const row of rows) {
+    const ts = Date.parse(row?.createdAt || row?.created_at || '');
+    if (!Number.isFinite(ts) || ts >= cutoff) kept.push(row);
+    else pruned += 1;
+  }
+  if (pruned) rewriteLeadFile(kept);
+  return { scanned: rows.length, pruned };
+}
+
+export function turnstileSendIp() {
+  const raw = String(process.env.TURNSTILE_SEND_IP || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
 /**
  * @param {string | undefined} token
  * @param {string} ip
@@ -278,7 +435,7 @@ export async function verifyTurnstileIfConfigured(token, ip) {
   const body = new URLSearchParams();
   body.set('secret', secret);
   body.set('response', response);
-  if (ip) body.set('remoteip', ip);
+  if (ip && turnstileSendIp()) body.set('remoteip', ip);
   const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

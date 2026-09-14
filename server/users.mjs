@@ -4,14 +4,29 @@ import {
   dbDeleteUser,
   dbGetUserByEmail,
   dbGetUserById,
+  dbGetUserByPendingEmailToken,
   dbSetRunUserId,
   dbUpsertProject,
   dbUpsertUser,
+  dbAnonymizeRunsForUser,
+  dbDeleteLeadsByEmail,
+  dbListLeadsByEmail,
 } from './db.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 import { hashPassword, verifyPassword, isStrongPassword } from './passwords.mjs';
-import { ensureFreeSubscription } from './billing.mjs';
+import { ensureCustomerSubscription, ensureFreeSubscription, getSubscription } from './billing.mjs';
 import { invalidateSessionUserCache } from './session.mjs';
+import { cancelAndDeleteStripeCustomer } from './stripe.mjs';
+import { ftpRemoveRunArtifacts } from './ftp.js';
+import {
+  deleteGuestBindingsForRuns,
+  deleteLeadsByEmail,
+  guestBindingsForRuns,
+  leadsForEmail,
+} from './guest.mjs';
+import { deleteConsentsForAccount, listConsents, recordDeletionTombstone } from './consents.mjs';
+import { deleteProjectsForUser, deleteRunDirectory, listRunRefsForUser } from './projects.mjs';
+import { ensureFreebieLot } from './tokens.mjs';
 
 export const GENERIC_CREDENTIALS_ERROR = 'Invalid username or password.';
 
@@ -104,10 +119,19 @@ export function publicUser(user) {
     verifyExpiresAt,
     resetToken,
     resetExpiresAt,
+    pendingEmailToken,
+    pendingEmailExpiresAt,
     sessionVersion: _sessionVersion,
     ...rest
   } = withContactDefaults(user);
   return rest;
+}
+
+export function emailVerificationRequired() {
+  const raw = String(process.env.AUTH_EMAIL_VERIFY || '').trim().toLowerCase();
+  if (raw === 'required') return true;
+  if (raw === 'auto' || raw === 'off' || raw === 'false' || raw === '0') return false;
+  return process.env.NODE_ENV === 'production';
 }
 
 function findByEmail(users, email) {
@@ -227,7 +251,7 @@ export async function createUser({
   const companyName = String(company || '').trim().slice(0, 200);
   const vat = normalizeVatNumber(vatNumber);
   assertBusinessCompany(type, companyName);
-  const autoVerify = String(process.env.AUTH_EMAIL_VERIFY || 'auto').toLowerCase() !== 'required';
+  const autoVerify = !emailVerificationRequired();
   const user = {
     id: randomBytes(12).toString('hex'),
     email: normalized,
@@ -239,6 +263,9 @@ export async function createUser({
     verifyExpiresAt: autoVerify ? null : new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
     resetToken: null,
     resetExpiresAt: null,
+    pendingEmail: null,
+    pendingEmailToken: null,
+    pendingEmailExpiresAt: null,
     sessionVersion: 1,
     ...emptyContact(),
     company: companyName,
@@ -255,7 +282,7 @@ export async function createUser({
     }
     throw err;
   }
-  await ensureFreeSubscription(user.id);
+  await ensureCustomerSubscription(user.id, { emailVerified: user.emailVerified });
   return { user: publicUser(user), verifyToken: user.verifyToken };
 }
 
@@ -319,9 +346,9 @@ export async function verifyUserEmail(token) {
   }
   if (!user) return null;
   if (user.verifyExpiresAt && Date.parse(user.verifyExpiresAt) < Date.now()) return null;
-  return publicUser(
-    await updateUser(user.id, { emailVerified: true, verifyToken: null, verifyExpiresAt: null })
-  );
+  const saved = await updateUser(user.id, { emailVerified: true, verifyToken: null, verifyExpiresAt: null });
+  await ensureFreebieLot(user.id);
+  return publicUser(saved);
 }
 
 export async function setPassword(id, password) {
@@ -369,6 +396,102 @@ export async function consumePasswordReset(token) {
   return withContactDefaults(user);
 }
 
+export async function startEmailChange(userId, nextEmail, password) {
+  const user = await getUserById(userId);
+  if (!user) return null;
+  const ok = await verifyPassword(String(password || ''), user.passwordHash);
+  if (!ok) {
+    throw Object.assign(new Error('Current password is incorrect.'), { status: 400 });
+  }
+  const normalized = String(nextEmail || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    throw Object.assign(new Error('Enter a valid email address.'), { status: 400 });
+  }
+  if (normalized === user.email) {
+    throw Object.assign(new Error('That is already your email address.'), { status: 400 });
+  }
+  const taken = await getUserByEmail(normalized);
+  if (taken && taken.id !== user.id) {
+    throw Object.assign(new Error(GENERIC_CREDENTIALS_ERROR), { status: 409 });
+  }
+  const token = randomBytes(16).toString('hex');
+  const saved = await updateUser(user.id, {
+    pendingEmail: normalized,
+    pendingEmailToken: token,
+    pendingEmailExpiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+  });
+  return { user: publicUser(saved), token, previousEmail: user.email, pendingEmail: normalized };
+}
+
+export async function consumePendingEmailChange(token) {
+  if (!token) return null;
+  let user = null;
+  if (useDb()) {
+    user = withContactDefaults(await dbGetUserByPendingEmailToken(token));
+  } else {
+    user = withContactDefaults(loadUsers().find((u) => u.pendingEmailToken && u.pendingEmailToken === token) || null);
+  }
+  if (!user) return null;
+  if (user.pendingEmailExpiresAt && Date.parse(user.pendingEmailExpiresAt) < Date.now()) return null;
+  const nextEmail = String(user.pendingEmail || '').trim().toLowerCase();
+  if (!nextEmail) return null;
+  const taken = await getUserByEmail(nextEmail);
+  if (taken && taken.id !== user.id) return null;
+  const saved = await updateUser(user.id, {
+    email: nextEmail,
+    emailVerified: true,
+    pendingEmail: null,
+    pendingEmailToken: null,
+    pendingEmailExpiresAt: null,
+    sessionVersion: sessionVersionOf(user) + 1,
+  });
+  return { ...publicUser(saved), sessionVersion: sessionVersionOf(saved) };
+}
+
+function filterSidecar(file, key, predicate) {
+  const data = readJsonStore(file, { [key]: [] });
+  const rows = Array.isArray(data[key]) ? data[key] : [];
+  writeJsonStore(file, { [key]: rows.filter(predicate) });
+}
+
+async function purgeUserSidecarStores(userId) {
+  if (useDb()) return;
+  filterSidecar('subscriptions.json', 'subscriptions', (row) => row.userId !== userId);
+  filterSidecar('usage.json', 'usage', (row) => row.userId !== userId);
+  filterSidecar('payments.json', 'payments', (row) => row.userId !== userId);
+  filterSidecar('token-lots.json', 'lots', (row) => row.userId !== userId);
+}
+
+export async function deleteAccount(userId) {
+  const user = await getUserById(userId);
+  if (!user) return false;
+  const localSub = await getSubscription(userId);
+  await cancelAndDeleteStripeCustomer(userId, localSub);
+  const runRefs = await listRunRefsForUser(userId);
+  if (useDb()) {
+    const anonymized = await dbAnonymizeRunsForUser(userId);
+    for (const row of anonymized) {
+      if (!runRefs.some((ref) => ref.domain === row.domain && ref.runId === row.runId)) {
+        runRefs.push(row);
+      }
+    }
+  }
+  for (const ref of runRefs) {
+    deleteRunDirectory(ref.domain, ref.runId);
+    await ftpRemoveRunArtifacts(ref.domain, ref.runId);
+  }
+  if (useDb()) await dbDeleteLeadsByEmail(user.email);
+  deleteLeadsByEmail(user.email);
+  deleteGuestBindingsForRuns(runRefs);
+  await deleteConsentsForAccount({ userId, email: user.email });
+  await recordDeletionTombstone(user.email);
+  await deleteProjectsForUser(userId);
+  await purgeUserSidecarStores(userId);
+  await deleteUser(userId);
+  console.info('[account] deleted user', userId);
+  return true;
+}
+
 export async function deleteUser(id) {
   const current = await getUserById(id);
   if (current) {
@@ -382,9 +505,27 @@ export async function deleteUser(id) {
   saveUsers(loadUsers().filter((u) => u.id !== id));
 }
 
-export function exportUserData(user) {
+export async function exportUserData(user) {
+  const runRefs = user?.id ? await listRunRefsForUser(user.id) : [];
+  const byUser = user?.id ? await listConsents({ userId: user.id }) : [];
+  const byEmail = user?.email ? await listConsents({ email: user.email }) : [];
+  const seen = new Set();
+  const consents = [];
+  for (const row of [...byUser, ...byEmail]) {
+    const key = row.id != null ? `id:${row.id}` : JSON.stringify(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    consents.push(row);
+  }
+  let leads = [];
+  if (user?.email) {
+    leads = useDb() ? await dbListLeadsByEmail(user.email) : leadsForEmail(user.email);
+  }
   return {
     account: publicUser(user),
     exportedAt: nowIso(),
+    consents,
+    leads,
+    guestBindings: guestBindingsForRuns(runRefs),
   };
 }

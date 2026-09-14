@@ -1,4 +1,6 @@
 import { randomBytes } from 'crypto';
+import { existsSync, rmSync } from 'fs';
+import { join } from 'path';
 import {
   dbPool,
   dbDeleteProjectsForUser,
@@ -6,10 +8,12 @@ import {
   dbGetProject,
   dbGetRun,
   dbListProjectsForUser,
+  dbListRunsForUser,
   dbSetRunUserId,
   dbUpsertProject,
 } from './db.js';
 import { isValidDomain, isValidRunId } from './run-ids.js';
+import { REPORTS_BASE } from './paths.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 
 const FILE = 'projects.json';
@@ -102,6 +106,28 @@ export async function deleteProjectsForUser(userId) {
     return;
   }
   save(load().filter((p) => p.userId !== userId));
+}
+
+export async function listRunRefsForUser(userId) {
+  if (!userId) return [];
+  if (useDb()) {
+    return (await dbListRunsForUser(userId, 5000)).map((row) => ({ domain: row.domain, runId: row.runId }));
+  }
+  const out = [];
+  for (const project of await listProjectsForUser(userId)) {
+    for (const runId of project.runIds || []) {
+      out.push({ domain: project.domain, runId });
+    }
+  }
+  return out;
+}
+
+export function deleteRunDirectory(domain, runId) {
+  if (!isValidDomain(domain) || !isValidRunId(runId)) return false;
+  const dir = join(REPORTS_BASE, domain, runId);
+  if (!existsSync(dir)) return false;
+  rmSync(dir, { recursive: true, force: true });
+  return true;
 }
 
 export async function canAccessDomain(access, domain) {

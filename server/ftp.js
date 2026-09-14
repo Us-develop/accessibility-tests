@@ -120,3 +120,30 @@ export async function persistReportArtifactsToFtp(domain, runId, ftpConfig) {
     await ftpUpload(ftpConfig, j.local, j.remote);
   }
 }
+
+/**
+ * Best-effort removal of a run's remote folder: `<domain>/<runId>/`.
+ * @param {string} domain
+ * @param {string} runId
+ * @param {ReturnType<typeof getFtpConfig>} [ftpConfig]
+ */
+export async function ftpRemoveRunArtifacts(domain, runId, ftpConfig = getFtpConfig()) {
+  if (!ftpConfig || !domain || !runId) return;
+  const client = new Client(60_000);
+  try {
+    await client.access({
+      host: ftpConfig.host,
+      user: ftpConfig.user,
+      password: ftpConfig.password,
+      secure: ftpConfig.secure,
+    });
+    const remote = ftpConfig.remotePath
+      ? `${ftpConfig.remotePath}/${domain}/${runId}`
+      : `${domain}/${runId}`;
+    await client.removeDir(remote, true);
+  } catch (err) {
+    console.error('FTP remove failed:', err.message);
+  } finally {
+    client.close();
+  }
+}

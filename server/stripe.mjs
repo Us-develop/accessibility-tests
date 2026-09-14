@@ -97,11 +97,11 @@ let cachedClient = null;
 let cachedKey = '';
 
 export function getStripe() {
+  if (cachedClient) return cachedClient;
   const key = stripeSecretKey();
   if (!key) {
     throw Object.assign(new Error('Stripe is not configured.'), { status: 503, code: 'stripe_unconfigured' });
   }
-  if (cachedClient && cachedKey === key) return cachedClient;
   cachedClient = new Stripe(key, { apiVersion: STRIPE_API_VERSION });
   cachedKey = key;
   return cachedClient;
@@ -550,6 +550,62 @@ export async function createPortalSession({ user }) {
     customer: customerId,
     return_url: `${publicAppBase()}/account?billing=portal`,
   });
+}
+
+/**
+ * Cancel an active Stripe subscription then delete (or anonymise) the customer.
+ * Logs only the local user id — never email or Stripe ids.
+ * @param {string} userId
+ * @param {{ stripeSubscriptionId?: string|null, stripeCustomerId?: string|null } | null} local
+ */
+export async function cancelAndDeleteStripeCustomer(userId, local) {
+  if (!userId || (!local?.stripeSubscriptionId && !local?.stripeCustomerId)) {
+    return { cancelled: false, deletedCustomer: false, skipped: true };
+  }
+  let stripe;
+  try {
+    stripe = getStripe();
+  } catch (err) {
+    if (err?.code === 'stripe_unconfigured') {
+      return { cancelled: false, deletedCustomer: false, skipped: true };
+    }
+    throw err;
+  }
+  let cancelled = false;
+  if (local.stripeSubscriptionId && typeof stripe.subscriptions?.cancel === 'function') {
+    try {
+      await stripe.subscriptions.cancel(local.stripeSubscriptionId);
+      cancelled = true;
+    } catch (err) {
+      console.warn('[stripe] subscription cancel failed for user', userId, err?.message || err);
+    }
+  }
+  let deletedCustomer = false;
+  if (local.stripeCustomerId) {
+    try {
+      if (typeof stripe.customers?.del === 'function') {
+        await stripe.customers.del(local.stripeCustomerId);
+        deletedCustomer = true;
+      } else if (typeof stripe.customers?.delete === 'function') {
+        await stripe.customers.delete(local.stripeCustomerId);
+        deletedCustomer = true;
+      }
+    } catch (err) {
+      try {
+        if (typeof stripe.customers?.update === 'function') {
+          await stripe.customers.update(local.stripeCustomerId, {
+            email: '',
+            name: 'deleted',
+            metadata: { deleted: 'true', userId: '' },
+          });
+          deletedCustomer = true;
+        }
+      } catch (anonErr) {
+        console.warn('[stripe] customer delete failed for user', userId, anonErr?.message || err?.message || err);
+      }
+    }
+  }
+  return { cancelled, deletedCustomer, skipped: false };
 }
 
 export function constructWebhookEvent(rawBody, signature) {

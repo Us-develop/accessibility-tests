@@ -66,6 +66,7 @@ import { authenticateUser, getUserById, GENERIC_CREDENTIALS_ERROR } from './user
 import { attachRunToUser, canAccessDomain, canAccessRun, findProjectByDomain, listProjectsForUser, parseTenantPath } from './projects.mjs';
 import { registerAccountRoutes } from './account-routes.mjs';
 import { registerStripeRoutes, registerStripeWebhook } from './stripe-routes.mjs';
+import { registerRetentionRoutes } from './retention.mjs';
 import { warnStripeTaxCodeIfUnset } from './stripe.mjs';
 import { assertCompanyIdentityForProduction } from './company.mjs';
 import { recordConsent } from './consents.mjs';
@@ -1261,6 +1262,7 @@ app.use(async (req, res, next) => {
 
 registerAccountRoutes(app, { readGuestTokenRecord });
 registerStripeRoutes(app);
+registerRetentionRoutes(app);
 
 app.get('/auth/jira/connect', requireStaff, (req, res) => {
   const cfg = getJiraConfig();
