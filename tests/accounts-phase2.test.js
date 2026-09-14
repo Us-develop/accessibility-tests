@@ -166,11 +166,12 @@ describe('account HTTP', () => {
     const res = await fetch(`${origin}/api/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: 'customer@example.com',
-        password: 'longenough1',
-        name: 'Pat',
-      }),
+        body: JSON.stringify({
+          email: 'customer@example.com',
+          password: 'longenough1',
+          name: 'Pat',
+          acceptTerms: true,
+        }),
     });
     jar.store(res.headers);
     const data = await res.json();
@@ -199,7 +200,7 @@ describe('account HTTP', () => {
     const res = await fetch(`${origin}/api/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'customer@example.com', password: 'longenough1' }),
+      body: JSON.stringify({ email: 'customer@example.com', password: 'longenough1', acceptTerms: true }),
     });
     assert.equal(res.status, 409);
   });
@@ -272,6 +273,7 @@ describe('account HTTP', () => {
         email: 'attached@example.com',
         password: 'longenough1',
         guestToken: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        acceptTerms: true,
       }),
     });
     jar.store(res.headers);

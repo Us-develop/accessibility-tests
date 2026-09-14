@@ -13,6 +13,7 @@ import {
   dbGetSubscriptionByStripeSubscription,
   dbUpsertPlan,
   dbUpsertSubscription,
+  dbUpdatePaymentInvoiceUrl,
 } from './db.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 import {
@@ -209,6 +210,18 @@ export async function findPaymentByStripeIntent(intentId) {
   if (!intentId) return null;
   if (useDb()) return dbFindPaymentByStripeIntent(intentId);
   return loadList(PAYMENTS_FILE, 'payments').find((p) => p.stripePaymentIntentId === intentId) || null;
+}
+
+export async function updatePaymentInvoiceUrl(intentId, invoiceUrl) {
+  if (!intentId || !invoiceUrl) return null;
+  if (useDb()) return dbUpdatePaymentInvoiceUrl(intentId, invoiceUrl);
+  const rows = loadList(PAYMENTS_FILE, 'payments');
+  const idx = rows.findIndex((p) => p.stripePaymentIntentId === intentId);
+  if (idx === -1) return null;
+  if (rows[idx].invoiceUrl) return rows[idx];
+  rows[idx] = { ...rows[idx], invoiceUrl };
+  saveList(PAYMENTS_FILE, 'payments', rows);
+  return rows[idx];
 }
 
 function emptyScanMessage() {

@@ -42,7 +42,7 @@ try {
 }
 const app = express();
 app.use(apiApp);
-app.use(express.static(join(webRoot, 'dist/client')));
+app.use(express.static(join(webRoot, 'dist/client'), { redirect: false }));
 app.use((req, res, next) => handler(req, res, next, { access: req.access || null }));
 
 await initDb();

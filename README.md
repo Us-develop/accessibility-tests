@@ -48,8 +48,14 @@ Staff sign in with `APP_USERNAME` / `APP_PASSWORD` (cookie session only — no H
 | `TRUST_PROXY_HOPS` | no (default `1`) | Express `trust proxy` hop count (Caddy sits in front). |
 | `WCAG_DISABLE_RATE_LIMIT` | no | Set `1` only in automated tests. Do not set in production. |
 | `SCANNER_NO_SANDBOX` | no (default off) | Set `true` only if Chromium cannot start because the host forbids the process sandbox (user namespaces / seccomp). Production Docker runs as `USER node` so this should stay unset. |
+| `COMPANY_LEGAL_NAME` | yes | Legal name shown in the footer, privacy, terms, and Stripe pack invoice footer. Server exits in production if empty. |
+| `COMPANY_KBO` | yes | Crossroads Bank for Enterprises number. Server exits in production if empty. |
+| `COMPANY_VAT` | yes | VAT number (for example `BE0123456789`). Server exits in production if empty. Also printed on pack invoices. |
+| `COMPANY_ADDRESS` | yes | Registered address. Server exits in production if empty. |
+| `COMPANY_EMAIL` | yes | Privacy/contact email for data-subject requests. Server exits in production if empty. |
+| `VAT_RATE_DISPLAY` | no (default `0.21`) | Belgian VAT rate used only to show VAT-inclusive catalog prices. Stripe Tax calculates the live amount. |
 
-The public homepage stays the free 1-page **Gratis snapshot** (one per person, guest or signed-in — not both) unless someone is actually signed in with remaining tokens or Pro. Complimentary token is spent first, then **Pro** (300 pages/month), then prepaid **tokens** (1 token = 1 URL, 12-month expiry). A second scan while one is queued or running returns 409. Empty Pro pages and tokens return 429 with buy / subscribe / Us-diensten CTAs. Pricing is at `/pricing`. Draft legal pages (`/terms`, `/privacy`, `/cookies`) are marked for lawyer review.
+The public homepage stays the free 1-page **Gratis snapshot** (one per person, guest or signed-in — not both) unless someone is actually signed in with remaining tokens or Pro. Complimentary token is spent first, then **Pro** (300 pages/month), then prepaid **tokens** (1 token = 1 URL, 12-month expiry). A second scan while one is queued or running returns 409. Empty Pro pages and tokens return 429 with buy / subscribe / Us-diensten CTAs. Pricing is at `/pricing` (VAT-inclusive primary figures). Legal pages: `/terms`, `/privacy`, `/cookies`, `/legal/subprocessors`. `/signup`, `/forgot`, and `/reset` are `noindex`.
 
 ### How scans work (and limitations)
 
@@ -91,7 +97,7 @@ To store run status/results/manual checklist progress **and** customer accounts 
 - Set **`DATABASE_URL`** in the server environment (on the live VPS this lives in `/etc/accessibility-db.env`, loaded by the systemd drop-in — not `Environment=` with a password that contains `*` or `%`).
 - Optional for SSL-required connections: **`DATABASE_SSL=true`**. Localhost Postgres does **not** need SSL.
 
-When `DATABASE_URL` is set, the server creates `runs`, `leads`, `users`, `projects`, `plans`, `subscriptions`, `usage`, `payments`, and `token_lots` tables. Existing `reports/_saas/users.json` and `projects.json` are copied in on first boot. Scan HTML/screenshots stay on disk under `reports/<domain>/<runId>/`.
+When `DATABASE_URL` is set, the server creates `runs`, `leads`, `users`, `projects`, `plans`, `subscriptions`, `usage`, `payments`, `token_lots`, and `consents` tables. Existing `reports/_saas/users.json` and `projects.json` are copied in on first boot. Scan HTML/screenshots stay on disk under `reports/<domain>/<runId>/`.
 
 If `DATABASE_URL` is not set, accounts fall back to those JSON files (fine for local tests; not safe for a campaign).
 
@@ -107,20 +113,23 @@ On the VPS, put these in `/etc/accessibility-db.env` (or a sibling env file load
 | `STRIPE_WEBHOOK_SECRET` | Signing secret for `POST /api/stripe/webhook`. |
 | `STRIPE_PRICE_PACK_10` / `_50` / `_100` | One-time pack Price IDs. |
 | `STRIPE_PRICE_PRO_MONTHLY` / `STRIPE_PRICE_PRO_YEARLY` | Pro Price IDs on the single Pro product. |
-| `STRIPE_AUTOMATIC_TAX` | Default `false`. Set `true` only after Tax Settings have a **head office** and **Collecting** registrations (Belgium domestic + Union OSS — confirm with your advisor). Until then Stripe collects €0 with no error. |
+| `STRIPE_AUTOMATIC_TAX` | Default `true`. Checkout in `NODE_ENV=production` returns **503** if this is `false`. Requires Tax Settings with a **head office** and **Collecting** registrations (Belgium domestic + Union OSS — confirm with your advisor). |
+| `STRIPE_TAX_CODE` | Product tax code (catalog script default `txcd_10103001`). The server logs a warning at boot if unset. |
 | `PUBLIC_BASE_URL` | `https://wcag.about-us.be` |
 
 Create sandbox Products with `node scripts/stripe-catalog.mjs` (uses placeholder tax code `txcd_10103001` SaaS – Business Use until the advisor confirms). Point a webhook at `https://wcag.about-us.be/api/stripe/webhook` for `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.*`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.refund.updated`.
 
-Customer Portal: allow card update, monthly/yearly switch, and **cancel at period end**. Do not enable pause. Until keys are set, checkout and portal return **503**. `/pricing` still lists the catalog.
+Pack Checkout sessions enable `invoice_creation` and print `COMPANY_LEGAL_NAME` / `COMPANY_VAT` on the invoice footer. **Set the subscription invoice template once in the Stripe Dashboard** (Settings → Billing → Invoices); the API does not attach that footer to `mode: 'subscription'` sessions.
+
+Customer Portal: allow card update, monthly/yearly switch, and **cancel at period end**. Do not enable pause. Until keys are set, checkout and portal return **503**. `/pricing` still lists the catalog. Checkout requires the immediate-delivery withdrawal waiver and Stripe `consent_collection.terms_of_service`.
 
 Us-diensten (manual AT, remediation, training) has **no Stripe SKU** — link to https://about-us.be/contact/.
 
 After this change is merged to `development`, publish as **`deploy`** (not `debian`):
 
-1. Put the Stripe variables above in `/etc/accessibility-db.env` (`chmod 600`). Leave `STRIPE_AUTOMATIC_TAX=false` until Tax Settings have a Belgian head office and Collecting registrations. Do not open Postgres `5432` to the internet.
+1. Put the Stripe variables above plus `COMPANY_LEGAL_NAME`, `COMPANY_KBO`, `COMPANY_VAT`, `COMPANY_ADDRESS`, and `COMPANY_EMAIL` in `/etc/accessibility-db.env` (`chmod 600`). Keep `STRIPE_AUTOMATIC_TAX=true` once Tax Settings have a Belgian head office and Collecting registrations. Production checkout refuses to start if automatic tax is off. Do not open Postgres `5432` to the internet.
 2. In Stripe Dashboard → Developers → Webhooks, add `https://wcag.about-us.be/api/stripe/webhook` for the events listed above. Copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
-3. Dashboard → Tax: set the Belgian head office. Ask the advisor to record **Belgium domestic + Union OSS**, then set `STRIPE_AUTOMATIC_TAX=true`. Threshold monitoring starts at the first **live** payment. Live Products/Prices and live `rk_` only after that confirmation.
+3. Dashboard → Tax: set the Belgian head office. Ask the advisor to record **Belgium domestic + Union OSS**. Dashboard → Settings → Billing → Invoices: set the subscription invoice footer to the company legal name and VAT. Threshold monitoring starts at the first **live** payment. Live Products/Prices and live `rk_` only after that confirmation.
 4. `sudo -u deploy git pull --ff-only origin development`, `sudo -H -u deploy npm ci` (lockfile changed), `sudo -H -u deploy npm run build --prefix web`, `sudo systemctl restart accessibility.service`.
 
 Monitoring:

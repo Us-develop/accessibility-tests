@@ -8,6 +8,7 @@ import {
   getSubscriptionByStripeSubscription,
   insertPayment,
   upsertSubscription,
+  updatePaymentInvoiceUrl,
 } from './billing.mjs';
 import {
   NONE_PLAN_ID,
@@ -16,6 +17,9 @@ import {
   tokenPackById,
 } from './plan-catalog.mjs';
 import { clawbackTokensForPaymentIntent, findTokenLotByCheckoutSession, grantTokenPack } from './tokens.mjs';
+import { companyInvoiceFooter } from './company.mjs';
+import { mergeConsentContext } from './consents.mjs';
+import { WITHDRAWAL_WAIVER_TEXT } from './legal-versions.mjs';
 
 const STRIPE_API_VERSION = '2026-08-26.dahlia';
 
@@ -45,7 +49,12 @@ export function stripeConfigured() {
 }
 
 export function automaticTaxEnabled() {
-  return parseBooleanEnv('STRIPE_AUTOMATIC_TAX', false);
+  return parseBooleanEnv('STRIPE_AUTOMATIC_TAX', true);
+}
+
+export function warnStripeTaxCodeIfUnset() {
+  if (String(process.env.STRIPE_TAX_CODE || '').trim()) return;
+  console.warn('[stripe] STRIPE_TAX_CODE is unset; products may lack a tax code until it is set.');
 }
 
 export function priceIdForPack(packId) {
@@ -96,6 +105,12 @@ export function getStripe() {
   cachedClient = new Stripe(key, { apiVersion: STRIPE_API_VERSION });
   cachedKey = key;
   return cachedClient;
+}
+
+/** Test helper: inject a stub client. Pass null to reset. */
+export function setStripeClientForTests(client) {
+  cachedClient = client || null;
+  cachedKey = client ? stripeSecretKey() || '__test__' : '';
 }
 
 export async function billingPublicConfig() {
@@ -210,14 +225,21 @@ export async function applyStripeSubscription(stripeSub, { userId: knownUserId, 
 }
 
 export async function recordStripeInvoice(invoice) {
-  const amount = Number(invoice?.amount_paid || 0);
-  if (!invoice || amount <= 0) return null;
+  if (!invoice) return null;
+  const amount = Number(invoice.amount_paid || 0);
+  const invoiceUrl = invoice.hosted_invoice_url || null;
   const intentId =
     typeof invoice.payment_intent === 'string'
       ? invoice.payment_intent
       : invoice.payment_intent?.id || invoice.id;
-  const existing = await findPaymentByStripeIntent(intentId);
-  if (existing) return existing;
+  const existing = intentId ? await findPaymentByStripeIntent(intentId) : null;
+  if (existing) {
+    if (invoiceUrl && !existing.invoiceUrl) {
+      return (await updatePaymentInvoiceUrl(intentId, invoiceUrl)) || existing;
+    }
+    return existing;
+  }
+  if (amount <= 0) return null;
   const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
   const subscriptionId =
     typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
@@ -235,7 +257,7 @@ export async function recordStripeInvoice(invoice) {
     status: 'paid',
     description: invoice.lines?.data?.[0]?.description || 'Us accessibility',
     stripePaymentIntentId: intentId,
-    invoiceUrl: invoice.hosted_invoice_url || null,
+    invoiceUrl,
     createdAt: unixToIso(invoice.created) || new Date().toISOString(),
   });
 }
@@ -248,13 +270,38 @@ async function subscriptionFromSession(session) {
   return null;
 }
 
+async function invoiceUrlFromSession(session) {
+  if (!session) return null;
+  if (session.invoice && typeof session.invoice === 'object') {
+    return session.invoice.hosted_invoice_url || null;
+  }
+  if (session.invoice) {
+    try {
+      const invoice = await getStripe().invoices.retrieve(String(session.invoice));
+      return invoice?.hosted_invoice_url || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+async function storeStripeConsentFromSession(session) {
+  const consentId = session?.metadata?.consentId;
+  if (!consentId || !session.consent) return;
+  await mergeConsentContext(consentId, { stripeConsent: session.consent, checkoutSessionId: session.id });
+}
+
 export async function fulfillPaymentSession(session) {
   if (!session || session.mode !== 'payment') return null;
   if (session.payment_status === 'unpaid') return null;
   const sessionId = session.id;
   if (sessionId) {
     const existing = await findTokenLotByCheckoutSession(sessionId);
-    if (existing) return existing;
+    if (existing) {
+      await storeStripeConsentFromSession(session);
+      return existing;
+    }
   }
   const packId = session.metadata?.packId || packIdFromPrice(session.metadata?.priceId);
   const pack = tokenPackById(packId);
@@ -271,6 +318,7 @@ export async function fulfillPaymentSession(session) {
     stripePaymentIntentId: intentId,
     purchasedAt: unixToIso(session.created) || new Date().toISOString(),
   });
+  const invoiceUrl = await invoiceUrlFromSession(session);
   if (intentId) {
     const already = await findPaymentByStripeIntent(intentId);
     if (!already) {
@@ -282,11 +330,14 @@ export async function fulfillPaymentSession(session) {
         status: 'paid',
         description: pack?.name || 'Token pack',
         stripePaymentIntentId: intentId,
-        invoiceUrl: null,
+        invoiceUrl,
         createdAt: unixToIso(session.created) || new Date().toISOString(),
       });
+    } else if (invoiceUrl && !already.invoiceUrl) {
+      await updatePaymentInvoiceUrl(intentId, invoiceUrl);
     }
   }
+  await storeStripeConsentFromSession(session);
   return lot;
 }
 
@@ -298,10 +349,12 @@ export async function fulfillCheckoutSession(session) {
   const stripeSub = await subscriptionFromSession(session);
   if (!stripeSub) return null;
   const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
-  return applyStripeSubscription(stripeSub, {
+  const result = await applyStripeSubscription(stripeSub, {
     userId: session.metadata?.userId || session.client_reference_id,
     customerId,
   });
+  await storeStripeConsentFromSession(session);
+  return result;
 }
 
 function paymentIntentIdFromCharge(charge) {
@@ -347,13 +400,28 @@ export async function handleStripeEvent(event) {
   }
 }
 
+async function attachEuVatIfPresent(stripe, customerId, user) {
+  const vat = String(user?.vatNumber || '').trim().toUpperCase();
+  if (!vat || !customerId || typeof stripe.customers?.createTaxId !== 'function') return;
+  try {
+    await stripe.customers.createTaxId(customerId, { type: 'eu_vat', value: vat });
+  } catch (err) {
+    const code = String(err?.code || err?.raw?.code || '');
+    if (code === 'resource_already_exists' || code === 'tax_id_already_exists') return;
+    console.warn('[stripe] createTaxId failed:', err?.message || err);
+  }
+}
+
 export async function ensureStripeCustomer(user) {
   const stripe = getStripe();
   const existing = await getSubscription(user.id);
   if (existing?.stripeCustomerId) {
     try {
       const customer = await stripe.customers.retrieve(existing.stripeCustomerId);
-      if (customer && !customer.deleted) return customer.id;
+      if (customer && !customer.deleted) {
+        await attachEuVatIfPresent(stripe, customer.id, user);
+        return customer.id;
+      }
     } catch {
       /* create a replacement customer below */
     }
@@ -378,6 +446,7 @@ export async function ensureStripeCustomer(user) {
     ...sub,
     stripeCustomerId: customer.id,
   });
+  await attachEuVatIfPresent(stripe, customer.id, user);
   return customer.id;
 }
 
@@ -387,14 +456,29 @@ function checkoutTaxFields() {
     customer_update: { address: 'auto', name: 'auto' },
     tax_id_collection: { enabled: true },
     automatic_tax: { enabled: tax },
+    consent_collection: { terms_of_service: 'required' },
+    custom_text: {
+      terms_of_service_acceptance: { message: WITHDRAWAL_WAIVER_TEXT },
+    },
   };
 }
 
-export async function createCheckoutSession({ user, kind, packId, interval } = {}) {
+function assertAutomaticTaxForCheckout() {
+  if (process.env.NODE_ENV === 'production' && !automaticTaxEnabled()) {
+    throw Object.assign(new Error('Stripe Tax must be enabled in production before checkout.'), {
+      status: 503,
+      code: 'stripe_tax_disabled',
+    });
+  }
+}
+
+export async function createCheckoutSession({ user, kind, packId, interval, consentId } = {}) {
+  assertAutomaticTaxForCheckout();
   const stripe = getStripe();
   const customerId = await ensureStripeCustomer(user);
   const base = publicAppBase();
   const modeKind = String(kind || '').trim().toLowerCase();
+  const consentMeta = consentId ? { consentId: String(consentId) } : {};
 
   if (modeKind === 'pack') {
     const pack = tokenPackById(packId);
@@ -408,6 +492,7 @@ export async function createCheckoutSession({ user, kind, packId, interval } = {
         code: 'stripe_price_missing',
       });
     }
+    const footer = companyInvoiceFooter();
     return stripe.checkout.sessions.create({
       mode: 'payment',
       customer: customerId,
@@ -415,9 +500,12 @@ export async function createCheckoutSession({ user, kind, packId, interval } = {
       success_url: `${base}/account?billing=success`,
       cancel_url: `${base}/pricing?billing=cancel`,
       line_items: [{ price, quantity: 1 }],
-      metadata: { userId: user.id, packId: pack.id, tokens: String(pack.tokens) },
+      metadata: { userId: user.id, packId: pack.id, tokens: String(pack.tokens), ...consentMeta },
       integration_identifier: integrationIdentifier('wcag-pack'),
       allow_promotion_codes: true,
+      invoice_creation: footer
+        ? { enabled: true, invoice_data: { footer } }
+        : { enabled: true },
       ...checkoutTaxFields(),
     });
   }
@@ -440,7 +528,12 @@ export async function createCheckoutSession({ user, kind, packId, interval } = {
     success_url: `${base}/account?billing=success`,
     cancel_url: `${base}/pricing?billing=cancel`,
     line_items: [{ price, quantity: 1 }],
-    metadata: { userId: user.id, planId: PRO_PLAN_ID, interval: billingInterval },
+    metadata: {
+      userId: user.id,
+      planId: PRO_PLAN_ID,
+      interval: billingInterval,
+      ...consentMeta,
+    },
     subscription_data: {
       metadata: { userId: user.id, planId: PRO_PLAN_ID, interval: billingInterval },
     },

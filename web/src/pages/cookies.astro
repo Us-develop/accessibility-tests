@@ -1,20 +1,69 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import { LEGAL_PRIVACY_VERSION } from '../../../server/legal-versions.mjs';
 
-export const prerender = true;
+export const prerender = false;
 ---
 <Layout title="Cookies · Us" indexable={true} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Cookies" />
     <main class="app-main">
       <article class="container-narrow page-article">
-        <p class="eyebrow"><span class="dot"></span>Lawyer review required</p>
         <h1>Cookies</h1>
-        <p class="muted">Draft only. Us counsel must review. Last updated 11 September 2026.</p>
+        <p class="muted">Version {LEGAL_PRIVACY_VERSION}. We set only the cookies below. They are strictly necessary to run the service.</p>
         <div class="prose-width">
-          <p>We use strictly necessary cookies for signed-in sessions (<code>wcag_sid</code>), a UI hint (<code>wcag_ui</code>), CSRF protection, and an optional guest snapshot cookie. Cloudflare Turnstile may set cookies when it is enabled.</p>
-          <p>Stripe Checkout and the customer portal set cookies on stripe.com when you pay or manage billing.</p>
+          <table class="account-table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Purpose</th>
+                <th scope="col">Lifetime</th>
+                <th scope="col">Flags</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>wcag_sid</code></td>
+                <td>Signed-in session (staff or customer).</td>
+                <td>12 hours</td>
+                <td>HttpOnly; Path=/; SameSite=Lax (or the configured AUTH_COOKIE_SAMESITE); Secure in production</td>
+              </tr>
+              <tr>
+                <td><code>wcag_csrf</code></td>
+                <td>CSRF token read by the browser for API writes.</td>
+                <td>12 hours</td>
+                <td>Path=/; SameSite as the session; Secure in production; not HttpOnly</td>
+              </tr>
+              <tr>
+                <td><code>wcag_ui</code></td>
+                <td>Non-HttpOnly hint so the layout can skip the login overlay (<code>1</code> staff, <code>c</code> customer).</td>
+                <td>12 hours</td>
+                <td>Path=/; SameSite as the session; Secure in production; not HttpOnly</td>
+              </tr>
+              <tr>
+                <td><code>wcag_guest</code></td>
+                <td>Guest snapshot token so a later signup can attach that scan.</td>
+                <td>14 days</td>
+                <td>Path=/; SameSite=Lax; not HttpOnly</td>
+              </tr>
+              <tr>
+                <td><code>wcag_freebie</code></td>
+                <td>Marks that this browser already used the one free snapshot.</td>
+                <td>1 year</td>
+                <td>Path=/; SameSite=Lax; not HttpOnly</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            The signed-in UI also stores <code>sessionStorage.wcagStaff</code> (<code>1</code> when a staff session is active)
+            so a tab can keep the staff chrome after a client-side navigation. That value is not a cookie and is cleared when the tab’s session storage is cleared.
+          </p>
+          <p>
+            Cloudflare Turnstile may set its own cookies on challenges when captcha is enabled.
+            Stripe Checkout and the customer portal set cookies on stripe.com when you pay or manage billing.
+          </p>
+          <!-- COUNSEL: confirm whether Turnstile/Stripe third-party cookies need a separate non-essential category; we treat first-party cookies as strictly necessary. -->
         </div>
       </article>
     </main>

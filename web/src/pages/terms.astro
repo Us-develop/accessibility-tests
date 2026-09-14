@@ -1,28 +1,98 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import { companyIdentity } from '../../../server/company.mjs';
+import { LEGAL_TERMS_VERSION, WITHDRAWAL_WAIVER_TEXT } from '../../../server/legal-versions.mjs';
 
-export const prerender = true;
+export const prerender = false;
+const company = companyIdentity();
 ---
-<Layout title="Terms of use · Us" indexable={true} authMode="guest-ok">
+<Layout title="Terms of Service · Us" indexable={true} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Terms" />
     <main class="app-main">
       <article class="container-narrow page-article">
-        <p class="eyebrow"><span class="dot"></span>Lawyer review required</p>
-        <h1>Terms of use</h1>
-        <p class="muted">Draft only. Us counsel must review before this is a contract. Last updated 11 September 2026.</p>
+        <h1>Terms of Service</h1>
+        <p class="muted">Version {LEGAL_TERMS_VERSION}. These terms apply to the Us accessibility scanner.</p>
         <div class="prose-width">
-          <p>These draft terms apply to the Us accessibility scanner at wcag.about-us.be, operated by Us NV.</p>
-          <h2>What you get</h2>
-          <p>A gratis snapshot is a one-page automated check. Token and Pro scans produce fuller reports. Automated results are findings, not a WCAG conformance certificate or legal sign-off.</p>
-          <h2>Accounts and payment</h2>
-          <p>Token packs are prepaid and expire 12 months after purchase. Pro is a subscription billed monthly or yearly. Cancel at period end through the billing portal. Unused Pro pages do not roll over.</p>
-          <h2>Acceptable use</h2>
-          <p>Only scan URLs you are allowed to test. Do not use the service to attack, overload, or scan third-party sites without permission.</p>
-          <h2>Contact</h2>
-          <p>Questions: <a class="link" href="https://about-us.be/contact/">about-us.be/contact</a>.</p>
+          <h2>Company identity</h2>
+          <p>
+            The service is operated by {company.legalName || 'the company named in the site footer'}
+            {company.vat ? `, VAT ${company.vat}` : ''}
+            {company.kbo ? `, KBO ${company.kbo}` : ''}
+            {company.address ? `, ${company.address}` : ''}
+            {company.email ? (
+              <>
+                . Contact: <a class="link" href={`mailto:${company.email}`}>{company.email}</a>
+              </>
+            ) : (
+              '.'
+            )}
+          </p>
+
+          <h2>The service</h2>
+          <p>
+            A gratis snapshot is a one-page automated check. Token and Pro scans produce fuller reports.
+            Automated results are findings, not a WCAG conformance certificate or legal sign-off.
+            Only scan URLs you are allowed to test. Do not use the service to attack, overload, or scan third-party sites without permission.
+          </p>
+
+          <h2>Accounts, tokens, and Pro</h2>
+          <p>
+            Token packs are prepaid and expire 12 months after purchase. Pro is a subscription billed monthly or yearly.
+            Cancel at period end through the billing portal. Unused Pro pages do not roll over.
+            If a pack payment is refunded, remaining tokens from that payment are clawed back (set to zero).
+          </p>
+
+          <h2>Price, VAT, and invoicing</h2>
+          <p>
+            Prices shown to consumers are VAT-inclusive as the primary figure, with the ex-VAT catalog amount alongside.
+            Businesses with a valid EU VAT number are charged without VAT under the reverse-charge rule; the exact amount is calculated at checkout by Stripe Tax.
+            Pack purchases receive a Stripe invoice. Subscription invoices use the template configured in the Stripe Dashboard.
+          </p>
+          <!-- COUNSEL: confirm tax_behavior of Stripe Prices (exclusive) plus Automatic Tax for Belgian 21% and EU reverse charge. -->
+
+          <h2>Consumers</h2>
+          <p>
+            If you buy as a consumer, Belgian mandatory consumer law applies and cannot be waived.
+            Digital scans start as soon as you request immediate delivery. By ticking the checkout box
+            (“{WITHDRAWAL_WAIVER_TEXT}”) you lose the 14-day right of withdrawal once delivery starts, as allowed for digital content supplied immediately.
+          </p>
+          <!-- COUNSEL: confirm 14-day withdrawal waiver wording against the Belgian Code of Economic Law for digital content. -->
+          <p>
+            Refunds: if we refund a pack payment, unused tokens from that payment are removed. We do not refund consumed tokens except where consumer law requires it.
+            Our liability to consumers is not limited for death, bodily injury, or fraud, and is otherwise limited to what Belgian consumer law permits.
+            You may bring proceedings in the courts of your place of residence as well as in Belgium.
+          </p>
+          <!-- COUNSEL: consumer liability cap wording must remain compatible with Belgian mandatory consumer law. -->
+
+          <h2>Business customers</h2>
+          <p>
+            If you buy for a business, you confirm you are acting for professional purposes.
+            A company name is required. A VAT number, if given, is sent to Stripe as an EU VAT tax id and is not used by us to decide the VAT rate.
+            Liability for business customers is capped at the amounts paid to us for the service in the 12 months before the claim, excluding death, bodily injury, and fraud.
+            The courts of Belgium have jurisdiction for B2B disputes.
+          </p>
+          <!-- COUNSEL: confirm the 12-month liability cap and exclusive Belgian jurisdiction for B2B. -->
+
+          <h2>Termination</h2>
+          <p>
+            You may delete your account at any time. We may suspend or terminate access for unpaid invoices, abuse, or unlawful use.
+            Provisions on liability, VAT records, and governing law survive termination.
+          </p>
+
+          <h2>Data processing</h2>
+          <p>
+            Personal data is processed as described in the <a class="link" href="/privacy">Privacy Notice</a>.
+            Subprocessors are listed at <a class="link" href="/legal/subprocessors">/legal/subprocessors</a>.
+          </p>
+
+          <h2>Governing law</h2>
+          <p>
+            Belgian law governs these terms. Consumer forum rules are respected; business customers agree to the Belgian courts as set out above.
+          </p>
         </div>
+        <p class="muted" style="font-size: 13px; margin-top: 32px;">Terms version {LEGAL_TERMS_VERSION}</p>
       </article>
     </main>
   </div>

@@ -732,13 +732,49 @@ button.linklike {
 }
 .site-legal {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 16px 40px;
+  font-size: 13px;
+  text-align: center;
+}
+.site-legal-links {
+  display: flex;
   flex-wrap: wrap;
   gap: 16px;
   justify-content: center;
-  padding: 24px 16px 40px;
-  font-size: 13px;
 }
 .site-legal a {
   color: var(--fg-2);
+}
+.site-legal-identity {
+  margin: 0;
+  max-width: 720px;
+  color: var(--fg-3);
+  line-height: 1.45;
+}
+.legal-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--fg-2);
+}
+.legal-check input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+.pricing-price-excl {
+  display: block;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--fg-3);
+  margin-top: 4px;
+}
+.guest-lead-privacy {
+  font-size: 13px;
+  margin: 0 0 16px;
 }
 

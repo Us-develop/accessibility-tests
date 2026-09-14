@@ -50,6 +50,26 @@ function saveUsers(users) {
   writeJsonStore(USERS_FILE, { users });
 }
 
+export const VAT_NUMBER_RE = /^[A-Z]{2}[A-Z0-9]{2,12}$/;
+
+export function normalizeCustomerType(value) {
+  return String(value || '').trim().toLowerCase() === 'business' ? 'business' : 'consumer';
+}
+
+export function normalizeVatNumber(value) {
+  const raw = String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s.\-]/g, '');
+  if (!raw) return '';
+  if (!VAT_NUMBER_RE.test(raw)) {
+    throw Object.assign(new Error('Enter a valid EU VAT number (for example BE0123456789).'), {
+      status: 400,
+    });
+  }
+  return raw;
+}
+
 function emptyContact() {
   return {
     phone: '',
@@ -60,12 +80,15 @@ function emptyContact() {
     city: '',
     postalCode: '',
     country: '',
+    customerType: 'consumer',
   };
 }
 
 function withContactDefaults(user) {
   if (!user) return null;
-  return { sessionVersion: 1, ...emptyContact(), ...user };
+  const merged = { sessionVersion: 1, ...emptyContact(), ...user };
+  merged.customerType = merged.customerType === 'business' ? 'business' : 'consumer';
+  return merged;
 }
 
 function sessionVersionOf(user) {
@@ -176,7 +199,20 @@ export async function persistUser(user) {
   return withContactDefaults(user);
 }
 
-export async function createUser({ email, password, name = '' }) {
+function assertBusinessCompany(customerType, company) {
+  if (customerType === 'business' && !String(company || '').trim()) {
+    throw Object.assign(new Error('Enter a company name for a business account.'), { status: 400 });
+  }
+}
+
+export async function createUser({
+  email,
+  password,
+  name = '',
+  company = '',
+  vatNumber = '',
+  customerType = 'consumer',
+} = {}) {
   const normalized = String(email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
     throw Object.assign(new Error('Enter a valid email address.'), { status: 400 });
@@ -187,6 +223,10 @@ export async function createUser({ email, password, name = '' }) {
   if (await getUserByEmail(normalized)) {
     throw Object.assign(new Error(GENERIC_CREDENTIALS_ERROR), { status: 409 });
   }
+  const type = normalizeCustomerType(customerType);
+  const companyName = String(company || '').trim().slice(0, 200);
+  const vat = normalizeVatNumber(vatNumber);
+  assertBusinessCompany(type, companyName);
   const autoVerify = String(process.env.AUTH_EMAIL_VERIFY || 'auto').toLowerCase() !== 'required';
   const user = {
     id: randomBytes(12).toString('hex'),
@@ -201,6 +241,9 @@ export async function createUser({ email, password, name = '' }) {
     resetExpiresAt: null,
     sessionVersion: 1,
     ...emptyContact(),
+    company: companyName,
+    vatNumber: vat,
+    customerType: type,
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };
@@ -239,6 +282,26 @@ export async function updateContactDetails(userId, patch) {
       allowed[key] = String(patch[key] ?? '').trim().slice(0, 200);
     }
   }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, 'customerType')) {
+    allowed.customerType = normalizeCustomerType(patch.customerType);
+  } else if (patch && Object.prototype.hasOwnProperty.call(patch, 'buyingForBusiness')) {
+    allowed.customerType =
+      patch.buyingForBusiness === true ||
+      patch.buyingForBusiness === 'on' ||
+      patch.buyingForBusiness === 'true'
+        ? 'business'
+        : 'consumer';
+  }
+  if (Object.prototype.hasOwnProperty.call(allowed, 'vatNumber')) {
+    allowed.vatNumber = normalizeVatNumber(allowed.vatNumber);
+  }
+  const current = await getUserById(userId);
+  if (!current) return null;
+  const nextType = allowed.customerType || current.customerType || 'consumer';
+  const nextCompany = Object.prototype.hasOwnProperty.call(allowed, 'company')
+    ? allowed.company
+    : current.company;
+  assertBusinessCompany(nextType, nextCompany);
   return publicUser(await updateUser(userId, allowed));
 }
 

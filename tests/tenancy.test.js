@@ -73,7 +73,7 @@ async function signup(origin, email) {
   const res = await fetch(`${origin}/api/auth/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: 'longenough1', name: email.split('@')[0] }),
+    body: JSON.stringify({ email, password: 'longenough1', name: email.split('@')[0], acceptTerms: true }),
   });
   jar.store(res.headers);
   const data = await res.json();

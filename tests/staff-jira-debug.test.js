@@ -223,6 +223,7 @@ describe('staff-only jira and debug HTTP', () => {
         email: 'jira-customer@example.com',
         password: 'longenough1',
         name: 'Jira Customer',
+        acceptTerms: true,
       }),
     });
     customerJar.store(res.headers);

@@ -1,6 +1,7 @@
 ---
 import { ClientRouter } from 'astro:transitions';
 import LoginModal from '../components/LoginModal.astro';
+import { companyIdentity } from '../../../server/company.mjs';
 
 interface Props {
   title?: string;
@@ -10,6 +11,7 @@ interface Props {
   authMode?: 'required' | 'guest-ok';
 }
 const { title = 'Accessibility audit · Us', indexable = false, authMode = 'required' } = Astro.props;
+const company = companyIdentity();
 const publicAppBase = import.meta.env.PUBLIC_APP_BASE?.trim() ?? '';
 const devApiBase =
   import.meta.env.DEV && (import.meta.env.PUBLIC_DEV_API_URL?.trim() ?? '')
@@ -109,15 +111,31 @@ const gateLocked = authMode === 'required' && !staffHint;
       </button>
     </div>
     <LoginModal startLocked={gateLocked} />
-    {authMode === 'guest-ok' ? (
-      <footer class="site-legal">
+    <footer class="site-legal">
+      <nav class="site-legal-links" aria-label="Legal">
         <a href="/pricing">Pricing</a>
         <a href="/terms">Terms</a>
         <a href="/privacy">Privacy</a>
         <a href="/cookies">Cookies</a>
+        <a href="/legal/subprocessors">Subprocessors</a>
+        <a href="/accessibility">Accessibility</a>
         <a href="https://about-us.be/contact/">Us-diensten</a>
-      </footer>
-    ) : null}
+      </nav>
+      {company.legalName ? (
+        <p class="site-legal-identity">
+          {company.legalName}
+          {company.vat ? ` · VAT ${company.vat}` : ''}
+          {company.kbo ? ` · KBO ${company.kbo}` : ''}
+          {company.address ? ` · ${company.address}` : ''}
+          {company.email ? (
+            <>
+              {' · '}
+              <a href={`mailto:${company.email}`}>{company.email}</a>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+    </footer>
     <script is:inline>
       (function () {
         if (!document.documentElement.classList.contains('wcag-staff')) return;
