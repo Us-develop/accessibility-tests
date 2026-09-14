@@ -2,7 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 import { TOKEN_PACKS } from '../../../server/plan-catalog.mjs';
-import { formatVatInclusivePrice } from '../../../server/vat-display.mjs';
+import { centsWithVat, formatVatInclusivePrice } from '../../../server/vat-display.mjs';
 import { WITHDRAWAL_WAIVER_TEXT } from '../../../server/legal-versions.mjs';
 
 export const prerender = false;
@@ -16,8 +16,55 @@ const pack50Price = formatVatInclusivePrice(pack50?.priceCents || 4500);
 const pack100Price = formatVatInclusivePrice(pack100?.priceCents || 8000);
 const proMonth = formatVatInclusivePrice(4900);
 const proYear = formatVatInclusivePrice(49000);
+const siteOrigin = String(Astro.site ?? 'https://wcag.about-us.be').replace(/\/$/, '');
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Product',
+  name: 'Us accessibility scanner',
+  description: 'Automated WCAG 2.2 AA snapshots, token packs, and a Pro subscription for full reports.',
+  brand: { '@type': 'Organization', name: 'Us' },
+  url: `${siteOrigin}/pricing`,
+  offers: [
+    {
+      '@type': 'Offer',
+      name: 'Gratis snapshot',
+      price: '0',
+      priceCurrency: 'EUR',
+      url: `${siteOrigin}/`,
+    },
+    ...TOKEN_PACKS.map((pack) => ({
+      '@type': 'Offer',
+      name: pack.name,
+      price: (centsWithVat(pack.priceCents) / 100).toFixed(2),
+      priceCurrency: 'EUR',
+      url: `${siteOrigin}/pricing#tokens`,
+    })),
+    {
+      '@type': 'Offer',
+      name: 'Pro monthly',
+      price: (centsWithVat(4900) / 100).toFixed(2),
+      priceCurrency: 'EUR',
+      url: `${siteOrigin}/pricing#pro`,
+    },
+    {
+      '@type': 'Offer',
+      name: 'Pro yearly',
+      price: (centsWithVat(49000) / 100).toFixed(2),
+      priceCurrency: 'EUR',
+      url: `${siteOrigin}/pricing#pro`,
+    },
+  ],
+};
 ---
-<Layout title="Pricing · Us accessibility scanner" indexable={true} authMode="guest-ok">
+<Layout
+  title="Pricing · Us accessibility scanner"
+  description="Gratis snapshot, token packs, Pro subscription, and Us-diensten. Prices in EUR including VAT."
+  noindex={false}
+  authMode="guest-ok"
+>
+  <Fragment slot="head">
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+  </Fragment>
   <div class="app-shell">
     <AppHeader crumb="Pricing" />
     <main id="main" class="app-main" tabindex="-1">

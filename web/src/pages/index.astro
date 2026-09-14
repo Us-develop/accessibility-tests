@@ -1,15 +1,44 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import { companyIdentity } from '../../../server/company.mjs';
 
 const access = Astro.locals?.access;
 const ssrStaff = access?.role === 'staff';
 const ssrCustomer = access?.role === 'customer';
 const ssrSignedIn = ssrStaff || ssrCustomer;
+const company = companyIdentity();
+const siteOrigin = String(Astro.site ?? 'https://wcag.about-us.be').replace(/\/$/, '');
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      name: company.legalName || 'Us',
+      url: siteOrigin,
+      email: company.email || undefined,
+      vatID: company.vat || undefined,
+    },
+    {
+      '@type': 'WebSite',
+      name: 'Us accessibility scanner',
+      url: siteOrigin,
+      publisher: { '@type': 'Organization', name: company.legalName || 'Us' },
+    },
+  ],
+};
 
 export const prerender = false;
 ---
-<Layout title="Run a free accessibility check · Us" indexable={true} authMode="guest-ok">
+<Layout
+  title="Run a free accessibility check · Us"
+  description="Run a free one-page WCAG 2.2 AA accessibility snapshot. See a score and the top issues before you buy tokens or subscribe to Pro."
+  noindex={false}
+  authMode="guest-ok"
+>
+  <Fragment slot="head">
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+  </Fragment>
   <div class="app-shell">
     <AppHeader />
     <main id="main" class="app-main" tabindex="-1">

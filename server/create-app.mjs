@@ -70,6 +70,7 @@ import { registerRetentionRoutes } from './retention.mjs';
 import { warnStripeTaxCodeIfUnset } from './stripe.mjs';
 import { assertCompanyIdentityForProduction } from './company.mjs';
 import { assertProductionPublicBaseUrl, publicBaseUrl } from './config.mjs';
+import { registerSeoRoutes } from './seo-routes.mjs';
 import { recordConsent } from './consents.mjs';
 import { LEGAL_PRIVACY_VERSION } from './legal-versions.mjs';
 import { consumeAndQueueCustomerScan, refundScanEntitlement, rememberRunEntitlement } from './billing.mjs';
@@ -184,18 +185,7 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function isIndexablePath(pathname) {
-  const p = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
-  if (p === '/' || p === '') return true;
-  if (p === '/limitations') return true;
-  if (p === '/pricing' || p === '/terms' || p === '/privacy' || p === '/cookies') return true;
-  if (p === '/legal/subprocessors') return true;
-  if (p === '/accessibility') return true;
-  if (p === '/teaser' || pathname.startsWith('/teaser/')) return true;
-  return false;
-}
-
-const PUBLIC_GET_PREFIXES = ['/assets/', '/styles/', '/_astro/', '/teaser/', '/api/guest/', '/api/auth/verify'];
+const PUBLIC_GET_PREFIXES = ['/assets/', '/styles/', '/fonts/', '/_astro/', '/teaser/', '/api/guest/', '/api/auth/verify'];
 const PUBLIC_GET_PATHS = new Set([
   '/',
   '/loading',
@@ -219,7 +209,8 @@ const PUBLIC_GET_PATHS = new Set([
   '/api/billing/config',
   '/api/health/db',
   '/robots.txt',
-  '/favicon.png',
+  '/sitemap.xml',
+  '/favicon.ico',
   '/api/__test/throw',
 ]);
 
@@ -886,9 +877,7 @@ function loginPageHtml(nextPath = '', errorMessage = '') {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
   <title>Sign in · Accessibility reports</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Public+Sans:ital,wght@0,300..900;1,400..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/tokens.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     body {
@@ -1023,12 +1012,7 @@ function loginPageHtml(nextPath = '', errorMessage = '') {
 </html>`;
 }
 
-app.use((req, res, next) => {
-  if (!isIndexablePath(req.path)) {
-    res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
-  }
-  next();
-});
+registerSeoRoutes(app);
 
 async function loadResultJson(domain, runId) {
   if (dbPool) {
@@ -1041,34 +1025,6 @@ async function loadResultJson(domain, runId) {
   }
   return readJsonIfExists(join(runDirOf(domain, runId), 'accessibility-results.json'));
 }
-
-app.get('/robots.txt', (_req, res) => {
-  res.type('text/plain');
-  res.send(
-    [
-      'User-agent: *',
-      'Allow: /',
-      'Allow: /teaser/',
-      'Allow: /limitations',
-      'Allow: /pricing',
-      'Allow: /terms',
-      'Allow: /privacy',
-      'Allow: /cookies',
-      'Allow: /legal/subprocessors',
-      'Allow: /accessibility',
-      'Disallow: /signup',
-      'Disallow: /forgot',
-      'Disallow: /reset',
-      'Disallow: /api/',
-      'Disallow: /report/',
-      'Disallow: /audits',
-      'Disallow: /admin/',
-      'Disallow: /auth/',
-      'Disallow: /loading',
-      '',
-    ].join('\n')
-  );
-});
 
 app.get('/auth/login', (req, res) => {
   if (!AUTH_ENABLED) return res.redirect('/');
@@ -1256,7 +1212,7 @@ app.use(async (req, res, next) => {
     req.access = { role: 'staff', userId: 'staff', email: '', csrf: '' };
     return next();
   }
-  if (req.path === '/robots.txt') return next();
+  if (req.path === '/robots.txt' || req.path === '/sitemap.xml') return next();
   if (req.path === '/auth/login' || req.path === '/auth/logout') return next();
   if (req.path === '/auth/jira/callback') return next();
   if (req.path === '/api/config') return next();
@@ -1265,6 +1221,7 @@ app.use(async (req, res, next) => {
     (req.path === '/loading' ||
       req.path.startsWith('/assets/') ||
       req.path.startsWith('/styles/') ||
+      req.path.startsWith('/fonts/') ||
       req.path.startsWith('/_astro/'))
   ) {
     return next();

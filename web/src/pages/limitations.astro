@@ -3,9 +3,55 @@ import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 
 export const prerender = false;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: [
+    {
+      '@type': 'Question',
+      name: 'What does this scanner run?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'axe-core rules tagged WCAG 2.0 / 2.1 / 2.2 Level A and AA, plus custom checks for structure, images, contrast, 320px reflow, forms, names, and a few dynamic-content heuristics. Axe incomplete items are marked needs review, not passes.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'What cannot this tool test automatically?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Real screen-reader, keyboard, and cognitive testing with people; most of WCAG 2.2’s 56 Level A and AA success criteria; client-rendered SPAs if content is not in the DOM at scan time; embedded players; and pages behind login, CAPTCHA, or bot protection.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'How should I read the score?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'The 0–100 figure is the share of applicable automated checks that passed on this run. A high score does not mean the site conforms. A low score does not mean it fails every criterion.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Does this certify European Accessibility Act compliance?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'No. The EAA applies to listed consumer services in the EU, with a micro-enterprise exemption. This tool helps you find issues; it does not certify EAA compliance.',
+      },
+    },
+  ],
+};
 ---
 
-<Layout title="What this scan can and cannot test · Us" indexable={true} authMode="guest-ok">
+<Layout
+  title="What this scan can and cannot test · Us"
+  description="What this automated WCAG 2.2 AA scanner can and cannot test, how to read the score, and how it relates to the European Accessibility Act."
+  noindex={false}
+  authMode="guest-ok"
+>
+  <Fragment slot="head">
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+  </Fragment>
   <div class="app-shell">
     <AppHeader crumb="Limitations" />
     <main id="main" class="app-main" tabindex="-1">

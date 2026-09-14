@@ -7,7 +7,7 @@ const guestToken = Astro.url.searchParams.get('guest') || '';
 const checkEmail = Astro.url.searchParams.get('check-email') === '1';
 const signupError = Astro.url.searchParams.get('error') === '1';
 ---
-<Layout title="Create account · Us" indexable={false} authMode="guest-ok">
+<Layout title="Create account · Us" description="Create an Us accessibility scanner account to save snapshots, buy tokens, or subscribe to Pro." noindex={true} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Create account" />
     <main id="main" class="app-main" tabindex="-1">

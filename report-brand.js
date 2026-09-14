@@ -3,16 +3,12 @@
  * @see DESIGN_SYSTEM_AGENT.md in us-design-system repo.
  */
 
-/** Head links: favicon + Us Web profile fonts (Owners kits + Public Sans). */
+/** Head links: favicon + self-hosted Us Web profile fonts. */
 export const REPORT_BRAND_HEAD = `
+  <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" href="/assets/us-favicon.png" type="image/png" sizes="88x88">
-  <link rel="apple-touch-icon" href="/assets/us-favicon.png">
-  <link rel="preconnect" href="https://use.typekit.net" crossorigin>
-  <link rel="stylesheet" href="https://use.typekit.net/dbo7deg.css">
-  <link rel="stylesheet" href="https://use.typekit.net/rgx8kmt.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..700&family=Public+Sans:ital,wght@0,300..900;1,400..700&display=swap" rel="stylesheet">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" sizes="180x180">
+  <link rel="stylesheet" href="/styles/tokens.css">
 `;
 
 /**

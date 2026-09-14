@@ -11,6 +11,7 @@ import { initDb, dbPool } from '../server/db.js';
 import { createAccessibilityApp } from '../server/create-app.mjs';
 import { installProcessGuards } from '../server/http-utils.mjs';
 import { startRetentionJob } from '../server/retention.mjs';
+import { setStaticAssetHeaders } from '../server/static-cache.mjs';
 
 installProcessGuards();
 
@@ -43,7 +44,13 @@ try {
 }
 const app = express();
 app.use(apiApp);
-app.use(express.static(join(webRoot, 'dist/client'), { redirect: false }));
+app.use(
+  express.static(join(webRoot, 'dist/client'), {
+    redirect: false,
+    maxAge: '1h',
+    setHeaders: setStaticAssetHeaders,
+  })
+);
 app.use((req, res, next) => handler(req, res, next, { access: req.access || null }));
 
 await initDb();
