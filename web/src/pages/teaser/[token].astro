@@ -115,9 +115,9 @@ if (!isValidGuestToken(token)) {
 <Layout title={pageTitle} indexable={true} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Snapshot" />
-    <main class="app-main">
+    <main id="main" class="app-main" tabindex="-1">
       {loadError ? (
-        <div class="container-narrow" style="padding: clamp(32px, 5vw, 56px) 0 clamp(48px, 8vw, 96px);">
+        <div class="container-narrow" style="padding-block: clamp(32px, 5vw, 56px) clamp(48px, 8vw, 96px);">
           <div class="card" style="padding: 32px;">
             <h1 style="font-size: 28px; margin-bottom: 8px;">Snapshot unavailable</h1>
             <p class="muted">{loadError}</p>
@@ -143,7 +143,7 @@ if (!isValidGuestToken(token)) {
           </div>
         </>
       ) : (
-        <div class="container-narrow" style="padding: clamp(32px, 5vw, 56px) 0;">
+        <div class="container-narrow" style="padding-block: clamp(32px, 5vw, 56px);">
           <p class="muted">Could not load this snapshot.</p>
         </div>
       )}

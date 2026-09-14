@@ -59,8 +59,10 @@
 
   const stylesheet = `
     :host {
-      position: fixed;
-      inset: 0;
+      position: relative;
+      inset: auto;
+      width: 100%;
+      aspect-ratio: 16 / 9;
       display: block;
       background: #000;
       color: #fff;
@@ -106,7 +108,7 @@
     /* Tap zones for mobile — back/forward thirds like Stories.
        Transparent, no visible UI, don't block the overlay. */
     .tapzones {
-      position: fixed;
+      position: absolute;
       inset: 0;
       display: flex;
       z-index: 2147482000;
@@ -123,9 +125,9 @@
     }
 
     .overlay {
-      position: fixed;
+      position: absolute;
       left: 50%;
-      bottom: 22px;
+      bottom: calc(22px + env(safe-area-inset-bottom, 0px));
       transform: translate(-50%, 6px) scale(0.92);
       filter: blur(6px);
       display: flex;
@@ -151,6 +153,20 @@
       transform: translate(-50%, 0) scale(1);
       filter: blur(0);
     }
+    @media (pointer: coarse) {
+      .overlay {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translate(-50%, 0) scale(1);
+        filter: blur(0);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .overlay {
+        transition: none;
+        filter: none;
+      }
+    }
 
     .btn {
       appearance: none;
@@ -174,8 +190,8 @@
     }
     .btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
     .btn:active { background: rgba(255,255,255,0.18); }
-    .btn:focus { outline: none; }
-    .btn:focus-visible { outline: none; }
+    .btn:focus { outline: 2px solid #fff; outline-offset: 2px; }
+    .btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
     .btn::-moz-focus-inner { border: 0; }
     .btn svg { width: 14px; height: 14px; display: block; }
     .btn.reset {
@@ -281,6 +297,7 @@
       this._onResize = this._onResize.bind(this);
       this._onSlotChange = this._onSlotChange.bind(this);
       this._onMouseMove = this._onMouseMove.bind(this);
+      this._onPointerDown = this._onPointerDown.bind(this);
       this._onTapBack = this._onTapBack.bind(this);
       this._onTapForward = this._onTapForward.bind(this);
     }
@@ -293,12 +310,14 @@
     }
 
     connectedCallback() {
+      if (!this.hasAttribute('tabindex')) this.setAttribute('tabindex', '0');
       this._render();
       this._loadNotes();
       this._syncPrintPageRule();
       window.addEventListener('keydown', this._onKey);
       window.addEventListener('resize', this._onResize);
       window.addEventListener('mousemove', this._onMouseMove, { passive: true });
+      this.addEventListener('pointerdown', this._onPointerDown);
       // Initial collection + layout happens via slotchange, which fires on mount.
     }
 
@@ -306,6 +325,7 @@
       window.removeEventListener('keydown', this._onKey);
       window.removeEventListener('resize', this._onResize);
       window.removeEventListener('mousemove', this._onMouseMove);
+      this.removeEventListener('pointerdown', this._onPointerDown);
       if (this._hideTimer) clearTimeout(this._hideTimer);
       if (this._mouseIdleTimer) clearTimeout(this._mouseIdleTimer);
     }
@@ -533,8 +553,9 @@
         this._canvas.style.transform = 'none';
         return;
       }
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
+      const rect = this.getBoundingClientRect();
+      const vw = rect.width || this.clientWidth || window.innerWidth;
+      const vh = rect.height || this.clientHeight || window.innerHeight;
       const s = Math.min(vw / this.designWidth, vh / this.designHeight);
       this._canvas.style.transform = `scale(${s})`;
     }
@@ -556,17 +577,27 @@
       this._go(this._index + 1, 'tap');
     }
 
+    _onPointerDown() {
+      this._flashOverlay();
+    }
+
     _onKey(e) {
-      // Ignore when the user is typing.
+      const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+      const focusedHere = this === document.activeElement || path.includes(this) || this.contains(e.target);
+      if (!focusedHere) return;
+
       const t = e.target;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       const key = e.key;
+      const targetIsButton = t && (t.tagName === 'BUTTON' || t.closest?.('button'));
       let handled = true;
 
-      if (key === 'ArrowRight' || key === 'PageDown' || key === ' ' || key === 'Spacebar') {
+      if (key === 'ArrowRight' || key === 'PageDown' || ((key === ' ' || key === 'Spacebar') && !targetIsButton)) {
         this._go(this._index + 1, 'keyboard');
+      } else if (key === ' ' || key === 'Spacebar') {
+        handled = false;
       } else if (key === 'ArrowLeft' || key === 'PageUp') {
         this._go(this._index - 1, 'keyboard');
       } else if (key === 'Home') {
@@ -576,7 +607,6 @@
       } else if (key === 'r' || key === 'R') {
         this._go(0, 'keyboard');
       } else if (/^[0-9]$/.test(key)) {
-        // 1..9 jump to that slide; 0 jumps to 10.
         const n = key === '0' ? 9 : parseInt(key, 10) - 1;
         if (n < this._slides.length) this._go(n, 'keyboard');
       } else {
@@ -584,7 +614,7 @@
       }
 
       if (handled) {
-        e.preventDefault();
+        if (!(targetIsButton && (key === ' ' || key === 'Spacebar'))) e.preventDefault();
         this._flashOverlay();
       }
     }

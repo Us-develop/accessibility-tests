@@ -69,12 +69,27 @@ async function httpUrlIsBlocked(raw) {
   }
 }
 
-async function requestChainLeavesAllowlist(request) {
+function originOf(raw) {
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return '';
+  }
+}
+
+async function requestChainLeavesAllowlist(request, pageOrigin) {
   let current = request;
   const seen = new Set();
   while (current && !seen.has(current)) {
     seen.add(current);
-    if (await httpUrlIsBlocked(current.url())) return true;
+    const raw = current.url();
+    // The page under test may itself be loopback (scripts/self-scan.mjs). Allow
+    // that origin; still block other private/reserved hosts.
+    if (pageOrigin && originOf(raw) === pageOrigin) {
+      current = current.redirectedFrom();
+      continue;
+    }
+    if (await httpUrlIsBlocked(raw)) return true;
     current = current.redirectedFrom();
   }
   return false;
@@ -106,6 +121,23 @@ function parseOutputId() {
   const idx = process.argv.indexOf('--output-id');
   if (idx !== -1 && process.argv[idx + 1]) return process.argv[idx + 1];
   return null;
+}
+
+function parseViewportFromArgs() {
+  const arg = process.argv.find((a) => a.startsWith('--viewport='));
+  let raw = null;
+  if (arg) raw = arg.replace('--viewport=', '').trim();
+  else {
+    const idx = process.argv.indexOf('--viewport');
+    if (idx !== -1 && process.argv[idx + 1]) raw = String(process.argv[idx + 1]).trim();
+  }
+  if (raw) {
+    const match = raw.match(/^(\d+)\s*x\s*(\d+)$/i);
+    if (match) {
+      return { width: Number(match[1]), height: Number(match[2]) };
+    }
+  }
+  return { width: 1366, height: 768 };
 }
 
 function parseBooleanEnv(name, defaultValue) {
@@ -236,6 +268,7 @@ async function runWithConcurrency(items, concurrency, taskFn) {
 async function main() {
   const urls = await getUrls();
   const outputId = parseOutputId();
+  const viewport = parseViewportFromArgs();
   const generateReport = process.argv.includes('--report');
   const urlConcurrency = parseIntEnv('URL_CONCURRENCY', 1, 1, 8);
   const waitForNetworkIdle = parseBooleanEnv('WAIT_FOR_NETWORKIDLE', false);
@@ -256,7 +289,7 @@ async function main() {
   if (!existsSync(OUTPUT_DIR)) mkdirSync(OUTPUT_DIR, { recursive: true });
 
   console.log('Starting accessibility tests...');
-  console.log(`URLs to test: ${urls.length}`);
+  console.log(`Viewport: ${viewport.width}x${viewport.height}`);
   console.log(`URL concurrency: ${urlConcurrency}`);
   console.log(`Wait for networkidle: ${waitForNetworkIdle ? 'enabled' : 'disabled'}`);
   console.log(`Contrast checks: ${enableContrastChecks ? 'enabled' : 'disabled'}`);
@@ -304,13 +337,13 @@ async function main() {
       console.log(`\nTesting: ${url}`);
       const context = await browser.newContext({
         userAgent: scannerUserAgent(),
-        viewport: { width: 1366, height: 768 },
+        viewport,
       });
       const page = await context.newPage();
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await page.route('**/*', async (route) => {
         const request = route.request();
-        if (await requestChainLeavesAllowlist(request)) {
+        if (await requestChainLeavesAllowlist(request, originOf(url))) {
           return route.abort('blockedbyclient');
         }
         if (blockMediaRequests && request.resourceType() === 'media') {

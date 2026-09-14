@@ -28,6 +28,8 @@
   let errorMsg = $state('');
 
   let runStatus = $state('');
+  let liveMessage = $state('Starting scan');
+  let completeAnnounced = $state(false);
 
   const currentStage = $derived(
     progress >= 100
@@ -39,6 +41,11 @@
           : { label: `Scanning page ${Math.min(processedPages, totalPages)} of ${totalPages}` }
   );
 
+  $effect(() => {
+    if (errorMsg) return;
+    liveMessage = currentStage.label;
+  });
+
   function applyStatus(data) {
     if (data.status) runStatus = String(data.status);
     const total = Number(data.urls || data.processedUrls || totalPages || 1);
@@ -47,10 +54,12 @@
     else if (data.status === 'running' && data.currentUrl) processedPages = Math.max(processedPages, 1);
     if (data.currentUrl) currentUrl = String(data.currentUrl);
     if (data.error) errorMsg = String(data.error);
-    if (data.status === 'done') {
-      processedPages = totalPages;
-      progress = 100;
-    } else if (totalPages > 0) {
+      if (data.status === 'done') {
+        processedPages = totalPages;
+        progress = 100;
+        completeAnnounced = true;
+        liveMessage = 'Scan complete. Opening the report.';
+      } else if (totalPages > 0) {
       const pct = Math.round((processedPages / totalPages) * 90);
       progress = Math.max(4, Math.min(90, pct || 4));
     }
@@ -86,7 +95,7 @@
           } else {
             window.location.replace(wcUrl(`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`));
           }
-        }, 600);
+        }, completeAnnounced ? 900 : 600);
       } else if (data.status === 'error') {
         clearInterval(pollTimer);
       }
@@ -138,12 +147,20 @@
 
       <div class="progress-row">
         <div class="progress-meta">
-          <span class="stage">{currentStage.label}&hellip;</span>
+          <span class="stage" id="loading-stage">{currentStage.label}&hellip;</span>
           <span class="progress-pct">{Math.round(progress)}%</span>
         </div>
-        <div class="progress-track">
+        <div
+          class="progress-track"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow={Math.round(progress)}
+          aria-labelledby="loading-stage"
+        >
           <div class="progress-fill" style="width: {progress}%;"></div>
         </div>
+        <p class="sr-only" aria-live="polite">{liveMessage}</p>
       </div>
 
       <div class="live-log">
@@ -158,7 +175,7 @@
               ? `page ${Math.min(processedPages, totalPages)} of ${totalPages}`
               : 'waiting for first page'}
             {#if currentUrl}
-              &middot; <strong>{currentUrl}</strong>
+              &middot; <strong class="break-anywhere">{currentUrl}</strong>
             {/if}
           </span>
         </div>
@@ -167,7 +184,7 @@
           <span>Issue counts appear when the scan finishes — we do not invent them while it runs.</span>
         </div>
         {#if errorMsg}
-          <div class="log-line log-error">
+          <div class="log-line log-error" role="alert">
             <span>&#x2715;</span><span>{errorMsg}</span>
           </div>
         {/if}
@@ -361,6 +378,21 @@
   .log-error {
     color: var(--status-error);
   }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
   .holo-stage {
     position: relative;
     height: clamp(260px, 55vw, 560px);
@@ -455,6 +487,19 @@
     }
     100% {
       transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .orb,
+    .halo,
+    .ring,
+    .swirl,
+    .progress-fill,
+    .orbit-dot {
+      animation: none !important;
+    }
+    .progress-fill {
+      background-size: 100% 100%;
     }
   }
 </style>

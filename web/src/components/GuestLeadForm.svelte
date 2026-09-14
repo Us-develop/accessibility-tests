@@ -61,7 +61,7 @@
     <input type="hidden" name="token" value={token} />
     <div class="field">
       <label class="field-label" for="lead-name">Name</label>
-      <input class="input" id="lead-name" name="name" type="text" autocomplete="name" required />
+      <input class="input" id="lead-name" name="name" type="text" autocomplete="name" required aria-invalid={err ? 'true' : undefined} aria-describedby={err ? 'lead-err' : undefined} />
     </div>
     <div class="field">
       <label class="field-label" for="lead-company">Company</label>
@@ -69,7 +69,7 @@
     </div>
     <div class="field">
       <label class="field-label" for="lead-email">Email</label>
-      <input class="input" id="lead-email" name="email" type="email" autocomplete="email" required />
+      <input class="input" id="lead-email" name="email" type="email" autocomplete="email" required aria-invalid={err ? 'true' : undefined} aria-describedby={err ? 'lead-err' : undefined} />
     </div>
     <div class="field">
       <label class="field-label" for="lead-phone">Phone (optional)</label>
@@ -84,7 +84,7 @@
       <a class="link" href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Notice</a>.
     </p>
     {#if err}
-      <p class="guest-lead-msg guest-lead-msg-err">{err}</p>
+      <p id="lead-err" class="guest-lead-msg guest-lead-msg-err" role="alert">{err}</p>
     {/if}
     {#if ok}
       <p class="guest-lead-msg guest-lead-msg-ok">{ok}</p>

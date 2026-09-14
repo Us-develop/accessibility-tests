@@ -1,0 +1,73 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+import { companyIdentity } from '../../../server/company.mjs';
+
+export const prerender = false;
+const company = companyIdentity();
+const contactEmail = company.email || '';
+const updated = '14 September 2026';
+---
+<Layout title="Accessibility statement · Us" indexable={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb="Accessibility" />
+    <main id="main" class="app-main" tabindex="-1">
+      <article class="container-narrow page-article">
+        <h1>Accessibility statement</h1>
+        <p class="muted prose-lead">
+          Last updated {updated}. This statement covers the Us accessibility scanner web app
+          (the public pages you can open without signing in, plus the account and report UI).
+        </p>
+        <div class="prose-width">
+          <h2>Conformance target</h2>
+          <p>
+            We aim to meet <strong>WCAG 2.2 Level AA</strong> on our own product. Automated checks,
+            including axe-core and this project's 320&nbsp;px reflow test, are part of how we verify
+            that. They are not a certificate and this statement is not a legal sign-off.
+          </p>
+
+          <h2>Feedback</h2>
+          <p>
+            If you find a barrier, email us
+            {contactEmail ? (
+              <>
+                at <a class="link" href={`mailto:${contactEmail}`}>{contactEmail}</a>
+              </>
+            ) : (
+              <>using the contact details in the footer</>
+            )}
+            . We aim to reply within five working days.
+          </p>
+
+          <h2>Known issues</h2>
+          <p>These remain after the work in this statement's current date:</p>
+          <ul>
+            <li>
+              Heading webfonts still load from Adobe Typekit. That is a third-party request until
+              fonts are self-hosted.
+            </li>
+            <li>
+              Signed-in report surfaces (history, coverage, the sales deck, statement, and developer
+              HTML) are not in the public self-scan set. Some of those views still use a 16:9 canvas
+              that can need two-dimensional viewing at very small sizes.
+            </li>
+            <li>
+              Decorative motion on the loading screen still runs unless you have requested reduced
+              motion in the operating system.
+            </li>
+            <li>
+              Some status tags on tinted backgrounds sit close to the 4.5:1 contrast boundary.
+            </li>
+          </ul>
+
+          <h2>Technical notes</h2>
+          <p>
+            Public pages include a skip link to main content, labelled form controls, and
+            <code>role="alert"</code> on submit failures. The issue drawer and sign-in dialog use
+            <code>inert</code> on the rest of the page while they are open.
+          </p>
+        </div>
+      </article>
+    </main>
+  </div>
+</Layout>

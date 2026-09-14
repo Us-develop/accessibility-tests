@@ -190,6 +190,7 @@ function isIndexablePath(pathname) {
   if (p === '/limitations') return true;
   if (p === '/pricing' || p === '/terms' || p === '/privacy' || p === '/cookies') return true;
   if (p === '/legal/subprocessors') return true;
+  if (p === '/accessibility') return true;
   if (p === '/teaser' || pathname.startsWith('/teaser/')) return true;
   return false;
 }
@@ -1054,6 +1055,7 @@ app.get('/robots.txt', (_req, res) => {
       'Allow: /privacy',
       'Allow: /cookies',
       'Allow: /legal/subprocessors',
+      'Allow: /accessibility',
       'Disallow: /signup',
       'Disallow: /forgot',
       'Disallow: /reset',
