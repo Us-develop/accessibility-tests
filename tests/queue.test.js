@@ -15,6 +15,7 @@ const {
   enqueueScanJob,
   kickQueue,
   setQueueExecutor,
+  setQueueJobErrorHandler,
   deleteJob,
 } = await import('../server/queue.mjs');
 
@@ -53,7 +54,7 @@ describe('scan queue', () => {
       runId: 'run-1',
       status: 'running',
       userId: 'user-a',
-      createdAt: '2026-09-10T00:00:00.000Z',
+      createdAt: new Date().toISOString(),
     });
     recoverInterruptedJobs();
     const jobs = listJobs();
@@ -70,7 +71,7 @@ describe('scan queue', () => {
       runId: 'run-2',
       status: 'queued',
       userId: 'user-b',
-      createdAt: '2026-09-10T00:00:00.000Z',
+      createdAt: new Date().toISOString(),
     });
     assert.equal(customerHasActiveScan(new Map(), 'user-b'), true);
     assert.equal(customerHasActiveScan(new Map(), 'user-c'), false);
@@ -147,7 +148,7 @@ describe('scan queue', () => {
       domain: 'e.example',
       runId: 'run-8',
       status: 'running',
-      createdAt: '2026-09-10T00:00:00.000Z',
+      createdAt: new Date().toISOString(),
     });
     recoverInterruptedJobs();
     let seen = null;
@@ -157,5 +158,32 @@ describe('scan queue', () => {
     kickQueue();
     await waitFor(() => seen === 'e.example:run-8' && listJobs().length === 0);
     assert.equal(seen, 'e.example:run-8');
+  });
+
+  it('drops jobs older than the queue TTL and notifies the error handler', async () => {
+    const previous = process.env.SCAN_JOB_TTL_MS;
+    process.env.SCAN_JOB_TTL_MS = '1';
+    let seen = null;
+    setQueueJobErrorHandler((job) => {
+      seen = job.error;
+    });
+    setQueueExecutor(async () => {});
+    writeJob({
+      id: 'old.example:run-ttl',
+      domain: 'old.example',
+      runId: 'run-ttl',
+      status: 'queued',
+      userId: 'user-ttl',
+      createdAt: '2020-01-01T00:00:00.000Z',
+    });
+    kickQueue();
+    try {
+      await waitFor(() => seen === 'queue_ttl' && listJobs().length === 0);
+      assert.equal(seen, 'queue_ttl');
+    } finally {
+      setQueueJobErrorHandler(null);
+      if (previous == null) delete process.env.SCAN_JOB_TTL_MS;
+      else process.env.SCAN_JOB_TTL_MS = previous;
+    }
   });
 });

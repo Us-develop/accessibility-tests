@@ -1,6 +1,7 @@
 import { randomBytes } from 'crypto';
 import {
   dbPool,
+  dbAddTokensToLot,
   dbClawbackTokenLotByPaymentIntent,
   dbConsumeTokens,
   dbGetTokenLotByCheckoutSession,
@@ -112,7 +113,7 @@ export async function grantTokenPack({
 
 export async function consumeTokens(userId, amount) {
   const needed = Number(amount) || 0;
-  if (!userId || needed <= 0) return { consumed: 0 };
+  if (!userId || needed <= 0) return { consumed: 0, lots: [] };
   if (useDb()) {
     const result = await dbConsumeTokens(userId, needed);
     if (result.consumed < needed) {
@@ -121,7 +122,7 @@ export async function consumeTokens(userId, amount) {
         code: 'empty_tokens',
       });
     }
-    return result;
+    return { consumed: result.consumed, lots: result.lots || [] };
   }
   const now = new Date();
   const rows = loadLots();
@@ -129,20 +130,42 @@ export async function consumeTokens(userId, amount) {
     .filter((lot) => lot.userId === userId && isUnexpired(lot, now))
     .sort(compareLotsForConsume);
   let left = needed;
+  const lots = [];
   for (const lot of mine) {
     if (left <= 0) break;
     const take = Math.min(Number(lot.tokensRemaining || 0), left);
     lot.tokensRemaining = Number(lot.tokensRemaining || 0) - take;
+    lots.push({ id: lot.id, amount: take });
     left -= take;
   }
   if (left > 0) {
+    for (const lot of lots) {
+      const row = rows.find((item) => item.id === lot.id);
+      if (row) row.tokensRemaining = Number(row.tokensRemaining || 0) + lot.amount;
+    }
     throw Object.assign(new Error('Not enough tokens remaining.'), {
       status: 429,
       code: 'empty_tokens',
     });
   }
   saveLots(rows);
-  return { consumed: needed };
+  return { consumed: needed, lots };
+}
+
+export async function restoreConsumedLots(lots) {
+  if (!Array.isArray(lots) || !lots.length) return;
+  for (const lot of lots) {
+    const amount = Number(lot?.amount) || 0;
+    if (!lot?.id || amount <= 0) continue;
+    if (useDb()) {
+      await dbAddTokensToLot(lot.id, amount);
+      continue;
+    }
+    const rows = loadLots();
+    const found = rows.find((row) => row.id === lot.id);
+    if (found) found.tokensRemaining = Number(found.tokensRemaining || 0) + amount;
+    saveLots(rows);
+  }
 }
 
 export async function clawbackTokensForPaymentIntent(intentId) {

@@ -60,7 +60,7 @@ Staff sign in with `APP_USERNAME` / `APP_PASSWORD` (cookie session only — no H
 | `COMPANY_EMAIL` | yes | Privacy/contact email for data-subject requests. Server exits in production if empty. |
 | `VAT_RATE_DISPLAY` | no (default `0.21`) | Belgian VAT rate used only to show VAT-inclusive catalog prices. Stripe Tax calculates the live amount. |
 
-The public homepage stays the free 1-page **Gratis snapshot** (one per person, guest or signed-in — not both) unless someone is actually signed in with remaining tokens or Pro. Complimentary token is spent first, then **Pro** (300 pages/month), then prepaid **tokens** (1 token = 1 URL, 12-month expiry). A second scan while one is queued or running returns 409. Empty Pro pages and tokens return 429 with buy / subscribe / Us-diensten CTAs. Pricing is at `/pricing` (VAT-inclusive primary figures). Legal pages: `/terms`, `/privacy`, `/cookies`, `/legal/subprocessors`. `/signup`, `/forgot`, and `/reset` are `noindex`.
+The public homepage stays the free 1-page **Gratis snapshot** (one per person, guest or signed-in — not both) unless someone is actually signed in with remaining tokens or Pro. Complimentary token is spent first, then **Pro** (300 pages/month), then prepaid **tokens** (1 token = 1 URL, 12-month expiry). Customer `/api/run` validates URLs first, then consumes tokens inside a per-user lock (one queued/running scan per account). A second scan while one is queued or running returns 409. Empty Pro pages and tokens return 429 with buy / subscribe / Us-diensten CTAs. A customer scan that ends in `error` (or is dropped after `SCAN_JOB_TTL_MS`, default 24h) refunds that entitlement once. Pricing is at `/pricing` (VAT-inclusive primary figures). Legal pages: `/terms`, `/privacy`, `/cookies`, `/legal/subprocessors`. `/signup`, `/forgot`, and `/reset` are `noindex`.
 
 ### How scans work (and limitations)
 
@@ -102,7 +102,7 @@ To store run status/results/manual checklist progress **and** customer accounts 
 - Set **`DATABASE_URL`** in the server environment (on the live VPS this lives in `/etc/accessibility-db.env`, loaded by the systemd drop-in — not `Environment=` with a password that contains `*` or `%`).
 - Optional for SSL-required connections: **`DATABASE_SSL=true`**. Localhost Postgres does **not** need SSL.
 
-When `DATABASE_URL` is set, the server creates `runs`, `leads`, `users`, `projects`, `plans`, `subscriptions`, `usage`, `payments`, `token_lots`, and `consents` tables. Existing `reports/_saas/users.json` and `projects.json` are copied in on first boot. Scan HTML/screenshots stay on disk under `reports/<domain>/<runId>/`.
+When `DATABASE_URL` is set, the server creates `runs`, `leads`, `users`, `projects`, `plans`, `subscriptions`, `usage`, `payments`, `token_lots`, `consents`, and `stripe_events` tables. Duplicate Stripe webhook deliveries are ignored (`stripe_events` primary key). `payments.stripe_payment_intent_id` and `subscriptions.stripe_subscription_id` / `stripe_customer_id` are unique when set. Existing `reports/_saas/users.json` and `projects.json` are copied in on first boot. Scan HTML/screenshots stay on disk under `reports/<domain>/<runId>/`.
 
 If `DATABASE_URL` is not set, accounts fall back to those JSON files (fine for local tests; not safe for a campaign).
 
@@ -121,8 +121,9 @@ On the VPS, put these in `/etc/accessibility-db.env` (or a sibling env file load
 | `STRIPE_AUTOMATIC_TAX` | Default `true`. Checkout in `NODE_ENV=production` returns **503** if this is `false`. Requires Tax Settings with a **head office** and **Collecting** registrations (Belgium domestic + Union OSS — confirm with your advisor). |
 | `STRIPE_TAX_CODE` | Product tax code (catalog script default `txcd_10103001`). The server logs a warning at boot if unset. |
 | `PUBLIC_BASE_URL` | `https://wcag.about-us.be` |
+| `SCAN_JOB_TTL_MS` | Optional. Default `86400000` (24h). Queued jobs older than this are dropped and consumed customer tokens are refunded. Not required in production. |
 
-Create sandbox Products with `node scripts/stripe-catalog.mjs` (uses placeholder tax code `txcd_10103001` SaaS – Business Use until the advisor confirms). Point a webhook at `https://wcag.about-us.be/api/stripe/webhook` for `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.*`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.refund.updated`.
+Create sandbox Products with `node scripts/stripe-catalog.mjs` (uses placeholder tax code `txcd_10103001` SaaS – Business Use until the advisor confirms). Point a webhook at `https://wcag.about-us.be/api/stripe/webhook` for `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.*`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.refund.updated`, `charge.dispute.created`. Duplicate deliveries of the same event id return 200 without granting again. Out-of-order `customer.subscription.deleted` events for an old subscription id are ignored when a newer id is already stored.
 
 Pack Checkout sessions enable `invoice_creation` and print `COMPANY_LEGAL_NAME` / `COMPANY_VAT` on the invoice footer. **Set the subscription invoice template once in the Stripe Dashboard** (Settings → Billing → Invoices); the API does not attach that footer to `mode: 'subscription'` sessions.
 
