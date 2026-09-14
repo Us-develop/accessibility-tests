@@ -2,6 +2,9 @@ import express from 'express';
 import { getUserById } from './users.mjs';
 import { asyncHandler } from './http-utils.mjs';
 import { clientKey, rateLimit } from './rate-limit.mjs';
+import { recordConsent } from './consents.mjs';
+import { clientIp } from './guest.mjs';
+import { LEGAL_TERMS_VERSION, isTruthyFlag } from './legal-versions.mjs';
 import {
   billingPublicConfig,
   constructWebhookEvent,
@@ -56,20 +59,43 @@ export function registerStripeRoutes(app) {
   app.post('/api/billing/checkout', billingLimit, asyncHandler(async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
+    const user = await getUserById(userId);
+    if (!user) return res.status(401).json({ error: 'Sign in first.' });
+    if (!isTruthyFlag(req.body?.withdrawalWaiver)) {
+      return res.status(400).json({
+        error:
+          'Confirm that you request immediate delivery and acknowledge losing the 14-day withdrawal right.',
+      });
+    }
     if (!stripeConfigured()) {
       return res.status(503).json({ error: 'Stripe billing is not connected yet.' });
     }
-    const user = await getUserById(userId);
-    if (!user) return res.status(401).json({ error: 'Sign in first.' });
     try {
       const packId = String(req.body?.packId || '').trim();
       const planId = String(req.body?.planId || '').trim().toLowerCase();
       const kind = String(req.body?.kind || (packId ? 'pack' : 'pro')).trim().toLowerCase();
+      const checkoutKind = packId || kind === 'pack' ? 'pack' : 'pro';
+      const interval = String(req.body?.interval || 'monthly').trim().toLowerCase();
+      const consent = await recordConsent({
+        userId: user.id,
+        email: user.email,
+        kind: 'withdrawal_waiver',
+        version: LEGAL_TERMS_VERSION,
+        ip: clientIp(req),
+        userAgent: req.headers['user-agent'],
+        context: {
+          packId: checkoutKind === 'pack' ? packId || (planId.startsWith('pack_') ? planId : '') : '',
+          planId: checkoutKind === 'pro' ? 'pro' : '',
+          interval: checkoutKind === 'pro' ? interval : '',
+          customerType: user.customerType || 'consumer',
+        },
+      });
       const session = await createCheckoutSession({
         user,
-        kind: (packId || kind === 'pack') ? 'pack' : 'pro',
+        kind: checkoutKind,
         packId: packId || (planId.startsWith('pack_') ? planId : ''),
-        interval: String(req.body?.interval || 'monthly').trim().toLowerCase(),
+        interval,
+        consentId: consent.id,
       });
       return res.json({ url: session.url, id: session.id });
     } catch (err) {

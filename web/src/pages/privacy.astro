@@ -1,22 +1,76 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import { companyIdentity } from '../../../server/company.mjs';
+import { LEGAL_PRIVACY_VERSION } from '../../../server/legal-versions.mjs';
 
-export const prerender = true;
+export const prerender = false;
+const company = companyIdentity();
+const controller = company.legalName || 'the controller';
+const contactEmail = company.email || 'the contact address below';
 ---
-<Layout title="Privacy · Us" indexable={true} authMode="guest-ok">
+<Layout title="Privacy notice · Us" indexable={true} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Privacy" />
     <main class="app-main">
       <article class="container-narrow page-article">
-        <p class="eyebrow"><span class="dot"></span>Lawyer review required</p>
         <h1>Privacy notice</h1>
-        <p class="muted">Draft only. Us counsel must review. Last updated 11 September 2026.</p>
+        <p class="muted">Version {LEGAL_PRIVACY_VERSION}. This notice describes how we process personal data for the Us accessibility scanner.</p>
         <div class="prose-width">
-          <p>Us NV processes account data (email, contact details, hashed password), scan URLs, reports, usage, and payment records. Stripe processes card payments. We do not store full card numbers.</p>
-          <p>Guest snapshots are keyed by an unguessable token and an IP-based rate limit. Signed-in scans are stored on your account.</p>
-          <p>Contact: <a class="link" href="https://about-us.be/contact/">about-us.be/contact</a>.</p>
+          <h2>Controller</h2>
+          <p>
+            The controller is {controller}
+            {company.vat ? `, VAT ${company.vat}` : ''}
+            {company.kbo ? `, KBO ${company.kbo}` : ''}
+            {company.address ? `, ${company.address}` : ''}.
+            You can reach us at {company.email ? <a class="link" href={`mailto:${company.email}`}>{company.email}</a> : 'the address above'}.
+          </p>
+          <!-- COUNSEL: confirm the named controller (legal entity) and whether a DPO must be appointed. -->
+
+          <h2>Purposes and lawful bases</h2>
+          <ul>
+            <li><strong>Account.</strong> We process your email, hashed password, name, and optional contact details to create and run your account. Lawful basis: performance of a contract.</li>
+            <li><strong>Lead / contact request.</strong> We process the details you send on a contact form to reply about WCAG services. Lawful basis: legitimate interest in answering a request you initiated; we also store the privacy-notice version shown at that time.</li>
+            <li><strong>Billing.</strong> We process customer type, company name, VAT number (if given), and payment records to invoice, collect tax, and keep accounting records. Lawful basis: legal obligation (tax and bookkeeping) and contract.</li>
+            <li><strong>Scans and reports.</strong> We process the URLs you submit, scan results, and usage so we can run the service you asked for. Lawful basis: contract.</li>
+          </ul>
+          <!-- COUNSEL: confirm legitimate interest vs consent for lead capture. -->
+
+          <h2>Retention</h2>
+          <ul>
+            <li>Accounts: until you delete the account, then up to 30 days for residual copies to drain from backups.</li>
+            <li>Leads: 12 months after the request.</li>
+            <li>Guest scan data (teaser token, 1-page snapshot): 30 days.</li>
+            <li>Invoices and payment records: 7 years.</li>
+          </ul>
+          <!-- COUNSEL: confirm backup drain period and invoice retention against Belgian accounting rules. -->
+
+          <h2>Recipients and subprocessors</h2>
+          <p>
+            We use hosting and processors listed at <a class="link" href="/legal/subprocessors">/legal/subprocessors</a>:
+            OVH (VPS), the Postgres host, an SMTP provider for transactional mail, Stripe for payments and tax,
+            Cloudflare Turnstile when captcha is enabled, Anthropic for optional WCAG write-ups, and Atlassian when you connect Jira.
+            Typefaces are self-hosted; we do not send font requests to a third-party font CDN.
+          </p>
+          <!-- COUNSEL: Adobe Typekit is still referenced in Layout.astro until Task 10 self-hosts fonts. -->
+
+          <h2>Transfers outside the EU</h2>
+          <p>
+            Some processors (including Stripe, Anthropic, Atlassian, and Cloudflare) may process data in the United States
+            or other third countries. Where that happens we rely on an adequacy decision or Standard Contractual Clauses
+            plus the processor’s documented safeguards.
+          </p>
+          <!-- COUNSEL: confirm SCCs / Data Privacy Framework coverage per processor before go-live. -->
+
+          <h2>Your rights</h2>
+          <p>
+            You may access, rectify, erase, restrict, or port your data, and object to processing based on legitimate interest.
+            Exercise these rights by emailing {contactEmail === 'the contact address below' ? contactEmail : <a class="link" href={`mailto:${company.email}`}>{company.email}</a>}.
+            You also have the right to lodge a complaint with the Gegevensbeschermingsautoriteit (Data Protection Authority),
+            Drukpersstraat 35, 1000 Brussels, <a class="link" href="https://www.gegevensbeschermingsautoriteit.be/">gegevensbeschermingsautoriteit.be</a>.
+          </p>
         </div>
+        <p class="muted" style="font-size: 13px; margin-top: 32px;">Privacy notice version {LEGAL_PRIVACY_VERSION}</p>
       </article>
     </main>
   </div>

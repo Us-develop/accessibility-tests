@@ -10,10 +10,11 @@ import {
   updateContactDetails,
   verifyUserEmail,
   GENERIC_CREDENTIALS_ERROR,
+  normalizeCustomerType,
 } from './users.mjs';
 import { attachRunToUser, deleteProjectsForUser, listProjectsForUser } from './projects.mjs';
 import { clearSessionCookies, isHtmlFormPost, parseCookies, setSessionCookies } from './session.mjs';
-import { isValidGuestToken, guestFreebieClaimed } from './guest.mjs';
+import { isValidGuestToken, guestFreebieClaimed, clientIp } from './guest.mjs';
 import { sendAccountEmail } from '../server-email.js';
 import { asyncHandler } from './http-utils.mjs';
 import { clientKey, rateLimit } from './rate-limit.mjs';
@@ -30,6 +31,8 @@ import { dbListRunsForUser, dbPool } from './db.js';
 import { listRunsForDomain, scoreFromResult } from './audit-list.js';
 import { REPORTS_BASE } from './paths.js';
 import { isStrongPassword, verifyPassword } from './passwords.mjs';
+import { recordConsent } from './consents.mjs';
+import { LEGAL_PRIVACY_VERSION, LEGAL_TERMS_VERSION, isTruthyFlag } from './legal-versions.mjs';
 
 function publicBase() {
   return String(process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '') || 'http://localhost:3456';
@@ -152,10 +155,40 @@ export function registerAccountRoutes(app, ctx) {
 
   app.post('/api/auth/signup', signupIpLimit, asyncHandler(async (req, res) => {
     try {
+      if (!isTruthyFlag(req.body?.acceptTerms)) {
+        throw Object.assign(
+          new Error('Accept the Terms of Service and Privacy Notice to create an account.'),
+          { status: 400 }
+        );
+      }
+      const buyingForBusiness =
+        isTruthyFlag(req.body?.buyingForBusiness) ||
+        normalizeCustomerType(req.body?.customerType) === 'business';
       const { user, verifyToken } = await createUser({
         email: req.body?.email,
         password: req.body?.password,
         name: req.body?.name,
+        company: req.body?.company,
+        vatNumber: req.body?.vatNumber || req.body?.vat_number,
+        customerType: buyingForBusiness ? 'business' : 'consumer',
+      });
+      const consentMeta = {
+        userId: user.id,
+        email: user.email,
+        ip: clientIp(req),
+        userAgent: req.headers['user-agent'],
+      };
+      await recordConsent({
+        ...consentMeta,
+        kind: 'terms',
+        version: LEGAL_TERMS_VERSION,
+        context: { customerType: user.customerType },
+      });
+      await recordConsent({
+        ...consentMeta,
+        kind: 'privacy',
+        version: LEGAL_PRIVACY_VERSION,
+        context: { customerType: user.customerType },
       });
       const guestToken = String(req.body?.guestToken || '').trim();
       let attached = false;

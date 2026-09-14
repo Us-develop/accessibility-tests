@@ -106,7 +106,7 @@ describe('stripe catalog mapping', () => {
     assert.equal(packIdFromPrice('price_pack50_test'), 'pack_50');
     assert.equal(priceIdForPro('monthly'), 'price_pro_month_test');
     assert.equal(proIntervalFromPrice('price_pro_year_test'), 'yearly');
-    assert.equal(automaticTaxEnabled(), false);
+    assert.equal(automaticTaxEnabled(), true);
     assert.equal(stripeConfigured(), false);
   });
 });
@@ -284,7 +284,7 @@ describe('stripe HTTP', () => {
     const signup = await fetch(`${origin}/api/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'stripe-http@example.com', password: 'longenough1' }),
+      body: JSON.stringify({ email: 'stripe-http@example.com', password: 'longenough1', acceptTerms: true }),
     });
     jar.store(signup.headers);
     const checkout = await fetch(`${origin}/api/billing/checkout`, {
@@ -294,7 +294,7 @@ describe('stripe HTTP', () => {
         cookie: jar.header(),
         'X-CSRF-Token': jar.get('wcag_csrf'),
       },
-      body: JSON.stringify({ kind: 'pro', interval: 'monthly' }),
+      body: JSON.stringify({ kind: 'pro', interval: 'monthly', withdrawalWaiver: true }),
     });
     assert.equal(checkout.status, 503);
     const webhook = await fetch(`${origin}/api/stripe/webhook`, {
@@ -322,7 +322,9 @@ describe('stripe HTTP', () => {
     assert.match(home, /fd\.set\('urls', urls\)/);
     assert.match(home, /Request Us-diensten/);
     const terms = readFileSync(join(repoRoot, 'web/src/pages/terms.astro'), 'utf8');
-    assert.match(terms, /Lawyer review required/);
+    assert.match(terms, /Consumers/);
+    assert.match(terms, /Business customers/);
+    assert.match(terms, /reverse-charge/);
   });
 
   it('does not decrement tokens for a guest snapshot', async () => {
@@ -359,7 +361,7 @@ describe('stripe HTTP', () => {
     const signup = await fetch(`${origin}/api/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'consume-tokens@example.com', password: 'longenough1' }),
+      body: JSON.stringify({ email: 'consume-tokens@example.com', password: 'longenough1', acceptTerms: true }),
     });
     jar.store(signup.headers);
     const account = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });

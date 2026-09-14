@@ -7,7 +7,7 @@ const guestToken = Astro.url.searchParams.get('guest') || '';
 const checkEmail = Astro.url.searchParams.get('check-email') === '1';
 const signupError = Astro.url.searchParams.get('error') === '1';
 ---
-<Layout title="Create account · Us" indexable={true} authMode="guest-ok">
+<Layout title="Create account · Us" indexable={false} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Create account" />
     <main class="app-main">
@@ -30,6 +30,29 @@ const signupError = Astro.url.searchParams.get('error') === '1';
             <label class="field-label" for="password">Password (min. 10 characters)</label>
             <input class="input" id="password" name="password" type="password" autocomplete="new-password" required minlength="10" />
           </div>
+          <label class="legal-check">
+            <input type="checkbox" id="buying-for-business" name="buyingForBusiness" value="true" />
+            <span>I'm buying for a business</span>
+          </label>
+          <div id="business-fields" hidden>
+            <div class="field">
+              <label class="field-label" for="company">Company</label>
+              <input class="input" id="company" name="company" autocomplete="organization" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="vatNumber">VAT number (optional)</label>
+              <input class="input" id="vatNumber" name="vatNumber" autocomplete="off" />
+            </div>
+          </div>
+          <label class="legal-check">
+            <input type="checkbox" id="accept-terms" name="acceptTerms" value="true" required />
+            <span>
+              I accept the
+              <a class="link" href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+              and have read the
+              <a class="link" href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Notice</a>
+            </span>
+          </label>
           <button type="submit" class="btn btn-primary" id="signup-btn">Create account</button>
           <p id="signup-msg" class="muted" role="status">
             {checkEmail
@@ -54,6 +77,12 @@ const signupError = Astro.url.searchParams.get('error') === '1';
       if (!(target instanceof Element) || !target.closest('#signup-open-login')) return;
       document.dispatchEvent(new CustomEvent('wcag:open-login'));
     });
+    document.addEventListener('change', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement) || target.id !== 'buying-for-business') return;
+      const fields = document.getElementById('business-fields');
+      if (fields) fields.hidden = !target.checked;
+    });
     document.addEventListener('submit', async (event) => {
       const form = event.target;
       if (!(form instanceof HTMLFormElement) || form.id !== 'signup-form') return;
@@ -73,6 +102,10 @@ const signupError = Astro.url.searchParams.get('error') === '1';
           email: fd.get('email'),
           password: fd.get('password'),
           guestToken: guest,
+          acceptTerms: fd.get('acceptTerms') === 'true',
+          buyingForBusiness: fd.get('buyingForBusiness') === 'true',
+          company: fd.get('company'),
+          vatNumber: fd.get('vatNumber'),
         }),
       });
       const data = await res.json().catch(() => ({}));

@@ -1,8 +1,13 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import { WITHDRAWAL_WAIVER_TEXT } from '../../../server/legal-versions.mjs';
+import { formatVatInclusivePrice } from '../../../server/vat-display.mjs';
 
 export const prerender = false;
+const pack10Label = formatVatInclusivePrice(1000);
+const pack50Label = formatVatInclusivePrice(4500);
+const pack100Label = formatVatInclusivePrice(8000);
 ---
 <Layout title="Account · Us" authMode="required">
   <div class="app-shell">
@@ -29,10 +34,14 @@ export const prerender = false;
           <h2>Tokens</h2>
           <p id="token-balance" class="muted"></p>
           <p class="muted" style="font-size: 13px;">Buy extra tokens for occasional scans or to continue after this month’s Pro pages. Packs expire after 12 months.</p>
+          <label class="legal-check">
+            <input type="checkbox" id="withdrawal-waiver" name="withdrawalWaiver" value="true" />
+            <span>{WITHDRAWAL_WAIVER_TEXT}</span>
+          </label>
           <div class="guest-cta-row">
-            <button type="button" class="btn btn-primary token-buy" data-pack="pack_10">Buy 10 · €10</button>
-            <button type="button" class="btn btn-primary token-buy" data-pack="pack_50">Buy 50 · €45</button>
-            <button type="button" class="btn btn-primary token-buy" data-pack="pack_100">Buy 100 · €80</button>
+            <button type="button" class="btn btn-primary token-buy" data-pack="pack_10">Buy 10 · {pack10Label}</button>
+            <button type="button" class="btn btn-primary token-buy" data-pack="pack_50">Buy 50 · {pack50Label}</button>
+            <button type="button" class="btn btn-primary token-buy" data-pack="pack_100">Buy 100 · {pack100Label}</button>
             <a class="btn btn-secondary" href="https://about-us.be/contact/">Request Us services</a>
           </div>
         </section>
@@ -41,9 +50,15 @@ export const prerender = false;
           <h2>Contact details</h2>
           <form id="contact-form" class="account-form" method="post" action="/account" data-astro-reload>
             <label>Name <input name="name" type="text" autocomplete="name" /></label>
-            <label>Company <input name="company" type="text" autocomplete="organization" /></label>
+            <label class="legal-check">
+              <input type="checkbox" id="buying-for-business" name="buyingForBusiness" value="true" />
+              <span>I'm buying for a business</span>
+            </label>
+            <div id="business-fields" hidden>
+              <label>Company <input name="company" type="text" autocomplete="organization" /></label>
+              <label>VAT number <input name="vatNumber" type="text" /></label>
+            </div>
             <label>Phone <input name="phone" type="tel" autocomplete="tel" /></label>
-            <label>VAT number <input name="vatNumber" type="text" /></label>
             <label>Address <input name="addressLine1" type="text" autocomplete="address-line1" /></label>
             <label class="sr-only">Address line 2 <input name="addressLine2" type="text" autocomplete="address-line2" /></label>
             <div class="account-form-row">
@@ -127,8 +142,15 @@ export const prerender = false;
   function fillForm(form, user) {
     if (!form || !user) return;
     for (const el of form.elements) {
-      if (el.name && user[el.name] != null) el.value = user[el.name];
+      if (!el.name || user[el.name] == null) continue;
+      if (el instanceof HTMLInputElement && el.type === 'checkbox') continue;
+      el.value = user[el.name];
     }
+    const business = document.getElementById('buying-for-business');
+    const fields = document.getElementById('business-fields');
+    const isBusiness = user.customerType === 'business';
+    if (business instanceof HTMLInputElement) business.checked = isBusiness;
+    if (fields) fields.hidden = !isBusiness;
   }
 
   function formatMoney(cents, currency) {
@@ -288,10 +310,20 @@ export const prerender = false;
     }
   }
 
+  document.getElementById('buying-for-business')?.addEventListener('change', (event) => {
+    const fields = document.getElementById('business-fields');
+    if (fields && event.currentTarget instanceof HTMLInputElement) {
+      fields.hidden = !event.currentTarget.checked;
+    }
+  });
+
   document.getElementById('contact-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const body = Object.fromEntries(new FormData(form).entries());
+    const business = document.getElementById('buying-for-business');
+    body.buyingForBusiness = business instanceof HTMLInputElement && business.checked;
+    body.customerType = body.buyingForBusiness ? 'business' : 'consumer';
     const res = await fetch(api('/api/account'), {
       method: 'PUT',
       credentials: creds,
@@ -335,12 +367,17 @@ export const prerender = false;
 
   document.querySelectorAll('.token-buy').forEach((btn) => {
     btn.addEventListener('click', async () => {
+      const waiver = document.getElementById('withdrawal-waiver');
+      if (!(waiver instanceof HTMLInputElement) || !waiver.checked) {
+        setMsg('Tick the immediate-delivery box before checkout.');
+        return;
+      }
       btn.disabled = true;
       const res = await fetch(api('/api/billing/checkout'), {
         method: 'POST',
         credentials: creds,
         headers: headers(),
-        body: JSON.stringify({ kind: 'pack', packId: btn.getAttribute('data-pack') }),
+        body: JSON.stringify({ kind: 'pack', packId: btn.getAttribute('data-pack'), withdrawalWaiver: true }),
       });
       const data = await res.json().catch(() => ({}));
       if (data.url) {

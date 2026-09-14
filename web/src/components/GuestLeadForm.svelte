@@ -77,8 +77,12 @@
     </div>
     <div class="field">
       <label class="field-label" for="lead-message">Message</label>
-      <textarea class="textarea" id="lead-message" name="message" rows="4" maxlength="4000"></textarea>
+      <textarea class="textarea" id="lead-message" name="message" rows="4"       maxlength="4000"></textarea>
     </div>
+    <p class="muted guest-lead-privacy">
+      We use these details only to contact you about this request. See our
+      <a class="link" href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Notice</a>.
+    </p>
     {#if err}
       <p class="guest-lead-msg guest-lead-msg-err">{err}</p>
     {/if}

@@ -66,6 +66,10 @@ import { authenticateUser, getUserById, GENERIC_CREDENTIALS_ERROR } from './user
 import { attachRunToUser, canAccessDomain, canAccessRun, findProjectByDomain, listProjectsForUser, parseTenantPath } from './projects.mjs';
 import { registerAccountRoutes } from './account-routes.mjs';
 import { registerStripeRoutes, registerStripeWebhook } from './stripe-routes.mjs';
+import { warnStripeTaxCodeIfUnset } from './stripe.mjs';
+import { assertCompanyIdentityForProduction } from './company.mjs';
+import { recordConsent } from './consents.mjs';
+import { LEGAL_PRIVACY_VERSION } from './legal-versions.mjs';
 import { assertCustomerCanScan, consumeScanEntitlement } from './billing.mjs';
 import { MAX_PAGES_PER_CUSTOMER_RUN } from './plan-catalog.mjs';
 import {
@@ -154,13 +158,12 @@ function isValidEmail(email) {
 }
 
 function isIndexablePath(pathname) {
-  if (pathname === '/' || pathname === '') return true;
-  if (pathname === '/limitations') return true;
-  if (pathname === '/pricing' || pathname === '/terms' || pathname === '/privacy' || pathname === '/cookies') {
-    return true;
-  }
-  if (pathname === '/signup' || pathname === '/forgot' || pathname === '/reset') return true;
-  if (pathname === '/teaser' || pathname.startsWith('/teaser/')) return true;
+  const p = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  if (p === '/' || p === '') return true;
+  if (p === '/limitations') return true;
+  if (p === '/pricing' || p === '/terms' || p === '/privacy' || p === '/cookies') return true;
+  if (p === '/legal/subprocessors') return true;
+  if (p === '/teaser' || pathname.startsWith('/teaser/')) return true;
   return false;
 }
 
@@ -171,8 +174,15 @@ const PUBLIC_GET_PATHS = new Set([
   '/limitations',
   '/pricing',
   '/terms',
+  '/terms/',
   '/privacy',
+  '/privacy/',
   '/cookies',
+  '/cookies/',
+  '/legal/subprocessors',
+  '/legal/subprocessors/',
+  '/accessibility',
+  '/accessibility/',
   '/signup',
   '/forgot',
   '/reset',
@@ -465,6 +475,8 @@ export function createAccessibilityApp(repoRoot, options = {}) {
     throw new Error('APP_PASSWORD (>=12 chars) is required when AUTH_ENABLED=true');
   }
   sessionSecret();
+  assertCompanyIdentityForProduction();
+  warnStripeTaxCodeIfUnset();
   const sameSiteRaw = String(process.env.AUTH_COOKIE_SAMESITE || 'Lax').trim();
   AUTH_COOKIE_SAMESITE = ['Lax', 'Strict', 'None'].includes(sameSiteRaw) ? sameSiteRaw : 'Lax';
   const loadingPath = '/loading';
@@ -992,9 +1004,14 @@ app.get('/robots.txt', (_req, res) => {
       'Allow: /',
       'Allow: /teaser/',
       'Allow: /limitations',
-      'Allow: /signup',
-      'Allow: /forgot',
-      'Allow: /reset',
+      'Allow: /pricing',
+      'Allow: /terms',
+      'Allow: /privacy',
+      'Allow: /cookies',
+      'Allow: /legal/subprocessors',
+      'Disallow: /signup',
+      'Disallow: /forgot',
+      'Disallow: /reset',
       'Disallow: /api/',
       'Disallow: /report/',
       'Disallow: /audits',
@@ -1710,6 +1727,19 @@ app.post('/api/lead', leadIpLimit, async (req, res) => {
       }
     } else {
       appendLeadFile({ ...row, createdAt: new Date().toISOString() });
+    }
+    try {
+      await recordConsent({
+        userId: null,
+        email,
+        kind: 'lead_privacy',
+        version: LEGAL_PRIVACY_VERSION,
+        ip: clientIp(req),
+        userAgent: req.headers['user-agent'],
+        context: { source: 'scan-teaser', domain, runToken: token },
+      });
+    } catch (err) {
+      console.error('[lead] consent failed:', err?.message || err);
     }
     return res.json({ ok: true, emailed });
   } catch (err) {

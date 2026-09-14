@@ -5,7 +5,7 @@ export const prerender = false;
 const token = Astro.url.searchParams.get('token') || '';
 const resetError = Astro.url.searchParams.get('error') === '1';
 ---
-<Layout title="Set a new password · Us" authMode="guest-ok">
+<Layout title="Set a new password · Us" indexable={false} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Password" />
     <main class="app-main">

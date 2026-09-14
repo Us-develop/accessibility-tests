@@ -134,6 +134,7 @@ export async function initDb() {
       postal_code TEXT,
       country TEXT,
       session_version INTEGER NOT NULL DEFAULT 1,
+      customer_type TEXT NOT NULL DEFAULT 'consumer',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -147,6 +148,30 @@ export async function initDb() {
   await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT`);
   await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS postal_code TEXT`);
   await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT`);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS customer_type TEXT NOT NULL DEFAULT 'consumer'`);
+  await dbPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE users ADD CONSTRAINT users_customer_type_check
+        CHECK (customer_type IN ('consumer', 'business'));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `);
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS consents (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NULL,
+      email TEXT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('terms', 'privacy', 'withdrawal_waiver', 'lead_privacy')),
+      version TEXT NOT NULL,
+      accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ip_hash TEXT,
+      user_agent TEXT,
+      context JSONB
+    )
+  `);
+  await dbPool.query(`CREATE INDEX IF NOT EXISTS consents_user_idx ON consents (user_id, accepted_at DESC)`);
+  await dbPool.query(`CREATE INDEX IF NOT EXISTS consents_email_idx ON consents (email, accepted_at DESC)`);
 
   await dbPool.query(`
     CREATE TABLE IF NOT EXISTS plans (
@@ -456,6 +481,97 @@ export async function dbListLeads(limit = 200) {
   return rows.map(mapLeadRow);
 }
 
+const CONSENT_COLUMNS = `id, user_id, email, kind, version, accepted_at, ip_hash, user_agent, context`;
+
+function mapConsentRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id || null,
+    email: row.email || null,
+    kind: row.kind,
+    version: row.version,
+    acceptedAt: isoOrNull(row.accepted_at),
+    ipHash: row.ip_hash || null,
+    userAgent: row.user_agent || null,
+    context: row.context && typeof row.context === 'object' ? row.context : {},
+  };
+}
+
+export async function dbInsertConsent(row) {
+  if (!dbPool) return null;
+  const { rows } = await dbPool.query(
+    `INSERT INTO consents (user_id, email, kind, version, accepted_at, ip_hash, user_agent, context)
+     VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()), $6, $7, $8::jsonb)
+     RETURNING ${CONSENT_COLUMNS}`,
+    [
+      row.userId || null,
+      row.email || null,
+      row.kind,
+      row.version,
+      row.acceptedAt || null,
+      row.ipHash || null,
+      row.userAgent || null,
+      JSON.stringify(row.context || {}),
+    ]
+  );
+  return mapConsentRow(rows[0]);
+}
+
+export async function dbGetConsent(id) {
+  if (!dbPool || id == null) return null;
+  const { rows } = await dbPool.query(`SELECT ${CONSENT_COLUMNS} FROM consents WHERE id = $1 LIMIT 1`, [id]);
+  return mapConsentRow(rows[0]);
+}
+
+export async function dbListConsents({ userId, email, kind } = {}) {
+  if (!dbPool) return [];
+  const clauses = [];
+  const params = [];
+  if (userId) {
+    params.push(userId);
+    clauses.push(`user_id = $${params.length}`);
+  }
+  if (email) {
+    params.push(String(email).trim().toLowerCase());
+    clauses.push(`email = $${params.length}`);
+  }
+  if (kind) {
+    params.push(kind);
+    clauses.push(`kind = $${params.length}`);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const { rows } = await dbPool.query(
+    `SELECT ${CONSENT_COLUMNS} FROM consents ${where} ORDER BY accepted_at DESC, id DESC`,
+    params
+  );
+  return rows.map(mapConsentRow);
+}
+
+export async function dbMergeConsentContext(id, patch) {
+  if (!dbPool || id == null) return null;
+  const { rows } = await dbPool.query(
+    `UPDATE consents
+        SET context = COALESCE(context, '{}'::jsonb) || $2::jsonb
+      WHERE id = $1
+      RETURNING ${CONSENT_COLUMNS}`,
+    [id, JSON.stringify(patch || {})]
+  );
+  return mapConsentRow(rows[0]);
+}
+
+export async function dbUpdatePaymentInvoiceUrl(intentId, invoiceUrl) {
+  if (!dbPool || !intentId || !invoiceUrl) return null;
+  const { rows } = await dbPool.query(
+    `UPDATE payments
+        SET invoice_url = $2
+      WHERE stripe_payment_intent_id = $1 AND (invoice_url IS NULL OR invoice_url = '')
+      RETURNING id, user_id, amount_cents, currency, status, description, stripe_payment_intent_id, invoice_url, created_at`,
+    [intentId, invoiceUrl]
+  );
+  return mapPaymentRow(rows[0]);
+}
+
 function isoOrNull(value) {
   if (!value) return null;
   if (value instanceof Date) return value.toISOString();
@@ -483,6 +599,7 @@ function mapUserRow(row) {
     city: row.city || '',
     postalCode: row.postal_code || '',
     country: row.country || '',
+    customerType: row.customer_type === 'business' ? 'business' : 'consumer',
     sessionVersion: Number(row.session_version) > 0 ? Number(row.session_version) : 1,
     createdAt: isoOrNull(row.created_at),
     updatedAt: isoOrNull(row.updated_at),
@@ -491,7 +608,7 @@ function mapUserRow(row) {
 
 const USER_COLUMNS = `id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
             reset_token, reset_expires_at, phone, company, vat_number, address_line1, address_line2,
-            city, postal_code, country, session_version, created_at, updated_at`;
+            city, postal_code, country, customer_type, session_version, created_at, updated_at`;
 
 export async function dbGetUserById(id) {
   if (!dbPool || !id) return null;
@@ -513,11 +630,11 @@ export async function dbUpsertUser(user) {
       INSERT INTO users (
         id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
         reset_token, reset_expires_at, phone, company, vat_number, address_line1, address_line2,
-        city, postal_code, country, session_version, created_at, updated_at
+        city, postal_code, country, customer_type, session_version, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13, $14, $15,
-        $16, $17, $18, $19, COALESCE($20::timestamptz, NOW()), NOW()
+        $16, $17, $18, $19, $20, COALESCE($21::timestamptz, NOW()), NOW()
       )
       ON CONFLICT (id) DO UPDATE SET
         email = EXCLUDED.email,
@@ -537,6 +654,7 @@ export async function dbUpsertUser(user) {
         city = EXCLUDED.city,
         postal_code = EXCLUDED.postal_code,
         country = EXCLUDED.country,
+        customer_type = EXCLUDED.customer_type,
         session_version = EXCLUDED.session_version,
         updated_at = NOW()
       RETURNING ${USER_COLUMNS}
@@ -560,6 +678,7 @@ export async function dbUpsertUser(user) {
       user.city || '',
       user.postalCode || '',
       user.country || '',
+      user.customerType === 'business' ? 'business' : 'consumer',
       Number(user.sessionVersion) > 0 ? Number(user.sessionVersion) : 1,
       user.createdAt || null,
     ]

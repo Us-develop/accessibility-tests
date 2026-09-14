@@ -1,27 +1,43 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import { TOKEN_PACKS } from '../../../server/plan-catalog.mjs';
+import { formatVatInclusivePrice } from '../../../server/vat-display.mjs';
+import { WITHDRAWAL_WAIVER_TEXT } from '../../../server/legal-versions.mjs';
 
 export const prerender = false;
 const canceled = Astro.url.searchParams.get('billing') === 'cancel';
+const pack10 = TOKEN_PACKS.find((p) => p.id === 'pack_10');
+const pack50 = TOKEN_PACKS.find((p) => p.id === 'pack_50');
+const pack100 = TOKEN_PACKS.find((p) => p.id === 'pack_100');
+const unitPrice = formatVatInclusivePrice(100);
+const pack10Price = formatVatInclusivePrice(pack10?.priceCents || 1000);
+const pack50Price = formatVatInclusivePrice(pack50?.priceCents || 4500);
+const pack100Price = formatVatInclusivePrice(pack100?.priceCents || 8000);
+const proMonth = formatVatInclusivePrice(4900);
+const proYear = formatVatInclusivePrice(49000);
 ---
 <Layout title="Pricing · Us accessibility scanner" indexable={true} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Pricing" />
     <main class="app-main">
       <article class="container-narrow page-article">
-        <span class="eyebrow"><span class="dot"></span>Prices excl. VAT · EUR</span>
+        <span class="eyebrow"><span class="dot"></span>Prices incl. VAT · EUR</span>
         <h1>Gratis snapshot, tokens, Pro, or Us-diensten</h1>
         <p class="muted p-large prose-width prose-lead">
           Scan one public page for free. Buy tokens for occasional full reports, subscribe to Pro for monthly page-scans,
           or ask Us for manual testing and remediation.
         </p>
         <p id="pricing-msg" class="muted" role="status">{canceled ? 'Checkout was cancelled. No charge was made.' : ''}</p>
+        <label class="legal-check" style="max-width: 640px; margin: 0 0 20px;">
+          <input type="checkbox" id="withdrawal-waiver" name="withdrawalWaiver" value="true" />
+          <span>{WITHDRAWAL_WAIVER_TEXT}</span>
+        </label>
 
         <div id="pricing-grid" class="pricing-grid">
           <section class="card pricing-card" id="gratis">
             <h2>Gratis snapshot</h2>
-            <p class="pricing-price">€0</p>
+            <p class="pricing-price">€ 0</p>
             <p class="muted">1 public URL. Score and the top 3 issues. One free snapshot per person — guest or signed in, not both. After that, buy tokens or subscribe.</p>
             <div class="pricing-cta">
               <a class="btn btn-ghost" href="/">Scan this page for free</a>
@@ -30,12 +46,12 @@ const canceled = Astro.url.searchParams.get('billing') === 'cancel';
 
           <section class="card pricing-card" id="tokens">
             <h2>Tokens</h2>
-            <p class="pricing-price">€1 <span>per URL-scan</span></p>
+            <p class="pricing-price">{unitPrice} <span>per URL-scan</span></p>
             <p class="muted">Pay-per-scan packs. 1 token = 1 URL. Minimum 10. Unused tokens expire after 12 months. Full Pro deliverables for each spent token.</p>
             <ul class="pricing-packs">
-              <li>10 tokens · €10</li>
-              <li>50 tokens · €45 (−10%)</li>
-              <li>100 tokens · €80 (−20%)</li>
+              <li>10 tokens · {pack10Price}</li>
+              <li>50 tokens · {pack50Price} (−10%)</li>
+              <li>100 tokens · {pack100Price} (−20%)</li>
             </ul>
             <div class="pricing-cta pricing-pack-actions">
               <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_10">Buy 10</button>
@@ -46,8 +62,8 @@ const canceled = Astro.url.searchParams.get('billing') === 'cancel';
 
           <section class="card pricing-card" id="pro">
             <h2>Pro</h2>
-            <p class="pricing-price">€49 <span>/ month</span></p>
-            <p class="muted">or €490 / year (2 months free). 300 page-scans/month, max 50 URLs per run, 1 concurrent scan, unlimited own projects, email support. Full UI: dashboard, history, statement, sales deck, developer guide, manual checklist, Jira.</p>
+            <p class="pricing-price">{proMonth} <span>/ month</span></p>
+            <p class="muted">or {proYear} / year (2 months free). 300 page-scans/month, max 50 URLs per run, 1 concurrent scan, unlimited own projects, email support. Full UI: dashboard, history, statement, sales deck, developer guide, manual checklist, Jira.</p>
             <div class="pricing-cta">
               <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">Subscribe monthly</button>
               <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">Subscribe yearly</button>
@@ -65,8 +81,7 @@ const canceled = Astro.url.searchParams.get('billing') === 'cancel';
         </div>
 
         <p class="muted" style="font-size: 13px; max-width: 640px; margin-top: 24px;">
-          Prices are exclusive of tax. Stripe Tax adds VAT when a Collecting registration and head office address exist.
-          Confirm obligations with your tax advisor. This is not legal tax advice.
+          Businesses with a valid EU VAT number are charged without VAT under the reverse-charge rule; the exact amount is calculated at checkout.
         </p>
       </article>
     </main>
@@ -80,11 +95,16 @@ const canceled = Astro.url.searchParams.get('billing') === 'cancel';
 
   async function startCheckout(btn) {
     const msg = document.getElementById('pricing-msg');
+    const waiver = document.getElementById('withdrawal-waiver');
+    if (!(waiver instanceof HTMLInputElement) || !waiver.checked) {
+      if (msg) msg.textContent = 'Tick the immediate-delivery box before checkout.';
+      return;
+    }
     const kind = btn.getAttribute('data-kind');
     const body =
       kind === 'pack'
-        ? { kind: 'pack', packId: btn.getAttribute('data-pack') }
-        : { kind: 'pro', interval: btn.getAttribute('data-interval') || 'monthly' };
+        ? { kind: 'pack', packId: btn.getAttribute('data-pack'), withdrawalWaiver: true }
+        : { kind: 'pro', interval: btn.getAttribute('data-interval') || 'monthly', withdrawalWaiver: true };
     btn.disabled = true;
     const auth = await fetch(api('/api/auth/status'), { credentials: creds }).then((r) => r.json()).catch(() => ({}));
     if (auth.authenticated !== true || auth.role !== 'customer') {
