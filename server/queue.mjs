@@ -71,6 +71,41 @@ export function customerHasActiveScan(runStatus, userId) {
 }
 
 /**
+ * True when `state` belongs to `owner`.
+ * - `{ userId }` matches that user (customers or `'staff'`).
+ * - `{ guestToken }` matches that guest token (never matches a missing token).
+ * - `null` / omitted owner matches anyone (staff latest-run redirect).
+ */
+export function runMatchesOwner(state, owner) {
+  if (!owner) return true;
+  if (Object.prototype.hasOwnProperty.call(owner, 'userId')) {
+    return (state?.userId || null) === owner.userId;
+  }
+  if (Object.prototype.hasOwnProperty.call(owner, 'guestToken')) {
+    return Boolean(owner.guestToken) && state?.guestToken === owner.guestToken;
+  }
+  return false;
+}
+
+/**
+ * Find a running or queued run for a domain, optionally limited to one owner.
+ * @param {Map<string, object>} runStatusMap
+ * @param {string} domain
+ * @param {{ userId?: string|null, guestToken?: string|null } | null} [owner]
+ */
+export function findRunningRun(runStatusMap, domain, owner = null) {
+  if (!domain || !runStatusMap) return null;
+  const prefix = `${domain}:`;
+  for (const [key, value] of runStatusMap.entries()) {
+    if (!key.startsWith(prefix)) continue;
+    if (value?.status !== 'running' && value?.status !== 'queued') continue;
+    if (!runMatchesOwner(value, owner)) continue;
+    return { runId: key.slice(prefix.length), state: value };
+  }
+  return null;
+}
+
+/**
  * Persist a queued scan. The executor starts it when a pool slot is free.
  */
 export function enqueueScanJob(job) {

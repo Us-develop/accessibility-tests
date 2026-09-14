@@ -3,7 +3,7 @@
  */
 import { lookup } from 'dns/promises';
 import { createHash, randomBytes } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, readdirSync, unlinkSync } from 'fs';
 import { BlockList, isIP } from 'net';
 import { join } from 'path';
 import { REPORTS_BASE } from './paths.js';
@@ -226,6 +226,8 @@ export function persistGuestToken(token, payload) {
   if (!isValidGuestToken(token)) return;
   const dir = tokenDir();
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const createdAt = payload.createdAt || new Date().toISOString();
+  const expiresAt = payload.expiresAt || guestTokenExpiresAt(createdAt);
   writeFileSync(
     join(dir, `${token}.json`),
     JSON.stringify(
@@ -234,7 +236,8 @@ export function persistGuestToken(token, payload) {
         runId: payload.runId,
         url: payload.url || null,
         ip: payload.ip || null,
-        createdAt: new Date().toISOString(),
+        createdAt,
+        expiresAt,
       },
       null,
       2
@@ -243,17 +246,75 @@ export function persistGuestToken(token, payload) {
   );
 }
 
-export function readGuestTokenRecord(token) {
+export const GUEST_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function guestTokenExpiresAt(createdAt = new Date()) {
+  const start = createdAt instanceof Date ? createdAt : new Date(createdAt);
+  const ms = Number.isNaN(start.getTime()) ? Date.now() : start.getTime();
+  return new Date(ms + GUEST_TOKEN_TTL_MS).toISOString();
+}
+
+export function isGuestTokenExpired(record, now = new Date()) {
+  if (!record) return true;
+  const exp = record.expiresAt
+    ? new Date(record.expiresAt)
+    : record.createdAt
+      ? new Date(new Date(record.createdAt).getTime() + GUEST_TOKEN_TTL_MS)
+      : null;
+  if (!exp || Number.isNaN(exp.getTime())) return true;
+  return exp.getTime() <= now.getTime();
+}
+
+export function readGuestTokenRecord(token, now = new Date()) {
   if (!isValidGuestToken(token)) return null;
   const file = join(tokenDir(), `${token}.json`);
   if (!existsSync(file)) return null;
   try {
     const data = JSON.parse(readFileSync(file, 'utf8'));
     if (!data?.domain || !data?.runId) return null;
+    if (isGuestTokenExpired(data, now)) return null;
     return data;
   } catch {
     return null;
   }
+}
+
+/**
+ * Delete expired guest token files. Called from scripts/prune-guest-tokens.mjs
+ * (and later from the retention job).
+ * @returns {{ scanned: number, pruned: number }}
+ */
+export function pruneExpiredGuestTokens(now = new Date()) {
+  const dir = tokenDir();
+  if (!existsSync(dir)) return { scanned: 0, pruned: 0 };
+  let scanned = 0;
+  let pruned = 0;
+  let names = [];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return { scanned: 0, pruned: 0 };
+  }
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue;
+    scanned += 1;
+    const file = join(dir, name);
+    let expired = true;
+    try {
+      const data = JSON.parse(readFileSync(file, 'utf8'));
+      expired = isGuestTokenExpired(data, now);
+    } catch {
+      expired = true;
+    }
+    if (!expired) continue;
+    try {
+      unlinkSync(file);
+      pruned += 1;
+    } catch {
+      /* leave it for the next pass */
+    }
+  }
+  return { scanned, pruned };
 }
 
 function leadsFile() {

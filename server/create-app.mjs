@@ -7,7 +7,7 @@ import express from 'express';
 import multer from 'multer';
 import { spawn } from 'child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { sendRunNotificationEmail, createSmtpTransport, sendAccessRequestEmail, sendLeadEmail } from '../server-email.js';
 import { REPORTS_BASE } from './paths.js';
@@ -56,7 +56,7 @@ import {
   staffSessionVersion,
 } from './session.mjs';
 import { authenticateUser, getUserById, GENERIC_CREDENTIALS_ERROR } from './users.mjs';
-import { attachRunToUser, canAccessDomain, findProjectByDomain, listProjectsForUser } from './projects.mjs';
+import { attachRunToUser, canAccessDomain, canAccessRun, findProjectByDomain, listProjectsForUser, parseTenantPath } from './projects.mjs';
 import { registerAccountRoutes } from './account-routes.mjs';
 import { registerStripeRoutes, registerStripeWebhook } from './stripe-routes.mjs';
 import { assertCustomerCanScan, consumeScanEntitlement } from './billing.mjs';
@@ -64,6 +64,7 @@ import { MAX_PAGES_PER_CUSTOMER_RUN } from './plan-catalog.mjs';
 import {
   customerHasActiveScan,
   enqueueScanJob,
+  findRunningRun,
   kickQueue,
   listJobs,
   recoverInterruptedJobs,
@@ -87,16 +88,10 @@ function runKey(domain, runId) {
   return `${domain}:${runId}`;
 }
 
-/** Find any in-memory running or queued run for a domain (used by /report/:domain/ redirects). */
-function findRunningRun(runStatusMap, domain) {
-  for (const [key, value] of runStatusMap.entries()) {
-    if (!key.startsWith(`${domain}:`)) continue;
-    if (value?.status === 'running' || value?.status === 'queued') {
-      const runId = key.slice(domain.length + 1);
-      return { runId, state: value };
-    }
-  }
-  return null;
+function ownerForAccess(access, { guestToken } = {}) {
+  if (access?.role === 'staff' || access?.userId === 'staff') return { userId: 'staff' };
+  if (access?.role === 'customer' && access.userId) return { userId: access.userId };
+  return { guestToken: guestToken || null };
 }
 
 const GENERATE_REPORT_URL = new URL('../generate-report.js', import.meta.url).href;
@@ -1394,8 +1389,8 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
   }
 
   const domain = domainKey;
-  // Allow multiple runs per domain over time; only block if one is currently running or queued.
-  const concurrent = findRunningRun(runStatus, domain);
+  // 409 only when this owner already has a run in progress — shared domains do not block others.
+  const concurrent = findRunningRun(runStatus, domain, ownerForAccess(req.access));
   if (concurrent) {
     return res.status(409).json({
       error: `A run for ${domain} is already in progress. Please wait for it to finish.`,
@@ -1538,11 +1533,18 @@ async function resolveStatus({ domain, runId }) {
 }
 
 app.use(async (req, res, next) => {
-  const match = req.path.match(/^\/(?:api\/status|api\/report|api\/audits|report)\/([^/]+)/);
-  if (!match) return next();
-  const domain = match[1];
+  const parsed = parseTenantPath(req.path);
+  if (!parsed) return next();
+  const { domain, runId, scoped } = parsed;
   if (domain === 'leads' || !isValidDomain(domain)) return next();
-  if (await canAccessDomain(req.access, domain)) return next();
+  let allowed = false;
+  if (scoped === 'run') {
+    const memoryRun = runStatus.get(runKey(domain, runId)) || null;
+    allowed = await canAccessRun(req.access, domain, runId, { memoryRun });
+  } else {
+    allowed = await canAccessDomain(req.access, domain);
+  }
+  if (allowed) return next();
   if (req.path.startsWith('/api/')) {
     return res.status(403).json({ error: 'You do not have access to this project.' });
   }
@@ -1557,23 +1559,11 @@ app.get('/api/status/:domain/:runId', async (req, res) => {
   res.json(out);
 });
 
-/** Legacy: /api/status/:id resolves to the latest run for that domain. */
+/** Legacy: /api/status/:id resolves to the latest run the viewer may see. */
 app.get('/api/status/:id', async (req, res) => {
   const domain = req.params.id;
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
-  const running = findRunningRun(runStatus, domain);
-  let runId = running?.runId || null;
-  if (!runId) {
-    if (dbPool) {
-      try {
-        const latest = await dbGetLatestRun(domain);
-        if (latest) runId = latest.runId;
-      } catch (err) {
-        console.error(`[domain ${domain}] DB latest lookup failed:`, err.message);
-      }
-    }
-  }
-  if (!runId) runId = latestRunIdOnDisk(domain);
+  const runId = await resolveLatestRunIdForAccess(domain, req.access);
   if (!runId) return res.status(404).json({ error: 'Run not found' });
   const out = await resolveStatus({ domain, runId });
   if (!out) return res.status(404).json({ error: 'Run not found' });
@@ -1878,15 +1868,15 @@ app.post('/api/jira/sprint', async (req, res) => {
 
 app.get('/api/audits', async (req, res) => {
   try {
-    let audits = await listAuditEntries(dbPool, REPORTS_BASE);
-    if (req.access?.role === 'customer') {
-      const projects = await listProjectsForUser(req.access.userId);
-      const allowed = new Set(projects.map((project) => project.domain));
-      const runCounts = new Map(projects.map((project) => [project.domain, (project.runIds || []).length]));
-      audits = audits
-        .filter((row) => allowed.has(row.domain))
-        .map((row) => ({ ...row, totalRuns: runCounts.get(row.domain) || 0 }));
-    }
+    const viewer =
+      req.access?.role === 'customer'
+        ? {
+            role: 'customer',
+            userId: req.access.userId,
+            projects: await listProjectsForUser(req.access.userId),
+          }
+        : { role: req.access?.role };
+    const audits = await listAuditEntries(dbPool, REPORTS_BASE, viewer);
     return res.json({ audits });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1942,15 +1932,6 @@ async function finalizeSuccessfulRun({
     }
   }
   if (existsSync(reportPath)) {
-    const runManualPath = join(reportDir, 'manual-progress.json');
-    const domainManualPath = join(domainDirOf(domain), 'manual-progress.json');
-    if (!existsSync(runManualPath) && existsSync(domainManualPath)) {
-      try {
-        copyFileSync(domainManualPath, runManualPath);
-      } catch (err) {
-        console.error(`[run ${domain}/${runId}] Could not seed manual progress:`, err.message);
-      }
-    }
     persistReportArtifactsToFtp(domain, runId, FTP_CONFIG).catch((err) => {
       console.error(`[run ${domain}/${runId}] FTP persistence failed:`, err.message);
     });
@@ -1969,6 +1950,25 @@ async function resolveLatestRunIdForDomain(domain) {
     } catch {}
   }
   return latestRunIdOnDisk(domain);
+}
+
+/** Customers: latest run they own (including an in-flight one). Staff: domain-wide latest. */
+async function resolveLatestRunIdForAccess(domain, access) {
+  if (!isValidDomain(domain)) return null;
+  if (access?.role === 'customer' && access.userId) {
+    const running = findRunningRun(runStatus, domain, { userId: access.userId });
+    if (running?.runId) return running.runId;
+    const project = await findProjectByDomain(access.userId, domain);
+    const runs = filterRunsForViewer(await listRunsForDomain(dbPool, REPORTS_BASE, domain), {
+      role: 'customer',
+      userId: access.userId,
+      allowedRunIds: project?.runIds,
+    });
+    return runs[0]?.runId || null;
+  }
+  const running = findRunningRun(runStatus, domain);
+  if (running?.runId) return running.runId;
+  return resolveLatestRunIdForDomain(domain);
 }
 
 function parseManualProgressRaw(raw) {
@@ -1992,7 +1992,6 @@ async function readManualProgressRaw(localPath, remotePath) {
 
 async function readManualProgress(domain, runId) {
   const runPath = join(runDirOf(domain, runId), 'manual-progress.json');
-  const domainPath = join(domainDirOf(domain), 'manual-progress.json');
 
   const runSnap = await readManualProgressRaw(runPath, `${domain}/${runId}/manual-progress.json`);
   const runParsed = parseManualProgressRaw(runSnap.raw);
@@ -2009,18 +2008,11 @@ async function readManualProgress(domain, runId) {
     }
   }
 
-  let domainChecked = null;
-  if (!runSnap.exists) {
-    const domainSnap = await readManualProgressRaw(domainPath, `${domain}/manual-progress.json`);
-    domainChecked = parseManualProgressRaw(domainSnap.raw)?.checked ?? null;
-  }
-
   return {
     checked: resolvePersistedManualChecked({
       runFileExists: runSnap.exists,
       runChecked: runParsed?.checked,
       dbChecked,
-      domainChecked,
     }),
   };
 }
@@ -2034,7 +2026,7 @@ app.get('/api/report/:domain/:runId/manual-progress', async (req, res) => {
 app.get('/api/report/:id/manual-progress', async (req, res) => {
   const domain = req.params.id;
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
-  const runId = await resolveLatestRunIdForDomain(domain);
+  const runId = await resolveLatestRunIdForAccess(domain, req.access);
   if (!runId) return res.json({ checked: [] });
   res.json(await readManualProgress(domain, runId));
 });
@@ -2084,7 +2076,7 @@ app.get('/api/report/:domain/:runId/urls', async (req, res) => {
 app.get('/api/report/:id/urls', async (req, res) => {
   const domain = req.params.id;
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
-  const runId = await resolveLatestRunIdForDomain(domain);
+  const runId = await resolveLatestRunIdForAccess(domain, req.access);
   if (!runId) return res.status(404).json({ error: 'Report not found' });
   const out = await readUrlsForRun(domain, runId);
   if (!out) return res.status(404).json({ error: 'Report not found' });
@@ -2114,12 +2106,7 @@ async function writeManualProgress(domain, runId, checked) {
     }
     if (!existsSync(reportDir)) mkdirSync(reportDir, { recursive: true });
     writeFileSync(filePath, JSON.stringify({ checked: normalized }), 'utf8');
-    const domainFolder = domainDirOf(domain);
-    if (!existsSync(domainFolder)) mkdirSync(domainFolder, { recursive: true });
-    const domainPath = join(domainFolder, 'manual-progress.json');
-    writeFileSync(domainPath, JSON.stringify({ checked: normalized }), 'utf8');
     ftpUpload(FTP_CONFIG, filePath, `${domain}/${runId}/manual-progress.json`).catch(() => {});
-    ftpUpload(FTP_CONFIG, domainPath, `${domain}/manual-progress.json`).catch(() => {});
     return { status: 200, ok: true, checked: normalized };
   } catch (err) {
     return { status: 500, error: err.message };
@@ -2139,7 +2126,7 @@ app.put('/api/report/:domain/:runId/manual-progress', async (req, res) => {
 app.put('/api/report/:id/manual-progress', async (req, res) => {
   const domain = req.params.id;
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
-  const runId = await resolveLatestRunIdForDomain(domain);
+  const runId = await resolveLatestRunIdForAccess(domain, req.access);
   if (!runId) return res.status(404).json({ error: 'Report not found' });
   const checked = req.body?.checked;
   if (!Array.isArray(checked)) return res.status(400).json({ error: 'Body must include checked array' });
@@ -2428,11 +2415,12 @@ app.get('/report/:domain/history/', (req, res, next) => next());
 app.get('/report/:domain', async (req, res) => {
   const domain = req.params.domain;
   if (!isValidDomain(domain)) return res.status(400).send('Invalid domain');
-  const running = findRunningRun(runStatus, domain);
+  const owner = req.access?.role === 'customer' ? { userId: req.access.userId } : null;
+  const running = findRunningRun(runStatus, domain, owner);
   if (running) {
     return res.redirect(`${loadingPath}?domain=${encodeURIComponent(domain)}&runId=${encodeURIComponent(running.runId)}`);
   }
-  const runId = await resolveLatestRunIdForDomain(domain);
+  const runId = await resolveLatestRunIdForAccess(domain, req.access);
   if (!runId) return res.status(404).send('Report not found');
   const target = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`;
   return res.redirect(req.path.endsWith('/') ? 302 : 301, target);
@@ -2441,11 +2429,12 @@ app.get('/report/:domain', async (req, res) => {
 app.get('/report/:domain/', async (req, res) => {
   const domain = req.params.domain;
   if (!isValidDomain(domain)) return res.status(400).send('Invalid domain');
-  const running = findRunningRun(runStatus, domain);
+  const owner = req.access?.role === 'customer' ? { userId: req.access.userId } : null;
+  const running = findRunningRun(runStatus, domain, owner);
   if (running) {
     return res.redirect(`${loadingPath}?domain=${encodeURIComponent(domain)}&runId=${encodeURIComponent(running.runId)}`);
   }
-  const runId = await resolveLatestRunIdForDomain(domain);
+  const runId = await resolveLatestRunIdForAccess(domain, req.access);
   if (!runId) return res.status(404).send('Report not found');
   return res.redirect(302, `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`);
 });

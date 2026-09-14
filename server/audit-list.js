@@ -46,10 +46,52 @@ function entryFromDisk(domain, runId, reportsBase) {
 
 /**
  * Returns one row per domain with the latest run summary, merged from DB + filesystem.
+ * Pass a customer viewer so each row is that customer's own latest run, not the
+ * domain's latest run by anyone.
  * @param {import('pg').Pool | null} dbPool
  * @param {string} reportsBase
+ * @param {{ role?: string, userId?: string, projects?: Array<{ domain: string, runIds?: string[] }> }} [viewer]
  */
-export async function listAuditEntries(dbPool, reportsBase) {
+export async function listAuditEntries(dbPool, reportsBase, viewer = {}) {
+  if (viewer.role === 'customer' && viewer.userId) {
+    return listCustomerAuditEntries(dbPool, reportsBase, viewer);
+  }
+  return listStaffAuditEntries(dbPool, reportsBase);
+}
+
+async function listCustomerAuditEntries(dbPool, reportsBase, { userId, projects = [] }) {
+  const out = [];
+  for (const project of projects) {
+    const domain = project?.domain;
+    if (!domain) continue;
+    const runs = filterRunsForViewer(await listRunsForDomain(dbPool, reportsBase, domain), {
+      role: 'customer',
+      userId,
+      allowedRunIds: project.runIds,
+    });
+    const latest = runs[0];
+    if (!latest) continue;
+    out.push({
+      id: domain,
+      domain,
+      latestRunId: latest.runId,
+      status: latest.status || 'unknown',
+      updatedAt: latest.updatedAt || null,
+      pages: latest.pages,
+      issues: latest.issues,
+      totalRuns: runs.length,
+      source: latest.source,
+    });
+  }
+  return out.sort((a, b) => {
+    const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return tb - ta;
+  });
+}
+
+/** Staff/archive: one row per domain using that domain's latest run by anyone. */
+async function listStaffAuditEntries(dbPool, reportsBase) {
   const byDomain = new Map();
 
   if (dbPool) {

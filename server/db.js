@@ -260,7 +260,6 @@ export async function initDb() {
 
   await seedDefaultPlans();
   await migrateJsonStoresToPostgres();
-  await backfillRunUserIds();
 }
 
 /**
@@ -1113,17 +1112,6 @@ async function migrateJsonStoresToPostgres() {
       console.error(`[migrate] project ${project.id} failed:`, err.message);
     }
   }
-}
-
-async function backfillRunUserIds() {
-  if (!dbPool) return;
-  await dbPool.query(`
-    UPDATE runs r
-       SET user_id = p.user_id
-      FROM projects p
-     WHERE r.user_id IS NULL
-       AND r.id = p.domain
-  `);
 }
 
 

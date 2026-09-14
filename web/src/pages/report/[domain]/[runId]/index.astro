@@ -48,7 +48,6 @@ const suggestedFixes = payload.suggestedFixes || { points: 0, tickets: [] };
 
 // Pull score history for the trend chart from prior runs of this domain.
 const allRuns = await listVisibleRunsForDomain(dbPool, REPORTS_BASE, domain, {
-  sessionToken: Astro.cookies.get('wcag_sid')?.value || '',
   access: Astro.locals?.access,
 });
 const trend = allRuns
@@ -72,13 +71,10 @@ const previousScore = (() => {
 
 // Manual & assistive-tech checklist progress (separate from automated score).
 const manualProgressPath = join(runDir(domain, runId), 'manual-progress.json');
-const domainManualPath = join(runDir(domain, runId), '..', 'manual-progress.json');
 let manualChecked: string[] = [];
-for (const p of [manualProgressPath, domainManualPath]) {
-  if (manualChecked.length > 0) break;
-  if (!existsSync(p)) continue;
+if (existsSync(manualProgressPath)) {
   try {
-    const raw = JSON.parse(readFileSync(p, 'utf8'));
+    const raw = JSON.parse(readFileSync(manualProgressPath, 'utf8'));
     manualChecked = normalizeManualProgress(raw?.checked);
   } catch {}
 }

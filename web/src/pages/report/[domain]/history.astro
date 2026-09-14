@@ -18,7 +18,6 @@ if (!isValidReportId(domain)) {
 }
 
 const runs = await listVisibleRunsForDomain(dbPool, REPORTS_BASE, domain, {
-  sessionToken: Astro.cookies.get('wcag_sid')?.value || '',
   access: Astro.locals?.access,
 });
 
