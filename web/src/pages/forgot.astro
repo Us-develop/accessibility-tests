@@ -32,22 +32,22 @@ const sent = Astro.url.searchParams.get('sent') === '1';
       if (!(form instanceof HTMLFormElement) || form.id !== 'forgot-form') return;
       event.preventDefault();
       event.stopPropagation();
-      const email = new FormData(form).get('email');
+      const emailValue = new FormData(form).get('email');
       const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
       await fetch(api('/api/auth/forgot'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: emailValue }),
       });
       const msg = document.getElementById('forgot-msg');
-      const email = document.getElementById('email');
+      const emailField = document.getElementById('email');
       if (msg) {
         msg.textContent = 'If that account exists, we sent a reset link (or logged it when SMTP is off).';
         msg.setAttribute('role', 'status');
       }
-      if (email) {
-        email.removeAttribute('aria-invalid');
-        email.removeAttribute('aria-describedby');
+      if (emailField) {
+        emailField.removeAttribute('aria-invalid');
+        emailField.removeAttribute('aria-describedby');
       }
     }, true);
   }
