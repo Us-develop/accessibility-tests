@@ -1253,7 +1253,10 @@ export async function dbListGuestRunsOlderThan(cutoff) {
 
 export async function dbDeleteRun(domain, runId) {
   if (!dbPool || !domain || !runId) return false;
-  const { rowCount } = await dbPool.query(`DELETE FROM runs WHERE id = $1 AND run_id = $2`, [domain, runId]);
+  const { rowCount } = await dbPool.query(
+    `DELETE FROM runs WHERE id = $1 AND run_id = $2 AND user_id IS NULL`,
+    [domain, runId]
+  );
   return rowCount > 0;
 }
 

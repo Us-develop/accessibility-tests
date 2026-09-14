@@ -455,11 +455,11 @@ function filterSidecar(file, key, predicate) {
 }
 
 async function purgeUserSidecarStores(userId) {
-  if (useDb()) return;
   filterSidecar('subscriptions.json', 'subscriptions', (row) => row.userId !== userId);
   filterSidecar('usage.json', 'usage', (row) => row.userId !== userId);
   filterSidecar('payments.json', 'payments', (row) => row.userId !== userId);
   filterSidecar('token-lots.json', 'lots', (row) => row.userId !== userId);
+  filterSidecar('projects.json', 'projects', (row) => row.userId !== userId);
 }
 
 export async function deleteAccount(userId) {
@@ -500,7 +500,6 @@ export async function deleteUser(id) {
   invalidateSessionUserCache(id);
   if (useDb()) {
     await dbDeleteUser(id);
-    return;
   }
   saveUsers(loadUsers().filter((u) => u.id !== id));
 }
