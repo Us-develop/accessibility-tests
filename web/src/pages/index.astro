@@ -2,9 +2,9 @@
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 
-const cookieHeader = Astro.request.headers.get('cookie') || '';
-const ssrStaff = /(?:^|;\s*)wcag_ui=1(?:;|$)/.test(cookieHeader) || /(?:^|;\s*)wcag_access=1(?:;|$)/.test(cookieHeader);
-const ssrCustomer = /(?:^|;\s*)wcag_ui=c(?:;|$)/.test(cookieHeader);
+const access = Astro.locals?.access;
+const ssrStaff = access?.role === 'staff';
+const ssrCustomer = access?.role === 'customer';
 const ssrSignedIn = ssrStaff || ssrCustomer;
 
 export const prerender = false;

@@ -9,6 +9,9 @@ import { fileURLToPath } from 'url';
 import { loadAllAppEnv } from '../server/load-env.mjs';
 import { initDb, dbPool } from '../server/db.js';
 import { createAccessibilityApp } from '../server/create-app.mjs';
+import { installProcessGuards } from '../server/http-utils.mjs';
+
+installProcessGuards();
 
 const webRoot = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(webRoot, '..');
@@ -30,11 +33,17 @@ const { handler } = await import('./dist/server/entry.mjs');
  */
 process.env.DEFER_ROOT_LOGIN_TO_SHELL ??= 'true';
 
-const apiApp = createAccessibilityApp(repoRoot);
+let apiApp;
+try {
+  apiApp = createAccessibilityApp(repoRoot);
+} catch (err) {
+  console.error(err?.message || err);
+  process.exit(1);
+}
 const app = express();
 app.use(apiApp);
 app.use(express.static(join(webRoot, 'dist/client')));
-app.use((req, res) => handler(req, res));
+app.use((req, res, next) => handler(req, res, next, { access: req.access || null }));
 
 await initDb();
 if (dbPool) {

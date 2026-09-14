@@ -11,6 +11,13 @@ import {
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 import { hashPassword, verifyPassword, isStrongPassword } from './passwords.mjs';
 import { ensureFreeSubscription } from './billing.mjs';
+import { invalidateSessionUserCache } from './session.mjs';
+
+export const GENERIC_CREDENTIALS_ERROR = 'Invalid username or password.';
+
+/** Dummy scrypt hash so missing users still pay the verifyPassword cost. */
+const DUMMY_PASSWORD_HASH =
+  'scrypt$16384$8$1$0123456789abcdef0123456789abcdef$0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 const USERS_FILE = 'users.json';
 
@@ -58,7 +65,12 @@ function emptyContact() {
 
 function withContactDefaults(user) {
   if (!user) return null;
-  return { ...emptyContact(), ...user };
+  return { sessionVersion: 1, ...emptyContact(), ...user };
+}
+
+function sessionVersionOf(user) {
+  const n = Number(user?.sessionVersion);
+  return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
 export function publicUser(user) {
@@ -69,6 +81,7 @@ export function publicUser(user) {
     verifyExpiresAt,
     resetToken,
     resetExpiresAt,
+    sessionVersion: _sessionVersion,
     ...rest
   } = withContactDefaults(user);
   return rest;
@@ -172,7 +185,7 @@ export async function createUser({ email, password, name = '' }) {
     throw Object.assign(new Error('Use a password of at least 10 characters.'), { status: 400 });
   }
   if (await getUserByEmail(normalized)) {
-    throw Object.assign(new Error('An account with that email already exists.'), { status: 409 });
+    throw Object.assign(new Error(GENERIC_CREDENTIALS_ERROR), { status: 409 });
   }
   const autoVerify = String(process.env.AUTH_EMAIL_VERIFY || 'auto').toLowerCase() !== 'required';
   const user = {
@@ -186,6 +199,7 @@ export async function createUser({ email, password, name = '' }) {
     verifyExpiresAt: autoVerify ? null : new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
     resetToken: null,
     resetExpiresAt: null,
+    sessionVersion: 1,
     ...emptyContact(),
     createdAt: nowIso(),
     updatedAt: nowIso(),
@@ -194,7 +208,7 @@ export async function createUser({ email, password, name = '' }) {
     await persistUser(user);
   } catch (err) {
     if (err?.code === '23505') {
-      throw Object.assign(new Error('An account with that email already exists.'), { status: 409 });
+      throw Object.assign(new Error(GENERIC_CREDENTIALS_ERROR), { status: 409 });
     }
     throw err;
   }
@@ -204,16 +218,18 @@ export async function createUser({ email, password, name = '' }) {
 
 export async function authenticateUser(email, password) {
   const user = await getUserByEmail(email);
-  if (!user) return null;
-  const ok = await verifyPassword(password, user.passwordHash);
-  return ok ? user : null;
+  const hash = user?.passwordHash || DUMMY_PASSWORD_HASH;
+  const ok = await verifyPassword(password, hash);
+  return ok && user ? user : null;
 }
 
 export async function updateUser(id, patch) {
   const current = await getUserById(id);
   if (!current) return null;
-  const next = { ...current, ...patch, id, updatedAt: nowIso() };
-  return persistUser(next);
+  const next = { ...current, ...patch, id, updatedAt: nowIso(), sessionVersion: sessionVersionOf({ ...current, ...patch }) };
+  const saved = await persistUser(next);
+  invalidateSessionUserCache(id);
+  return saved;
 }
 
 export async function updateContactDetails(userId, patch) {
@@ -249,11 +265,13 @@ export async function setPassword(id, password) {
   if (!isStrongPassword(password)) {
     throw Object.assign(new Error('Use a password of at least 10 characters.'), { status: 400 });
   }
+  const current = await getUserById(id);
   return publicUser(
     await updateUser(id, {
       passwordHash: await hashPassword(password),
       resetToken: null,
       resetExpiresAt: null,
+      sessionVersion: sessionVersionOf(current) + 1,
     })
   );
 }
@@ -289,6 +307,11 @@ export async function consumePasswordReset(token) {
 }
 
 export async function deleteUser(id) {
+  const current = await getUserById(id);
+  if (current) {
+    await updateUser(id, { sessionVersion: sessionVersionOf(current) + 1 });
+  }
+  invalidateSessionUserCache(id);
   if (useDb()) {
     await dbDeleteUser(id);
     return;

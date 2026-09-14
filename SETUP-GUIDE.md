@@ -38,13 +38,13 @@ The server requires either a password **or** disabled auth.
 AUTH_ENABLED=false npm start
 ```
 
-**Or** keep login and set your own password:
+**Or** keep login and set your own password and session secret (both required when `AUTH_ENABLED` is true):
 
 ```bash
-APP_PASSWORD='choose-a-password' npm start
+APP_PASSWORD='choose-a-password' SESSION_SECRET='at-least-32-characters-long-secret' npm start
 ```
 
-If `AUTH_ENABLED` is true (the default) and `APP_PASSWORD` is empty, the server exits immediately — that is intentional.
+If `AUTH_ENABLED` is true (the default) and `APP_PASSWORD` is shorter than 12 characters or `SESSION_SECRET` is shorter than 32 characters, the server exits immediately — that is intentional.
 
 ### 4. Open the app
 
@@ -83,7 +83,7 @@ node run-tests.js --report --urls="https://example.com"
 | Issue                                 | What to try                                                                                                          |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Playwright “executable doesn’t exist” | Run `npx playwright install chromium` again                                                                          |
-| Server exits on start                 | Set `APP_PASSWORD` or `AUTH_ENABLED=false`                                                                           |
+| Server exits on start                 | Set `APP_PASSWORD` (≥12 chars) and `SESSION_SECRET` (≥32 chars), or `AUTH_ENABLED=false`                              |
 | Form says API missing JSON            | Ensure `npm start` is running and you did **not** open `index.html` as a `file://` URL — use `http://localhost:3456` |
 
 
