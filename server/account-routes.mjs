@@ -16,7 +16,7 @@ import {
 } from './users.mjs';
 import { attachRunToUser, listProjectsForUser } from './projects.mjs';
 import { clearSessionCookies, isHtmlFormPost, parseCookies, setSessionCookies } from './session.mjs';
-import { isValidGuestToken, guestFreebieClaimed, clientIp } from './guest.mjs';
+import { isValidGuestToken, guestFreebieClaimed, clientIp, deleteGuestTokenFile } from './guest.mjs';
 import { sendAccountEmail } from '../server-email.js';
 import { asyncHandler } from './http-utils.mjs';
 import { clientKey, rateLimit } from './rate-limit.mjs';
@@ -200,6 +200,7 @@ export function registerAccountRoutes(app, ctx) {
         const binding = readGuestTokenRecord(guestToken);
         if (binding?.domain && binding?.runId) {
           await attachRunToUser(user.id, binding.domain, binding.runId);
+          deleteGuestTokenFile(guestToken);
           attached = true;
         }
       }
@@ -441,6 +442,7 @@ export function registerAccountRoutes(app, ctx) {
     const binding = readGuestTokenRecord(token);
     if (!binding) return res.status(404).json({ error: 'That snapshot was not found.' });
     const project = await attachRunToUser(userId, binding.domain, binding.runId);
+    deleteGuestTokenFile(token);
     await ensureFreebieLot(userId, { guestFreebieUsed: true });
     return res.json({ ok: true, project });
   }));

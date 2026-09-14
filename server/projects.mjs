@@ -130,6 +130,20 @@ export function deleteRunDirectory(domain, runId) {
   return true;
 }
 
+/** True when a customer account owns this run (DB user_id or a project runIds list). */
+export async function customerOwnsRun(domain, runId) {
+  if (!isValidDomain(domain) || !isValidRunId(runId)) return false;
+  if (useDb()) {
+    const row = await dbGetRun(domain, runId);
+    return Boolean(row?.userId);
+  }
+  const needle = String(domain).toLowerCase();
+  return load().some(
+    (project) =>
+      project.domain === needle && Array.isArray(project.runIds) && project.runIds.includes(runId)
+  );
+}
+
 export async function canAccessDomain(access, domain) {
   if (!access) return false;
   if (access.role === 'staff') return true;
