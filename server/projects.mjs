@@ -4,10 +4,12 @@ import {
   dbDeleteProjectsForUser,
   dbFindProjectByDomain,
   dbGetProject,
+  dbGetRun,
   dbListProjectsForUser,
   dbSetRunUserId,
   dbUpsertProject,
 } from './db.js';
+import { isValidDomain, isValidRunId } from './run-ids.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 
 const FILE = 'projects.json';
@@ -107,4 +109,57 @@ export async function canAccessDomain(access, domain) {
   if (access.role === 'staff') return true;
   if (access.role === 'customer') return userOwnsDomain(access.userId, domain);
   return false;
+}
+
+const DOMAIN_SCOPED_SECONDS = new Set(['history', 'manual-progress', 'urls', 'runs']);
+
+/**
+ * Parse report/API paths into a domain-scoped vs run-scoped tenancy check.
+ * `/api/debug/deliverable/:domain/:runId/…` is run-scoped.
+ */
+export function parseTenantPath(pathname) {
+  const path = String(pathname || '');
+  const debug = path.match(/^\/api\/debug\/deliverable\/([^/]+)\/([^/]+)(?:\/|$)/);
+  if (debug) {
+    return { domain: debug[1], runId: debug[2], scoped: 'run' };
+  }
+  const match = path.match(/^\/(?:api\/status|api\/report|api\/audits|report)\/([^/]+)(?:\/([^/]+))?(?:\/.*)?$/);
+  if (!match) return null;
+  const domain = match[1];
+  const second = match[2] || '';
+  if (!second || DOMAIN_SCOPED_SECONDS.has(second) || !isValidRunId(second)) {
+    return { domain, runId: null, scoped: 'domain' };
+  }
+  return { domain, runId: second, scoped: 'run' };
+}
+
+/**
+ * Customers may only see/modify runs they own. Staff see every run.
+ * `user_id IS NULL` (and guest tokens) stay staff/guest-owned.
+ * File-store fallback: the run id is listed on the customer's project.
+ *
+ * @param {{ role?: string, userId?: string } | null} access
+ * @param {string} domain
+ * @param {string} runId
+ * @param {{ memoryRun?: { userId?: string|null, guestToken?: string|null, tier?: string } | null }} [opts]
+ */
+export async function canAccessRun(access, domain, runId, { memoryRun } = {}) {
+  if (!access) return false;
+  if (access.role === 'staff') return true;
+  if (access.role !== 'customer' || !access.userId) return false;
+  if (!isValidDomain(domain) || !isValidRunId(runId)) return false;
+
+  if (memoryRun) {
+    if (memoryRun.userId) return memoryRun.userId === access.userId;
+    if (memoryRun.guestToken || memoryRun.tier === 'guest' || memoryRun.tier === 'staff') return false;
+    if (Object.prototype.hasOwnProperty.call(memoryRun, 'userId') && !memoryRun.userId) return false;
+  }
+
+  if (useDb()) {
+    const row = await dbGetRun(domain, runId);
+    if (row) return row.userId === access.userId;
+  }
+
+  const project = await findProjectByDomain(access.userId, domain);
+  return Boolean(project && Array.isArray(project.runIds) && project.runIds.includes(runId));
 }

@@ -73,12 +73,12 @@ Reports use IDs in the URL, e.g. `http://localhost:3456/report/example.com/` whe
 Current behavior:
 
 - Reports are keyed by **domain + run id** (e.g. `https://example.com` →
-  `/report/example.com/2026-05-04T13-45-12Z-ab12/`).
-- `/report/<domain>/` redirects to the latest run for that domain.
-- `/report/<domain>/history` shows every audit ever stored for the domain.
+  `/report/example.com/2026-05-04T13-45-12Z-ab12cd34ef56/`).
+- `/report/<domain>/` redirects to the latest run the **viewer owns** (staff: latest on the domain; a customer: their own latest, or 404). Two customers on the same domain never see each other's runs.
+- `/report/<domain>/history` lists runs the viewer may see. Customers only see scans attached to their account; staff see the full domain.
 - Each run must contain URLs from a **single domain**.
 - Re-running tests for the same domain creates a new run row and a new
-  on-disk folder under `reports/<domain>/<runId>/`.
+  on-disk folder under `reports/<domain>/<runId>/`. A second scan for the **same owner** while one is queued or running returns 409; a guest scan does not block a customer scan of that domain.
 
 ### Optional: Postgres persistence
 
@@ -123,7 +123,7 @@ Monitoring:
 
 - `GET /api/health/db` → DB health (`up`, `down`, or `disabled`). No login required.
 - `GET /api/report/:domain/:runId/urls` → list URLs stored for a run.
-- `GET /api/audits/:domain/runs` → every run for a given domain (used by the history page).
+- `GET /api/audits/:domain/runs` → runs for a given domain the viewer may see (history page; customers are filtered to their own `user_id`).
 
 ### Publish to the live VPS (OVH)
 
@@ -247,7 +247,7 @@ To persist the manual/assistive-tech checklist state on your FTP server (e.g. Co
 | `FTP_SECURE` | Set to `true` for FTPS (TLS) |
 | `FTP_REMOTE_PATH` | Optional. Base path on the server (e.g. `reports` or `accessibility/reports`) |
 
-Progress is stored as `{FTP_REMOTE_PATH}/{reportId}/manual-progress.json`. If these are not set, progress is stored only on the server’s local disk (and in the browser).
+Progress is stored per run as `{FTP_REMOTE_PATH}/{domain}/{runId}/manual-progress.json` (and `runs.manual_progress_json` in Postgres). Domain-level `manual-progress.json` files are no longer written. Migrate leftovers with `node scripts/migrate-manual-progress.mjs --apply`. If FTP variables are not set, progress is stored only on the server’s local disk (and in the browser).
 
 ## CLI (alternative)
 

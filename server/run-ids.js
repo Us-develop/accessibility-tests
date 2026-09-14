@@ -1,7 +1,8 @@
 /**
  * Run ID helpers. Each audit run lives at reports/<domain>/<runId>/.
- * runId = "YYYY-MM-DDTHH-MM-SSZ-<4hex>", e.g. "2026-05-04T13-45-12Z-ab12".
+ * runId = "YYYY-MM-DDTHH-MM-SSZ-<12hex>", e.g. "2026-05-04T13-45-12Z-ab12cd34ef56".
  */
+import { randomBytes } from 'crypto';
 import { existsSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { REPORTS_BASE } from './paths.js';
@@ -12,11 +13,9 @@ function tsForRunId(date = new Date()) {
   return date.toISOString().replace(/\.\d+Z$/, 'Z').replace(/:/g, '-');
 }
 
-/** 4-hex random suffix to avoid collisions when two runs land in the same second. */
+/** 12-hex suffix so two runs in the same second do not collide. */
 function shortHex() {
-  return Math.floor(Math.random() * 0xffff)
-    .toString(16)
-    .padStart(4, '0');
+  return randomBytes(6).toString('hex');
 }
 
 export function newRunId(date = new Date()) {
