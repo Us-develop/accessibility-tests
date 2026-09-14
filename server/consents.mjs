@@ -5,11 +5,12 @@ import {
   dbGetConsent,
   dbListConsents,
   dbMergeConsentContext,
+  dbDeleteConsentsForAccount,
 } from './db.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 
 const CONSENTS_FILE = 'consents.json';
-const CONSENT_KINDS = new Set(['terms', 'privacy', 'withdrawal_waiver', 'lead_privacy']);
+const CONSENT_KINDS = new Set(['terms', 'privacy', 'withdrawal_waiver', 'lead_privacy', 'deletion']);
 
 function useDb() {
   return Boolean(dbPool);
@@ -32,6 +33,13 @@ export function hashIp(ip) {
   const raw = String(ip || '').trim();
   if (!raw) return null;
   return createHash('sha256').update(`consent-ip:${raw}`).digest('hex');
+}
+
+export function hashEmail(email) {
+  const raw = String(email || '').trim().toLowerCase();
+  if (!raw) return null;
+  const salt = String(process.env.GUEST_IP_HASH_SALT || process.env.SESSION_SECRET || 'consent-email');
+  return createHash('sha256').update(`consent-email:${salt}:${raw}`).digest('hex');
 }
 
 function clipUserAgent(value) {
@@ -101,4 +109,33 @@ export async function mergeConsentContext(id, patch) {
   };
   saveConsents(consents);
   return consents[idx];
+}
+
+export async function deleteConsentsForAccount({ userId = null, email = null } = {}) {
+  const needleEmail = email ? String(email).trim().toLowerCase() : '';
+  let deleted = 0;
+  if (useDb()) {
+    deleted = await dbDeleteConsentsForAccount({ userId, email: needleEmail });
+  } else {
+    const consents = loadConsents();
+    const kept = consents.filter((row) => {
+      if (row.kind === 'deletion') return true;
+      if (userId && row.userId === userId) return false;
+      if (needleEmail && row.email === needleEmail) return false;
+      return true;
+    });
+    deleted = consents.length - kept.length;
+    if (deleted) saveConsents(kept);
+  }
+  return deleted;
+}
+
+export async function recordDeletionTombstone(email) {
+  return recordConsent({
+    userId: null,
+    email: hashEmail(email),
+    kind: 'deletion',
+    version: '1',
+    context: {},
+  });
 }

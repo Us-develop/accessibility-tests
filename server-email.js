@@ -1,6 +1,7 @@
 /**
  * Optional SMTP notifications when a test run finishes (configure SMTP_* env vars).
  */
+import { randomBytes } from 'crypto';
 import nodemailer from 'nodemailer';
 
 export function createSmtpTransport() {
@@ -19,16 +20,32 @@ export function createSmtpTransport() {
   });
 }
 
+function recipientDomain(to) {
+  const at = String(to || '').lastIndexOf('@');
+  if (at === -1) return '';
+  return String(to).slice(at + 1).toLowerCase();
+}
+
+function newMessageId() {
+  return `<${randomBytes(12).toString('hex')}@us-accessibility>`;
+}
+
+function logSkippedMail({ kind, to, messageId }) {
+  console.warn('[email]', { kind, domain: recipientDomain(to), messageId });
+}
+
 /**
  * @param {{ to: string; reportId: string; status: 'done' | 'error'; error?: string | null; reportUrl: string }} opts
  */
 export async function sendRunNotificationEmail(opts) {
   const transport = createSmtpTransport();
+  const { to, reportId, status, error, reportUrl } = opts;
+  const messageId = newMessageId();
   if (!transport) {
-    return { ok: false, skipped: true };
+    logSkippedMail({ kind: 'run-notification', to, messageId });
+    return { ok: false, skipped: true, messageId };
   }
   const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@localhost';
-  const { to, reportId, status, error, reportUrl } = opts;
   const ok = status === 'done';
   const subject = ok
     ? 'Your accessibility audit is ready'
@@ -46,8 +63,9 @@ export async function sendRunNotificationEmail(opts) {
     subject,
     text,
     html,
+    messageId,
   });
-  return { ok: true };
+  return { ok: true, messageId };
 }
 
 /**
@@ -68,16 +86,11 @@ export async function sendAccessRequestEmail(payload) {
 <p><strong>Company:</strong> ${escapeHtml(company || '—')}</p>
 <p><strong>Email:</strong> ${escapeHtml(email)}</p>
 <p><strong>Message:</strong></p><p>${escapeHtml(message || '—').replace(/\n/g, '<br/>')}</p>`;
+  const messageId = newMessageId();
 
   if (!transport) {
-    console.warn('[access-request] SMTP not configured; logging only.');
-    console.warn('[access-request]', {
-      name,
-      company: company || null,
-      email,
-      messagePreview: message.slice(0, 500),
-    });
-    return { emailed: false };
+    logSkippedMail({ kind: 'access-request', to, messageId });
+    return { emailed: false, messageId };
   }
 
   await transport.sendMail({
@@ -87,8 +100,9 @@ export async function sendAccessRequestEmail(payload) {
     text,
     html,
     replyTo: email,
+    messageId,
   });
-  return { emailed: true };
+  return { emailed: true, messageId };
 }
 
 /**
@@ -129,20 +143,11 @@ export async function sendLeadEmail(payload) {
 <p><strong>Domain:</strong> ${escapeHtml(domain || '—')}</p>
 <p><strong>Score:</strong> ${escapeHtml(score)}</p>
 <p><strong>Message:</strong></p><p>${escapeHtml(message || '—').replace(/\n/g, '<br/>')}</p>`;
+  const messageId = newMessageId();
 
   if (!transport) {
-    console.warn('[lead] SMTP not configured; logging only.');
-    console.warn('[lead]', {
-      name,
-      company: company || null,
-      email,
-      phone: phone || null,
-      scannedUrl: scannedUrl || null,
-      domain: domain || null,
-      score,
-      messagePreview: message.slice(0, 500),
-    });
-    return { emailed: false };
+    logSkippedMail({ kind: 'lead', to, messageId });
+    return { emailed: false, messageId };
   }
 
   await transport.sendMail({
@@ -152,12 +157,13 @@ export async function sendLeadEmail(payload) {
     text,
     html,
     replyTo: email,
+    messageId,
   });
-  return { emailed: true };
+  return { emailed: true, messageId };
 }
 
 /**
- * @param {{ to: string; subject: string; text: string }} opts
+ * @param {{ to: string; subject: string; text: string; kind?: string }} opts
  */
 export async function sendAccountEmail(opts) {
   const transport = createSmtpTransport();
@@ -165,14 +171,16 @@ export async function sendAccountEmail(opts) {
   const to = String(opts?.to || '').trim();
   const subject = String(opts?.subject || '').trim();
   const text = String(opts?.text || '').trim();
-  if (!to || !subject) return { emailed: false };
+  const kind = String(opts?.kind || 'account');
+  const messageId = newMessageId();
+  if (!to || !subject) return { emailed: false, messageId };
   if (!transport) {
-    console.warn('[account-email]', { to, subject, textPreview: text.slice(0, 400) });
-    return { emailed: false };
+    logSkippedMail({ kind, to, messageId });
+    return { emailed: false, messageId };
   }
   const html = `<p>${escapeHtml(text).replace(/\n/g, '<br/>')}</p>`;
-  await transport.sendMail({ from, to, subject, text, html });
-  return { emailed: true };
+  await transport.sendMail({ from, to, subject, text, html, messageId });
+  return { emailed: true, messageId };
 }
 
 function escapeHtml(s) {

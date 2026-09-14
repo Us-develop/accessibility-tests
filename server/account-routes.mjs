@@ -1,18 +1,20 @@
 import {
   createUser,
-  deleteUser,
+  deleteAccount,
   exportUserData,
   getPublicUserById,
   getUserById,
   setPassword,
   startPasswordReset,
+  startEmailChange,
   consumePasswordReset,
+  consumePendingEmailChange,
   updateContactDetails,
   verifyUserEmail,
   GENERIC_CREDENTIALS_ERROR,
   normalizeCustomerType,
 } from './users.mjs';
-import { attachRunToUser, deleteProjectsForUser, listProjectsForUser } from './projects.mjs';
+import { attachRunToUser, listProjectsForUser } from './projects.mjs';
 import { clearSessionCookies, isHtmlFormPost, parseCookies, setSessionCookies } from './session.mjs';
 import { isValidGuestToken, guestFreebieClaimed, clientIp } from './guest.mjs';
 import { sendAccountEmail } from '../server-email.js';
@@ -65,8 +67,9 @@ function requireCustomer(req, res) {
   return req.access.userId;
 }
 
-function csvEscape(value) {
-  const s = value == null ? '' : String(value);
+export function csvEscape(value) {
+  let s = value == null ? '' : String(value);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
@@ -200,17 +203,22 @@ export function registerAccountRoutes(app, ctx) {
           attached = true;
         }
       }
-      await ensureFreebieLot(user.id, {
-        guestFreebieUsed: attached || guestFreebieClaimed(req),
-      });
+      const guestUsed = attached || guestFreebieClaimed(req);
       if (verifyToken) {
+        if (guestUsed) {
+          await ensureFreebieLot(user.id, { guestFreebieUsed: true });
+        }
         const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(verifyToken)}`;
         await sendAccountEmail({
+          kind: 'verify',
           to: user.email,
           subject: 'Verify your Us accessibility account',
           text: `Confirm your email:\n${link}\n`,
         });
       } else {
+        await ensureFreebieLot(user.id, {
+          guestFreebieUsed: guestUsed,
+        });
         setSessionCookies(res, { userId: user.id, role: user.role, email: user.email, ver: 1 }, sameSiteFromEnv());
       }
       const next = verifyToken ? '/signup?check-email=1' : '/account';
@@ -223,7 +231,17 @@ export function registerAccountRoutes(app, ctx) {
   }));
 
   app.get('/api/auth/verify', asyncHandler(async (req, res) => {
-    const user = await verifyUserEmail(String(req.query?.token || ''));
+    const token = String(req.query?.token || '');
+    const changed = await consumePendingEmailChange(token);
+    if (changed) {
+      setSessionCookies(
+        res,
+        { userId: changed.id, role: changed.role, email: changed.email, ver: changed.sessionVersion || 1 },
+        sameSiteFromEnv()
+      );
+      return res.redirect('/account');
+    }
+    const user = await verifyUserEmail(token);
     if (!user) return res.status(400).send('Invalid or expired verification link.');
     setSessionCookies(res, { userId: user.id, role: user.role, email: user.email, ver: 1 }, sameSiteFromEnv());
     return res.redirect('/account');
@@ -234,6 +252,7 @@ export function registerAccountRoutes(app, ctx) {
     if (started) {
       const link = `${publicBase()}/reset?token=${encodeURIComponent(started.token)}`;
       await sendAccountEmail({
+        kind: 'reset',
         to: started.user.email,
         subject: 'Reset your Us accessibility password',
         text: `Reset your password:\n${link}\nThis link expires in 2 hours.\n`,
@@ -252,8 +271,7 @@ export function registerAccountRoutes(app, ctx) {
       await setPassword(user.id, req.body?.password);
       return formOrJson(req, res, '/', 200, { ok: true });
     } catch (err) {
-      const safeToken = token ? `?error=1&token=${encodeURIComponent(token)}` : '?error=1';
-      return formOrJson(req, res, `/reset${safeToken}`, Number(err.status) || 400, {
+      return formOrJson(req, res, '/reset?error=1', Number(err.status) || 400, {
         error: err.message,
       });
     }
@@ -365,7 +383,7 @@ export function registerAccountRoutes(app, ctx) {
       return res.send([header, ...lines].join('\n'));
     }
     const payload = {
-      ...exportUserData(user),
+      ...(await exportUserData(user)),
       projects: await listProjectsForUser(user.id),
       scans,
       usage: await getUsage(user.id, currentPeriod()),
@@ -375,11 +393,42 @@ export function registerAccountRoutes(app, ctx) {
     return res.json(payload);
   }));
 
+  app.put('/api/account/email', asyncHandler(async (req, res) => {
+    const userId = requireCustomer(req, res);
+    if (!userId) return;
+    const password = String(req.body?.password || req.body?.currentPassword || '');
+    const nextEmail = req.body?.email || req.body?.newEmail;
+    try {
+      const started = await startEmailChange(userId, nextEmail, password);
+      if (!started) return res.status(401).json({ error: 'Sign in first.' });
+      const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(started.token)}`;
+      await sendAccountEmail({
+        kind: 'email-change',
+        to: started.pendingEmail,
+        subject: 'Confirm your new Us accessibility email',
+        text: `Confirm your new email address:\n${link}\nThis link expires in 48 hours.\n`,
+      });
+      await sendAccountEmail({
+        kind: 'email-change-notice',
+        to: started.previousEmail,
+        subject: 'Your Us accessibility email is changing',
+        text: 'Someone requested a change to the email on this account. If that was not you, reset your password. The current address stays active until the new one is confirmed.\n',
+      });
+      return res.json({ ok: true, pendingEmail: started.pendingEmail });
+    } catch (err) {
+      return res.status(Number(err.status) || 400).json({ error: err.message });
+    }
+  }));
+
   app.post('/api/account/delete', asyncHandler(async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
-    await deleteProjectsForUser(userId);
-    await deleteUser(userId);
+    const user = await getUserById(userId);
+    if (!user) return res.status(401).json({ error: 'Sign in first.' });
+    const password = String(req.body?.password || req.body?.currentPassword || '');
+    const ok = await verifyPassword(password, user.passwordHash);
+    if (!ok) return res.status(400).json({ error: 'Password is incorrect.' });
+    await deleteAccount(userId);
     clearSessionCookies(res, sameSiteFromEnv());
     return res.json({ ok: true });
   }));

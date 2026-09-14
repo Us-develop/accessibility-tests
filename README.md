@@ -34,7 +34,7 @@ The server defaults to `AUTH_ENABLED=true` and **requires** `APP_PASSWORD` (≥1
 AUTH_ENABLED=false npm start
 ```
 
-Staff sign in with `APP_USERNAME` / `APP_PASSWORD` (cookie session only — no HTTP Basic or `X-App-Password` headers). Customers sign up at `/signup` (email + hashed password, signed `wcag_sid` session, CSRF). Guest 1-page snapshots can attach to the new account (`/signup?guest=TOKEN`).
+Staff sign in with `APP_USERNAME` / `APP_PASSWORD` (cookie session only — no HTTP Basic or `X-App-Password` headers). Customers sign up at `/signup` (email + hashed password, signed `wcag_sid` session, CSRF). Guest 1-page snapshots can attach to the new account (`/signup?guest=TOKEN`). Account deletion (`POST /api/account/delete`) requires the current password, cancels Stripe, and removes that customer's runs, leads, consents (except a deletion tombstone), and guest bindings. `PUT /api/account/email` confirms the new address before switching. A retention job (`node scripts/retention.mjs`, every 6 hours from `web/run-server.mjs`) prunes guest tokens/runs, old leads, expired auth tokens, aged token lots, and `_queue` files.
 
 | Variable | Required in production | Purpose |
 | --- | --- | --- |
@@ -46,6 +46,11 @@ Staff sign in with `APP_USERNAME` / `APP_PASSWORD` (cookie session only — no H
 | `DEBUG_ENDPOINTS` | no (default off) | Set `true` to enable staff-only `/api/debug/*` routes. Default off; staff still get 404 when unset. |
 | `AUTH_COOKIE_SECURE` | yes (`true` on HTTPS) | Cookie `Secure` flag. Forced `true` when `NODE_ENV=production`; may be `false` only outside production. |
 | `TRUST_PROXY_HOPS` | no (default `1`) | Express `trust proxy` hop count (Caddy sits in front). |
+| `AUTH_EMAIL_VERIFY` | no (default `required` in production, `auto` otherwise) | `required` sends a verification link and grants the free scan token only after the address is confirmed. |
+| `TURNSTILE_SEND_IP` | no (default off) | When `true`, guest captcha verification includes the client IP. Default omits `remoteip`. |
+| `GUEST_IP_HASH_SALT` | no (falls back to `SESSION_SECRET`) | Salt for SHA-256 hashes of guest IPs stored in `_guest-tokens/*.json`. |
+| `LEAD_RETENTION_DAYS` | no (default `365`) | Retention job (`node scripts/retention.mjs`, every 6 hours in `web/run-server.mjs`) deletes leads older than this. |
+| `GUEST_RUN_RETENTION_DAYS` | no (default `30`) | Retention job deletes guest-owned runs, token files, and FTP copies older than this. |
 | `WCAG_DISABLE_RATE_LIMIT` | no | Set `1` only in automated tests. Do not set in production. |
 | `SCANNER_NO_SANDBOX` | no (default off) | Set `true` only if Chromium cannot start because the host forbids the process sandbox (user namespaces / seccomp). Production Docker runs as `USER node` so this should stay unset. |
 | `COMPANY_LEGAL_NAME` | yes | Legal name shown in the footer, privacy, terms, and Stripe pack invoice footer. Server exits in production if empty. |
