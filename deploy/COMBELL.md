@@ -66,6 +66,7 @@ Set these in Combell’s environment configuration (names may vary by UI). Never
 | `GUEST_RUN_RETENTION_DAYS` | Optional. Default `30`. |
 | `GUEST_IP_HASH_SALT` | Optional. Falls back to `SESSION_SECRET`. |
 | `SCAN_MAX_CONCURRENT` | Max simultaneous Playwright scans (default 3). |
+| `SCAN_JOB_TTL_MS` | Optional. Default `86400000` (24h). Queued jobs older than this are dropped; consumed customer tokens are refunded. |
 | `SCANNER_NO_SANDBOX` | Optional. Default off. Set `true` only if Chromium cannot start without `--no-sandbox` (host forbids user namespaces). Leave unset on Docker/`USER node`. |
 | `ANTHROPIC_API_KEY` | Optional. Writes a prose WCAG coverage analysis on the report Coverage page. The criterion matrix is always computed locally. |
 | `ANTHROPIC_MODEL` | Optional. Defaults to `claude-sonnet-4-5`. |

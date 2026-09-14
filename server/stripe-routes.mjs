@@ -24,7 +24,8 @@ function requireCustomer(req, res) {
 
 function fail(res, err) {
   const status = Number(err?.status) || 500;
-  return res.status(status).json({ error: err.message || 'Stripe request failed.' });
+  if (err?.message) console.error('[stripe]', err.message);
+  return res.status(status).json({ error: 'Stripe request failed.' });
 }
 
 export function registerStripeWebhook(app) {

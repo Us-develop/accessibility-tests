@@ -87,9 +87,15 @@ function listen(app) {
   });
 }
 
-function fakeSub({ userId, status = 'active', price = 'price_pro_month_test', customer = 'cus_test' }) {
+function fakeSub({
+  userId,
+  status = 'active',
+  price = 'price_pro_month_test',
+  customer = 'cus_test',
+  id = 'sub_test',
+}) {
   return {
-    id: 'sub_test',
+    id,
     status,
     customer,
     cancel_at_period_end: false,
@@ -98,6 +104,29 @@ function fakeSub({ userId, status = 'active', price = 'price_pro_month_test', cu
     current_period_end: 1_702_592_000,
     items: { data: [{ price: { id: price, recurring: { interval: price.includes('year') ? 'year' : 'month' } } }] },
   };
+}
+
+function waitFor(check, timeoutMs = 2000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = async () => {
+      try {
+        if (await check()) {
+          resolve();
+          return;
+        }
+      } catch (err) {
+        reject(err);
+        return;
+      }
+      if (Date.now() - started > timeoutMs) {
+        reject(new Error('timed out waiting for condition'));
+        return;
+      }
+      setTimeout(tick, 15);
+    };
+    tick();
+  });
 }
 
 describe('stripe catalog mapping', () => {
@@ -199,6 +228,95 @@ describe('stripe fulfillment', () => {
     assert.equal((await getTokenBalance(user.id)).tokens, 1);
   });
 
+  it('inserts one payment when the same webhook event is delivered twice', async () => {
+    const { user } = await createUser({
+      email: 'stripe-dup-evt@example.com',
+      password: 'longenough1',
+    });
+    await applyStripeSubscription(fakeSub({ userId: user.id, customer: 'cus_dup', id: 'sub_dup' }));
+    const invoice = {
+      id: 'in_dup',
+      amount_paid: 4900,
+      currency: 'eur',
+      customer: 'cus_dup',
+      subscription: 'sub_dup',
+      payment_intent: 'pi_dup_evt',
+      hosted_invoice_url: 'https://invoice.stripe.com/dup',
+      created: 1_700_000_100,
+      lines: { data: [{ description: 'Us accessibility Pro' }] },
+    };
+    const event = {
+      id: 'evt_dup_pay',
+      type: 'invoice.paid',
+      created: 1_700_000_100,
+      data: { object: invoice },
+    };
+    await handleStripeEvent(event);
+    await handleStripeEvent(event);
+    const payments = await listPayments(user.id);
+    assert.equal(payments.length, 1);
+    assert.equal(payments[0].stripePaymentIntentId, 'pi_dup_evt');
+  });
+
+  it('ignores an out-of-order subscription.deleted for an old id', async () => {
+    const { user } = await createUser({
+      email: 'stripe-old-sub@example.com',
+      password: 'longenough1',
+    });
+    await applyStripeSubscription(
+      fakeSub({ userId: user.id, id: 'sub_new_live', customer: 'cus_new_live' }),
+      { eventCreated: 200 }
+    );
+    const live = await getSubscription(user.id);
+    assert.equal(live.planId, 'pro');
+    await handleStripeEvent({
+      id: 'evt_old_deleted',
+      created: 50,
+      type: 'customer.subscription.deleted',
+      data: {
+        object: fakeSub({
+          userId: user.id,
+          id: 'sub_old_dead',
+          status: 'canceled',
+          customer: 'cus_old_dead',
+        }),
+      },
+    });
+    const still = await getSubscription(user.id);
+    assert.equal(still.planId, 'pro');
+    assert.equal(still.status, 'active');
+    assert.equal(still.stripeSubscriptionId, 'sub_new_live');
+  });
+
+  it('claws back a token pack when Stripe opens a dispute', async () => {
+    const { user } = await createUser({
+      email: 'stripe-dispute@example.com',
+      password: 'longenough1',
+    });
+    await fulfillCheckoutSession({
+      id: 'cs_dispute',
+      mode: 'payment',
+      payment_status: 'paid',
+      amount_total: 1000,
+      currency: 'eur',
+      created: Math.floor(Date.now() / 1000),
+      payment_intent: 'pi_dispute',
+      metadata: { userId: user.id, packId: 'pack_10', tokens: '10' },
+      client_reference_id: user.id,
+    });
+    assert.equal((await getTokenBalance(user.id)).tokens, 11);
+    await handleStripeEvent({
+      id: 'evt_dispute',
+      type: 'charge.dispute.created',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: { payment_intent: 'pi_dispute' } },
+    });
+    assert.equal((await getTokenBalance(user.id)).tokens, 1);
+    const payments = await listPayments(user.id);
+    const row = payments.find((p) => p.stripePaymentIntentId === 'pi_dispute');
+    assert.equal(row.status, 'disputed');
+  });
+
   it('does not fulfill an unpaid Pro checkout session', async () => {
     const { user } = await createUser({
       email: 'stripe-unpaid@example.com',
@@ -265,7 +383,9 @@ describe('stripe HTTP', () => {
   let origin;
 
   it('starts the app', async () => {
-    const app = createAccessibilityApp(repoRoot);
+    const app = createAccessibilityApp(repoRoot, {
+      lookup: async () => [{ address: '1.1.1.1', family: 4 }],
+    });
     const listening = await listen(app);
     server = listening.server;
     origin = listening.origin;
@@ -386,6 +506,74 @@ describe('stripe HTTP', () => {
     assert.equal(data.tokens.tokens, 10);
     const freebie = data.payments.find((row) => row.status === 'freebie');
     assert.equal(freebie.description, '0 tokens');
+  });
+
+  it('lets only one of two concurrent /api/run calls spend the last token', async () => {
+    setQueueExecutor(async () => {});
+    const jar = new CookieJar();
+    const signup = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'concurrent-run@example.com', password: 'longenough1', acceptTerms: true }),
+    });
+    jar.store(signup.headers);
+    const account = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
+    const before = await account.json();
+    assert.equal(before.tokens.tokens, 1);
+    const headers = {
+      'Content-Type': 'application/json',
+      cookie: jar.header(),
+      'X-CSRF-Token': jar.get('wcag_csrf'),
+    };
+    const [first, second] = await Promise.all([
+      fetch(`${origin}/api/run`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ urls: 'https://concurrent-a.example' }),
+      }),
+      fetch(`${origin}/api/run`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ urls: 'https://concurrent-b.example' }),
+      }),
+    ]);
+    const statuses = [first.status, second.status].sort((a, b) => a - b);
+    assert.deepEqual(statuses, [200, 429]);
+    await first.json();
+    await second.json();
+    const after = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
+    const data = await after.json();
+    assert.equal(data.tokens.tokens, 0);
+  });
+
+  it('refunds the token when a queued scan ends in error', async () => {
+    setQueueExecutor(async () => {
+      throw new Error('scan failed');
+    });
+    const jar = new CookieJar();
+    const signup = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'refund-error@example.com', password: 'longenough1', acceptTerms: true }),
+    });
+    jar.store(signup.headers);
+    const account = await fetch(`${origin}/api/account`, { headers: { cookie: jar.header() } });
+    const before = await account.json();
+    assert.equal(before.tokens.tokens, 1);
+    const run = await fetch(`${origin}/api/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: jar.header(),
+        'X-CSRF-Token': jar.get('wcag_csrf'),
+      },
+      body: JSON.stringify({ urls: 'https://refund-error.example' }),
+    });
+    const body = await run.json();
+    assert.equal(run.status, 200, body.error || '');
+    await waitFor(async () => (await getTokenBalance(before.user.id)).tokens === 1);
+    assert.equal((await getTokenBalance(before.user.id)).tokens, 1);
+    setQueueExecutor(async () => {});
   });
 
   it('closes the test server', async () => {

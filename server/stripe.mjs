@@ -7,6 +7,7 @@ import {
   getSubscriptionByStripeCustomer,
   getSubscriptionByStripeSubscription,
   insertPayment,
+  markPaymentStatus,
   upsertSubscription,
   updatePaymentInvoiceUrl,
 } from './billing.mjs';
@@ -20,6 +21,8 @@ import { clawbackTokensForPaymentIntent, findTokenLotByCheckoutSession, grantTok
 import { companyInvoiceFooter } from './company.mjs';
 import { mergeConsentContext } from './consents.mjs';
 import { WITHDRAWAL_WAIVER_TEXT } from './legal-versions.mjs';
+import { dbClaimStripeEvent, dbPool, withDbTransaction } from './db.js';
+import { readJsonStore, writeJsonStore } from './json-store.mjs';
 
 const STRIPE_API_VERSION = '2026-08-26.dahlia';
 
@@ -188,7 +191,7 @@ async function resolveUserId({ userId, customerId, subscriptionId }) {
   return bySub?.userId || null;
 }
 
-export async function applyStripeSubscription(stripeSub, { userId: knownUserId, customerId } = {}) {
+export async function applyStripeSubscription(stripeSub, { userId: knownUserId, customerId, eventCreated } = {}) {
   if (!stripeSub?.id) return null;
   const priceId = stripeSub.items?.data?.[0]?.price?.id || stripeSub.items?.data?.[0]?.price;
   const interval = proIntervalFromPrice(typeof priceId === 'string' ? priceId : '') ||
@@ -208,6 +211,16 @@ export async function applyStripeSubscription(stripeSub, { userId: knownUserId, 
     return null;
   }
   const existing = (await getSubscription(userId)) || (await ensureCustomerSubscription(userId));
+  const storedId = existing.stripeSubscriptionId || null;
+  const storedCanceled = !storedId || existing.status === 'canceled';
+  if (storedId && storedId !== stripeSub.id && !storedCanceled) {
+    return existing;
+  }
+  const incomingCreated = eventCreated == null ? null : Number(eventCreated);
+  const storedCreated = Number(existing.updatedFromEventCreated || 0);
+  if (incomingCreated != null && storedCreated > 0 && incomingCreated < storedCreated) {
+    return existing;
+  }
   const period = periodFromStripeSubscription(stripeSub);
   return upsertSubscription({
     id: existing.id,
@@ -220,6 +233,7 @@ export async function applyStripeSubscription(stripeSub, { userId: knownUserId, 
     billingInterval: canceled ? existing.billingInterval : interval,
     stripeSubscriptionId: canceled ? existing.stripeSubscriptionId : stripeSub.id,
     stripeCustomerId: customer || existing.stripeCustomerId,
+    updatedFromEventCreated: incomingCreated == null ? existing.updatedFromEventCreated : incomingCreated,
     createdAt: existing.createdAt,
   });
 }
@@ -232,14 +246,13 @@ export async function recordStripeInvoice(invoice) {
     typeof invoice.payment_intent === 'string'
       ? invoice.payment_intent
       : invoice.payment_intent?.id || invoice.id;
-  const existing = intentId ? await findPaymentByStripeIntent(intentId) : null;
-  if (existing) {
-    if (invoiceUrl && !existing.invoiceUrl) {
+  if (amount <= 0) {
+    const existing = intentId ? await findPaymentByStripeIntent(intentId) : null;
+    if (existing && invoiceUrl && !existing.invoiceUrl) {
       return (await updatePaymentInvoiceUrl(intentId, invoiceUrl)) || existing;
     }
     return existing;
   }
-  if (amount <= 0) return null;
   const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
   const subscriptionId =
     typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
@@ -249,7 +262,7 @@ export async function recordStripeInvoice(invoice) {
     subscriptionId,
   });
   if (!userId) return null;
-  return insertPayment({
+  const inserted = await insertPayment({
     id: randomBytes(10).toString('hex'),
     userId,
     amountCents: amount,
@@ -260,6 +273,10 @@ export async function recordStripeInvoice(invoice) {
     invoiceUrl,
     createdAt: unixToIso(invoice.created) || new Date().toISOString(),
   });
+  if (inserted && invoiceUrl && !inserted.invoiceUrl) {
+    return (await updatePaymentInvoiceUrl(intentId, invoiceUrl)) || inserted;
+  }
+  return inserted;
 }
 
 async function subscriptionFromSession(session) {
@@ -320,20 +337,18 @@ export async function fulfillPaymentSession(session) {
   });
   const invoiceUrl = await invoiceUrlFromSession(session);
   if (intentId) {
-    const already = await findPaymentByStripeIntent(intentId);
-    if (!already) {
-      await insertPayment({
-        id: randomBytes(10).toString('hex'),
-        userId,
-        amountCents: Number(session.amount_total || pack?.priceCents || 0),
-        currency: String(session.currency || 'eur').toLowerCase(),
-        status: 'paid',
-        description: pack?.name || 'Token pack',
-        stripePaymentIntentId: intentId,
-        invoiceUrl,
-        createdAt: unixToIso(session.created) || new Date().toISOString(),
-      });
-    } else if (invoiceUrl && !already.invoiceUrl) {
+    const paid = await insertPayment({
+      id: randomBytes(10).toString('hex'),
+      userId,
+      amountCents: Number(session.amount_total || pack?.priceCents || 0),
+      currency: String(session.currency || 'eur').toLowerCase(),
+      status: 'paid',
+      description: pack?.name || 'Token pack',
+      stripePaymentIntentId: intentId,
+      invoiceUrl,
+      createdAt: unixToIso(session.created) || new Date().toISOString(),
+    });
+    if (invoiceUrl && paid && !paid.invoiceUrl) {
       await updatePaymentInvoiceUrl(intentId, invoiceUrl);
     }
   }
@@ -341,7 +356,7 @@ export async function fulfillPaymentSession(session) {
   return lot;
 }
 
-export async function fulfillCheckoutSession(session) {
+export async function fulfillCheckoutSession(session, { eventCreated } = {}) {
   if (!session) return null;
   if (session.payment_status === 'unpaid') return null;
   if (session.mode === 'payment') return fulfillPaymentSession(session);
@@ -352,6 +367,7 @@ export async function fulfillCheckoutSession(session) {
   const result = await applyStripeSubscription(stripeSub, {
     userId: session.metadata?.userId || session.client_reference_id,
     customerId,
+    eventCreated,
   });
   await storeStripeConsentFromSession(session);
   return result;
@@ -363,18 +379,47 @@ function paymentIntentIdFromCharge(charge) {
   return charge.payment_intent?.id || null;
 }
 
-export async function handleStripeEvent(event) {
+function paymentIntentIdFromDispute(dispute) {
+  if (!dispute) return null;
+  if (typeof dispute.payment_intent === 'string') return dispute.payment_intent;
+  if (dispute.payment_intent?.id) return dispute.payment_intent.id;
+  if (typeof dispute.charge === 'string') return null;
+  return paymentIntentIdFromCharge(dispute.charge);
+}
+
+async function claimStripeEvent(id, type) {
+  if (!id) return true;
+  if (dbPool) return dbClaimStripeEvent(id, type);
+  const data = readJsonStore('stripe-events.json', { events: [] });
+  const events = Array.isArray(data.events) ? data.events : [];
+  if (events.some((row) => row.id === id)) return false;
+  events.push({ id, type: type || null, receivedAt: new Date().toISOString() });
+  writeJsonStore('stripe-events.json', { events });
+  return true;
+}
+
+async function clawbackCharge(object, paymentStatus) {
+  const intentId = paymentIntentIdFromCharge(object) || paymentIntentIdFromDispute(object);
+  if (!intentId) return;
+  await clawbackTokensForPaymentIntent(intentId);
+  if (paymentStatus) await markPaymentStatus(intentId, paymentStatus);
+}
+
+let jsonEventChain = Promise.resolve();
+
+async function dispatchStripeEvent(event) {
   const type = event?.type;
   const object = event?.data?.object;
+  const eventCreated = event?.created;
   switch (type) {
     case 'checkout.session.completed':
     case 'checkout.session.async_payment_succeeded':
-      await fulfillCheckoutSession(object);
+      await fulfillCheckoutSession(object, { eventCreated });
       return { ok: true, type };
     case 'customer.subscription.created':
     case 'customer.subscription.updated':
     case 'customer.subscription.deleted':
-      await applyStripeSubscription(object);
+      await applyStripeSubscription(object, { eventCreated });
       return { ok: true, type };
     case 'invoice.paid':
       await recordStripeInvoice(object);
@@ -384,20 +429,37 @@ export async function handleStripeEvent(event) {
       if (subId) {
         const local = await getSubscriptionByStripeSubscription(subId);
         if (local) {
-          await upsertSubscription({ ...local, status: 'past_due' });
+          await upsertSubscription({ ...local, status: 'past_due', updatedFromEventCreated: eventCreated });
         }
       }
       return { ok: true, type };
     }
     case 'charge.refunded':
-    case 'charge.refund.updated': {
-      const intentId = paymentIntentIdFromCharge(object);
-      if (intentId) await clawbackTokensForPaymentIntent(intentId);
+    case 'charge.refund.updated':
+      await clawbackCharge(object, 'refunded');
       return { ok: true, type };
-    }
+    case 'charge.dispute.created':
+      await clawbackCharge(object, 'disputed');
+      return { ok: true, type };
     default:
       return { ok: true, ignored: true, type };
   }
+}
+
+export async function handleStripeEvent(event) {
+  const run = () =>
+    withDbTransaction(async () => {
+      const claimed = await claimStripeEvent(event?.id, event?.type);
+      if (!claimed) return { ok: true, duplicate: true, type: event?.type };
+      return dispatchStripeEvent(event);
+    });
+  if (dbPool) return run();
+  const next = jsonEventChain.then(run, run);
+  jsonEventChain = next.then(
+    () => undefined,
+    () => undefined
+  );
+  return next;
 }
 
 async function attachEuVatIfPresent(stripe, customerId, user) {
@@ -422,8 +484,9 @@ export async function ensureStripeCustomer(user) {
         await attachEuVatIfPresent(stripe, customer.id, user);
         return customer.id;
       }
-    } catch {
-      /* create a replacement customer below */
+    } catch (err) {
+      const code = String(err?.code || err?.raw?.code || '');
+      if (code !== 'resource_missing') throw err;
     }
   }
   const country = isoCountry(user.country);

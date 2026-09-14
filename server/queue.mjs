@@ -5,6 +5,7 @@ import { parsePositiveIntEnv } from './guest.mjs';
 import { assertPublicHttpUrl } from './url-guard.mjs';
 
 const QUEUE_DIR = () => join(REPORTS_BASE, '_queue');
+const DEFAULT_JOB_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** @type {(job: object) => Promise<void> | void} */
 let executor = null;
@@ -161,9 +162,7 @@ function spawnJob(job) {
         job.status = 'error';
         job.error = 'blocked_target';
         writeJob(job);
-        if (typeof jobErrorHandler === 'function') {
-          jobErrorHandler(job);
-        }
+        notifyJobError(job);
         return;
       }
       await executor(job);
@@ -171,6 +170,7 @@ function spawnJob(job) {
       job.status = 'error';
       job.error = err?.message || String(err);
       writeJob(job);
+      notifyJobError(job);
     } finally {
       deleteJob(job.id);
       kickQueue();
@@ -180,6 +180,7 @@ function spawnJob(job) {
 }
 
 async function drainQueue() {
+  dropExpiredJobs();
   if (!executor) return;
   const max = parsePositiveIntEnv('SCAN_MAX_CONCURRENT', 3);
   while (true) {
@@ -202,5 +203,24 @@ export function recoverInterruptedJobs() {
       delete job.startedAt;
       writeJob(job);
     }
+  }
+}
+
+function notifyJobError(job) {
+  if (typeof jobErrorHandler === 'function') {
+    jobErrorHandler(job);
+  }
+}
+
+export function dropExpiredJobs(now = Date.now()) {
+  const ttl = parsePositiveIntEnv('SCAN_JOB_TTL_MS', DEFAULT_JOB_TTL_MS);
+  for (const job of listJobs()) {
+    const created = Date.parse(job.createdAt || '') || 0;
+    if (!created || now - created <= ttl) continue;
+    job.status = 'error';
+    job.error = 'queue_ttl';
+    writeJob(job);
+    notifyJobError(job);
+    deleteJob(job.id);
   }
 }

@@ -71,7 +71,7 @@ import { warnStripeTaxCodeIfUnset } from './stripe.mjs';
 import { assertCompanyIdentityForProduction } from './company.mjs';
 import { recordConsent } from './consents.mjs';
 import { LEGAL_PRIVACY_VERSION } from './legal-versions.mjs';
-import { assertCustomerCanScan, consumeScanEntitlement } from './billing.mjs';
+import { consumeAndQueueCustomerScan, refundScanEntitlement, rememberRunEntitlement } from './billing.mjs';
 import { MAX_PAGES_PER_CUSTOMER_RUN } from './plan-catalog.mjs';
 import {
   customerHasActiveScan,
@@ -290,6 +290,11 @@ function runStatePatch(domain, runId, patch) {
   dbUpsertRun(domain, runId, next).catch((err) => {
     console.error(`[run ${domain}/${runId}] DB state update failed:`, err.message);
   });
+  if (patch.status === 'error' && next.userId && next.userId !== 'staff') {
+    void refundScanEntitlement(runId).catch((err) => {
+      console.error(`[run ${domain}/${runId}] entitlement refund failed:`, err.message);
+    });
+  }
   void maybeSendRunEmail(domain, runId);
 }
 
@@ -732,6 +737,7 @@ export function createAccessibilityApp(repoRoot, options = {}) {
     runStatePatch(job.domain, job.runId, {
       status: 'error',
       error: job.error || 'blocked_target',
+      userId: job.userId || undefined,
     });
   });
   for (const job of listJobs()) {
@@ -1416,25 +1422,60 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
 
   const domain = domainKey;
   // 409 only when this owner already has a run in progress — shared domains do not block others.
-  const concurrent = findRunningRun(runStatus, domain, ownerForAccess(req.access));
-  if (concurrent) {
-    return res.status(409).json({
-      error: `A run for ${domain} is already in progress. Please wait for it to finish.`,
-    });
+  if (!customerUser) {
+    const concurrent = findRunningRun(runStatus, domain, ownerForAccess(req.access));
+    if (concurrent) {
+      return res.status(409).json({
+        error: `A run for ${domain} is already in progress. Please wait for it to finish.`,
+      });
+    }
   }
-  if (customerUser && customerHasActiveScan(runStatus, customerUser.id)) {
-    return res.status(409).json({
-      error: 'A scan is already running or waiting for your account. Please wait for it to finish.',
-    });
-  }
+
+  const runId = newRunId();
+  const key = runKey(domain, runId);
+  const guestToken = fullReport ? null : newGuestToken();
+  let scanEntitlement = null;
+
   if (customerUser) {
     try {
-      const gate = await assertCustomerCanScan(customerUser.id, {
-        pages: processedUrls,
-        domain,
-        guestFreebieUsed: guestFreebieClaimed(req),
-      });
-      req._scanGate = gate;
+      const reserved = await consumeAndQueueCustomerScan(
+        customerUser.id,
+        {
+          pages: processedUrls,
+          domain,
+          guestFreebieUsed: guestFreebieClaimed(req),
+          isActive: () =>
+            Boolean(findRunningRun(runStatus, domain, ownerForAccess(req.access))) ||
+            customerHasActiveScan(runStatus, customerUser.id),
+        },
+        async ({ entitlement }) => {
+          scanEntitlement = entitlement;
+          rememberRunEntitlement(runId, { ...entitlement, userId: customerUser.id });
+          await attachRunToUser(customerUser.id, domain, runId);
+          const queuedState = {
+            domain,
+            runId,
+            status: 'queued',
+            urls: processedUrls,
+            requestedUrls,
+            processedUrls,
+            truncated,
+            error: null,
+            notifyRequested: false,
+            notifyEmail: null,
+            tier: 'customer',
+            userId: customerUser.id,
+            guestToken: null,
+            entitlement,
+          };
+          await dbUpsertRun(domain, runId, {
+            ...queuedState,
+            statementMeta: {},
+          });
+          runStatus.set(key, queuedState);
+        }
+      );
+      scanEntitlement = reserved.entitlement;
     } catch (err) {
       const status = Number(err?.status) || 400;
       return res.status(status).json({
@@ -1444,69 +1485,71 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
       });
     }
   }
-  const runId = newRunId();
-  const key = runKey(domain, runId);
-  const guestToken = fullReport ? null : newGuestToken();
 
   const reportDir = runDirOf(domain, runId);
-  if (!existsSync(reportDir)) mkdirSync(reportDir, { recursive: true });
-
-  const statementMeta = staff ? parseStatementMeta(req.body || {}) : {};
   try {
-    writeFileSync(join(reportDir, 'statement-meta.json'), JSON.stringify(statementMeta, null, 2), 'utf8');
-  } catch (err) {
-    console.error('statement-meta write failed:', err.message);
-  }
+    if (!existsSync(reportDir)) mkdirSync(reportDir, { recursive: true });
+    const statementMeta = staff ? parseStatementMeta(req.body || {}) : {};
+    try {
+      writeFileSync(join(reportDir, 'statement-meta.json'), JSON.stringify(statementMeta, null, 2), 'utf8');
+    } catch (err) {
+      console.error('statement-meta write failed:', err.message);
+    }
 
-  if (customerUser) {
-    await attachRunToUser(customerUser.id, domain, runId);
-    await consumeScanEntitlement(customerUser.id, {
-      pages: processedUrls,
-      pagesFromTokens: req._scanGate?.pagesFromTokens || 0,
+    const initialState = {
+      domain,
+      runId,
+      status: 'queued',
+      urls: processedUrls,
+      requestedUrls,
+      processedUrls,
+      truncated,
+      error: null,
+      notifyRequested: !!(notifyOnComplete && notifyEmail),
+      notifyEmail: notifyOnComplete && notifyEmail ? notifyEmail : null,
+      tier: staff ? 'staff' : customerUser ? 'customer' : 'guest',
+      userId: customerUser?.id || (staff ? 'staff' : null),
+      guestToken,
+      guestIp: fullReport ? null : ip,
+      guestUrl: fullReport ? null : urls[0],
+      entitlement: scanEntitlement,
+    };
+    notificationAttempted.delete(key);
+    runStatus.set(key, initialState);
+    if (!fullReport) {
+      trackGuestRunStart(ip);
+      persistGuestToken(guestToken, { domain, runId, url: urls[0], ip });
+      markGuestFreeScan(req, res);
+    }
+    if (!customerUser) {
+      dbUpsertRun(domain, runId, { ...initialState, statementMeta }).catch((err) => {
+        console.error(`[run ${domain}/${runId}] DB initial write failed:`, err.message);
+      });
+    }
+
+    enqueueScanJob({
+      id: key,
+      domain,
+      runId,
+      urls,
+      processedUrls,
+      requestedUrls,
+      truncated,
+      reportDir,
+      userId: initialState.userId,
+      tier: initialState.tier,
+      guestIp: initialState.guestIp,
     });
+  } catch (err) {
+    if (customerUser) {
+      runStatePatch(domain, runId, {
+        status: 'error',
+        error: err?.message || String(err),
+        userId: customerUser.id,
+      });
+    }
+    throw err;
   }
-
-  const initialState = {
-    domain,
-    runId,
-    status: 'queued',
-    urls: processedUrls,
-    requestedUrls,
-    processedUrls,
-    truncated,
-    error: null,
-    notifyRequested: !!(notifyOnComplete && notifyEmail),
-    notifyEmail: notifyOnComplete && notifyEmail ? notifyEmail : null,
-    tier: staff ? 'staff' : customerUser ? 'customer' : 'guest',
-    userId: customerUser?.id || (staff ? 'staff' : null),
-    guestToken,
-    guestIp: fullReport ? null : ip,
-    guestUrl: fullReport ? null : urls[0],
-  };
-  notificationAttempted.delete(key);
-  runStatus.set(key, initialState);
-  if (!fullReport) {
-    trackGuestRunStart(ip);
-    persistGuestToken(guestToken, { domain, runId, url: urls[0], ip });
-    markGuestFreeScan(req, res);
-  }
-  dbUpsertRun(domain, runId, { ...initialState, statementMeta }).catch((err) => {
-    console.error(`[run ${domain}/${runId}] DB initial write failed:`, err.message);
-  });
-
-  enqueueScanJob({
-    id: key,
-    domain,
-    runId,
-    urls,
-    processedUrls,
-    requestedUrls,
-    truncated,
-    reportDir,
-    userId: initialState.userId,
-    tier: initialState.tier,
-    guestIp: initialState.guestIp,
-  });
 
   res.json({
     domain,

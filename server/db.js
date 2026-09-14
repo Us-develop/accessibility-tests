@@ -1,8 +1,12 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import pg from 'pg';
 import { readJsonStore } from './json-store.mjs';
 import { DEFAULT_PLANS } from './plan-catalog.mjs';
 
 const { Pool } = pg;
+const txAls = new AsyncLocalStorage();
+/** @type {Map<string, Promise<unknown>>} */
+const jsonUserLocks = new Map();
 
 function parseBooleanEnv(name, defaultValue = false) {
   const raw = process.env[name];
@@ -23,6 +27,78 @@ export const dbPool = DATABASE_URL
     })
   : null;
 
+function txQuery(text, values) {
+  const client = txAls.getStore() || dbPool;
+  if (!client) return Promise.resolve({ rows: [], rowCount: 0 });
+  return client.query(text, values);
+}
+
+export function dbClient() {
+  return txAls.getStore() || dbPool;
+}
+
+/**
+ * Run `fn` in a single Postgres transaction. Nested calls reuse the open transaction.
+ * When DATABASE_URL is unset, `fn` runs with no client (JSON-store path).
+ */
+export async function withDbTransaction(fn) {
+  if (!dbPool) return fn();
+  const existing = txAls.getStore();
+  if (existing) return fn();
+  const client = await dbPool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await txAls.run(client, fn);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      /* ignore rollback errors */
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Serialize per-user ledger work. Postgres: transaction + `pg_advisory_xact_lock(hashtext(user_id))`.
+ * JSON-store tests: in-process mutex.
+ */
+export async function withUserLedgerLock(userId, fn) {
+  const key = String(userId || '');
+  if (dbPool && key) {
+    return withDbTransaction(async () => {
+      await txQuery('SELECT pg_advisory_xact_lock(hashtext($1::text))', [key]);
+      return fn();
+    });
+  }
+  const prev = jsonUserLocks.get(key) || Promise.resolve();
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  jsonUserLocks.set(
+    key,
+    prev.then(
+      () => held,
+      () => held
+    )
+  );
+  try {
+    await prev;
+  } catch {
+    /* previous holder failed; lock still released in its finally */
+  }
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
 /**
  * Schema: one row per (domain, run_id). We migrate from the legacy single-row-per-domain
  * shape (PRIMARY KEY id) to a composite key while keeping the original `id` column for
@@ -30,7 +106,7 @@ export const dbPool = DATABASE_URL
  */
 export async function initDb() {
   if (!dbPool) return;
-  await dbPool.query(`
+  await txQuery(`
     CREATE TABLE IF NOT EXISTS runs (
       id TEXT NOT NULL,
       run_id TEXT,
@@ -50,9 +126,9 @@ export async function initDb() {
     )
   `);
   // Add run_id if upgrading an existing legacy table.
-  await dbPool.query(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS run_id TEXT`);
+  await txQuery(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS run_id TEXT`);
   // Drop the old primary key (id) if it still exists.
-  await dbPool.query(`
+  await txQuery(`
     DO $$ BEGIN
       IF EXISTS (
         SELECT 1 FROM pg_constraint WHERE conname = 'runs_pkey'
@@ -62,7 +138,7 @@ export async function initDb() {
     END $$;
   `);
   // Back-fill run_id for legacy rows so the unique key is satisfiable.
-  await dbPool.query(`
+  await txQuery(`
     UPDATE runs
     SET run_id = COALESCE(
       run_id,
@@ -70,8 +146,8 @@ export async function initDb() {
     )
     WHERE run_id IS NULL
   `);
-  await dbPool.query(`ALTER TABLE runs ALTER COLUMN run_id SET NOT NULL`);
-  await dbPool.query(`
+  await txQuery(`ALTER TABLE runs ALTER COLUMN run_id SET NOT NULL`);
+  await txQuery(`
     DO $$ BEGIN
       IF NOT EXISTS (
         SELECT 1 FROM pg_constraint WHERE conname = 'runs_domain_run_pkey'
@@ -80,15 +156,15 @@ export async function initDb() {
       END IF;
     END $$;
   `);
-  await dbPool.query(
+  await txQuery(
     `CREATE INDEX IF NOT EXISTS runs_id_updated_idx ON runs (id, updated_at DESC)`
   );
-  await dbPool.query(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS tier TEXT`);
-  await dbPool.query(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS guest_token TEXT`);
-  await dbPool.query(
+  await txQuery(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS tier TEXT`);
+  await txQuery(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS guest_token TEXT`);
+  await txQuery(
     `CREATE UNIQUE INDEX IF NOT EXISTS runs_guest_token_uidx ON runs (guest_token) WHERE guest_token IS NOT NULL`
   );
-  await dbPool.query(`
+  await txQuery(`
     CREATE TABLE IF NOT EXISTS leads (
       id BIGSERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -106,15 +182,15 @@ export async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await dbPool.query(`CREATE INDEX IF NOT EXISTS leads_created_idx ON leads (created_at DESC)`);
+  await txQuery(`CREATE INDEX IF NOT EXISTS leads_created_idx ON leads (created_at DESC)`);
 
-  await dbPool.query(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS user_id TEXT`);
-  await dbPool.query(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
-  await dbPool.query(
+  await txQuery(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS user_id TEXT`);
+  await txQuery(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+  await txQuery(
     `CREATE INDEX IF NOT EXISTS runs_user_created_idx ON runs (user_id, created_at DESC)`
   );
 
-  await dbPool.query(`
+  await txQuery(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
@@ -143,20 +219,20 @@ export async function initDb() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1`);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email TEXT`);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email_token TEXT`);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email_expires_at TIMESTAMPTZ`);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT`);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT`);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vat_number TEXT`);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS address_line1 TEXT`);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS address_line2 TEXT`);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT`);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS postal_code TEXT`);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT`);
-  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS customer_type TEXT NOT NULL DEFAULT 'consumer'`);
-  await dbPool.query(`
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email TEXT`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email_token TEXT`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email_expires_at TIMESTAMPTZ`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vat_number TEXT`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS address_line1 TEXT`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS address_line2 TEXT`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS postal_code TEXT`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS customer_type TEXT NOT NULL DEFAULT 'consumer'`);
+  await txQuery(`
     DO $$ BEGIN
       ALTER TABLE users ADD CONSTRAINT users_customer_type_check
         CHECK (customer_type IN ('consumer', 'business'));
@@ -164,7 +240,7 @@ export async function initDb() {
     END $$;
   `);
 
-  await dbPool.query(`
+  await txQuery(`
     CREATE TABLE IF NOT EXISTS consents (
       id SERIAL PRIMARY KEY,
       user_id TEXT NULL,
@@ -177,18 +253,18 @@ export async function initDb() {
       context JSONB
     )
   `);
-  await dbPool.query(`ALTER TABLE consents DROP CONSTRAINT IF EXISTS consents_kind_check`);
-  await dbPool.query(`
+  await txQuery(`ALTER TABLE consents DROP CONSTRAINT IF EXISTS consents_kind_check`);
+  await txQuery(`
     DO $$ BEGIN
       ALTER TABLE consents ADD CONSTRAINT consents_kind_check
         CHECK (kind IN ('terms', 'privacy', 'withdrawal_waiver', 'lead_privacy', 'deletion'));
     EXCEPTION WHEN duplicate_object THEN NULL;
     END $$;
   `);
-  await dbPool.query(`CREATE INDEX IF NOT EXISTS consents_user_idx ON consents (user_id, accepted_at DESC)`);
-  await dbPool.query(`CREATE INDEX IF NOT EXISTS consents_email_idx ON consents (email, accepted_at DESC)`);
+  await txQuery(`CREATE INDEX IF NOT EXISTS consents_user_idx ON consents (user_id, accepted_at DESC)`);
+  await txQuery(`CREATE INDEX IF NOT EXISTS consents_email_idx ON consents (email, accepted_at DESC)`);
 
-  await dbPool.query(`
+  await txQuery(`
     CREATE TABLE IF NOT EXISTS plans (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -203,11 +279,11 @@ export async function initDb() {
       active BOOLEAN DEFAULT TRUE
     )
   `);
-  await dbPool.query(`ALTER TABLE plans ADD COLUMN IF NOT EXISTS max_pages_per_month INT`);
-  await dbPool.query(`ALTER TABLE plans ADD COLUMN IF NOT EXISTS yearly_price_cents INT`);
-  await dbPool.query(`ALTER TABLE plans ADD COLUMN IF NOT EXISTS billing_interval TEXT`);
+  await txQuery(`ALTER TABLE plans ADD COLUMN IF NOT EXISTS max_pages_per_month INT`);
+  await txQuery(`ALTER TABLE plans ADD COLUMN IF NOT EXISTS yearly_price_cents INT`);
+  await txQuery(`ALTER TABLE plans ADD COLUMN IF NOT EXISTS billing_interval TEXT`);
 
-  await dbPool.query(`
+  await txQuery(`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -218,9 +294,9 @@ export async function initDb() {
       UNIQUE (user_id, domain)
     )
   `);
-  await dbPool.query(`CREATE INDEX IF NOT EXISTS projects_user_idx ON projects (user_id)`);
+  await txQuery(`CREATE INDEX IF NOT EXISTS projects_user_idx ON projects (user_id)`);
 
-  await dbPool.query(`
+  await txQuery(`
     CREATE TABLE IF NOT EXISTS subscriptions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -236,15 +312,15 @@ export async function initDb() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await dbPool.query(
+  await txQuery(
     `CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_user_uidx ON subscriptions (user_id)`
   );
-  await dbPool.query(
+  await txQuery(
     `ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS cancel_at_period_end BOOLEAN DEFAULT FALSE`
   );
-  await dbPool.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billing_interval TEXT`);
+  await txQuery(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billing_interval TEXT`);
 
-  await dbPool.query(`
+  await txQuery(`
     CREATE TABLE IF NOT EXISTS usage (
       id BIGSERIAL PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -255,7 +331,7 @@ export async function initDb() {
     )
   `);
 
-  await dbPool.query(`
+  await txQuery(`
     CREATE TABLE IF NOT EXISTS payments (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -268,11 +344,11 @@ export async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await dbPool.query(
+  await txQuery(
     `CREATE INDEX IF NOT EXISTS payments_user_created_idx ON payments (user_id, created_at DESC)`
   );
 
-  await dbPool.query(`
+  await txQuery(`
     CREATE TABLE IF NOT EXISTS token_lots (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -286,16 +362,49 @@ export async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await dbPool.query(`CREATE INDEX IF NOT EXISTS token_lots_user_exp_idx ON token_lots (user_id, expires_at)`);
-  await dbPool.query(
+  await txQuery(`CREATE INDEX IF NOT EXISTS token_lots_user_exp_idx ON token_lots (user_id, expires_at)`);
+  await txQuery(
     `CREATE UNIQUE INDEX IF NOT EXISTS token_lots_checkout_uidx
        ON token_lots (stripe_checkout_session_id)
      WHERE stripe_checkout_session_id IS NOT NULL`
   );
-  await dbPool.query(
+  await txQuery(
     `CREATE UNIQUE INDEX IF NOT EXISTS token_lots_one_freebie_per_user
        ON token_lots (user_id)
      WHERE pack_id = 'freebie'`
+  );
+
+  await txQuery(`
+    CREATE TABLE IF NOT EXISTS stripe_events (
+      id TEXT PRIMARY KEY,
+      type TEXT,
+      received_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await txQuery(
+    `CREATE UNIQUE INDEX IF NOT EXISTS payments_stripe_intent_uidx
+       ON payments (stripe_payment_intent_id)
+     WHERE stripe_payment_intent_id IS NOT NULL`
+  );
+  await txQuery(
+    `CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_stripe_subscription_uidx
+       ON subscriptions (stripe_subscription_id)
+     WHERE stripe_subscription_id IS NOT NULL`
+  );
+  await txQuery(
+    `CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_stripe_customer_uidx
+       ON subscriptions (stripe_customer_id)
+     WHERE stripe_customer_id IS NOT NULL`
+  );
+  await txQuery(
+    `ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS updated_from_event_created BIGINT`
+  );
+  await txQuery(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ`);
+  await txQuery(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS entitlement_json JSONB`);
+  await txQuery(
+    `CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active_per_user_uidx
+       ON runs (user_id)
+     WHERE status IN ('queued', 'running') AND user_id IS NOT NULL`
   );
 
   await seedDefaultPlans();
@@ -309,16 +418,16 @@ export async function initDb() {
 export async function dbUpsertRun(domain, runId, patch = {}) {
   if (!dbPool || !domain || !runId) return;
   const status = patch.status || 'running';
-  await dbPool.query(
+  await txQuery(
     `
       INSERT INTO runs (
         id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
         notify_requested, notify_email, statement_meta_json, result_json, manual_progress_json,
-        tier, guest_token, user_id
+        tier, guest_token, user_id, entitlement_json, refunded_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11::jsonb, $12::jsonb, $13::jsonb,
-        $14, $15, $16
+        $14, $15, $16, $17::jsonb, $18
       )
       ON CONFLICT (id, run_id) DO UPDATE SET
         status = COALESCE(EXCLUDED.status, runs.status),
@@ -335,6 +444,8 @@ export async function dbUpsertRun(domain, runId, patch = {}) {
         tier = COALESCE(EXCLUDED.tier, runs.tier),
         guest_token = COALESCE(EXCLUDED.guest_token, runs.guest_token),
         user_id = COALESCE(EXCLUDED.user_id, runs.user_id),
+        entitlement_json = COALESCE(EXCLUDED.entitlement_json, runs.entitlement_json),
+        refunded_at = COALESCE(EXCLUDED.refunded_at, runs.refunded_at),
         updated_at = NOW()
     `,
     [
@@ -354,6 +465,8 @@ export async function dbUpsertRun(domain, runId, patch = {}) {
       patch.tier ?? null,
       patch.guestToken ?? null,
       patch.userId ?? null,
+      patch.entitlement ? JSON.stringify(patch.entitlement) : null,
+      patch.refundedAt || null,
     ]
   );
 }
@@ -378,13 +491,15 @@ function mapRunRow(row) {
     tier: row.tier || null,
     guestToken: row.guest_token || null,
     userId: row.user_id || null,
+    entitlement: row.entitlement_json && typeof row.entitlement_json === 'object' ? row.entitlement_json : null,
+    refundedAt: isoOrNull(row.refunded_at),
   };
 }
 
 /** Fetch one specific run. */
 export async function dbGetRun(domain, runId) {
   if (!dbPool || !domain || !runId) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
             notify_requested, notify_email, result_json, manual_progress_json, updated_at,
             tier, guest_token, user_id
@@ -397,7 +512,7 @@ export async function dbGetRun(domain, runId) {
 /** Fetch the latest run for a domain (by updated_at). */
 export async function dbGetLatestRun(domain) {
   if (!dbPool || !domain) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
             notify_requested, notify_email, result_json, manual_progress_json, updated_at,
             tier, guest_token, user_id
@@ -413,7 +528,7 @@ export async function dbGetLatestRun(domain) {
 /** List all runs for a domain newest first. */
 export async function dbListRunsForDomain(domain, limit = 100) {
   if (!dbPool || !domain) return [];
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
             notify_requested, notify_email, result_json, manual_progress_json, updated_at,
             tier, guest_token, user_id
@@ -429,7 +544,7 @@ export async function dbListRunsForDomain(domain, limit = 100) {
 /** Look up a guest teaser run by unguessable token. */
 export async function dbGetRunByGuestToken(token) {
   if (!dbPool || !token) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
             notify_requested, notify_email, result_json, manual_progress_json, updated_at,
             tier, guest_token, user_id
@@ -461,7 +576,7 @@ function mapLeadRow(row) {
 
 export async function dbInsertLead(row) {
   if (!dbPool) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `INSERT INTO leads (
        name, company, email, phone, message, scanned_url, domain, run_token, score, source, cta, emailed
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
@@ -486,7 +601,7 @@ export async function dbInsertLead(row) {
 
 export async function dbListLeads(limit = 200) {
   if (!dbPool) return [];
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, name, company, email, phone, message, scanned_url, domain, run_token, score, source, cta, emailed, created_at
        FROM leads
       ORDER BY created_at DESC
@@ -515,7 +630,7 @@ function mapConsentRow(row) {
 
 export async function dbInsertConsent(row) {
   if (!dbPool) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `INSERT INTO consents (user_id, email, kind, version, accepted_at, ip_hash, user_agent, context)
      VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()), $6, $7, $8::jsonb)
      RETURNING ${CONSENT_COLUMNS}`,
@@ -535,7 +650,7 @@ export async function dbInsertConsent(row) {
 
 export async function dbGetConsent(id) {
   if (!dbPool || id == null) return null;
-  const { rows } = await dbPool.query(`SELECT ${CONSENT_COLUMNS} FROM consents WHERE id = $1 LIMIT 1`, [id]);
+  const { rows } = await txQuery(`SELECT ${CONSENT_COLUMNS} FROM consents WHERE id = $1 LIMIT 1`, [id]);
   return mapConsentRow(rows[0]);
 }
 
@@ -556,7 +671,7 @@ export async function dbListConsents({ userId, email, kind } = {}) {
     clauses.push(`kind = $${params.length}`);
   }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT ${CONSENT_COLUMNS} FROM consents ${where} ORDER BY accepted_at DESC, id DESC`,
     params
   );
@@ -565,7 +680,7 @@ export async function dbListConsents({ userId, email, kind } = {}) {
 
 export async function dbMergeConsentContext(id, patch) {
   if (!dbPool || id == null) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `UPDATE consents
         SET context = COALESCE(context, '{}'::jsonb) || $2::jsonb
       WHERE id = $1
@@ -577,7 +692,7 @@ export async function dbMergeConsentContext(id, patch) {
 
 export async function dbUpdatePaymentInvoiceUrl(intentId, invoiceUrl) {
   if (!dbPool || !intentId || !invoiceUrl) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `UPDATE payments
         SET invoice_url = $2
       WHERE stripe_payment_intent_id = $1 AND (invoice_url IS NULL OR invoice_url = '')
@@ -631,20 +746,20 @@ const USER_COLUMNS = `id, email, name, role, password_hash, email_verified, veri
 
 export async function dbGetUserById(id) {
   if (!dbPool || !id) return null;
-  const { rows } = await dbPool.query(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1 LIMIT 1`, [id]);
+  const { rows } = await txQuery(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1 LIMIT 1`, [id]);
   return mapUserRow(rows[0]);
 }
 
 export async function dbGetUserByEmail(email) {
   if (!dbPool || !email) return null;
   const needle = String(email).trim().toLowerCase();
-  const { rows } = await dbPool.query(`SELECT ${USER_COLUMNS} FROM users WHERE email = $1 LIMIT 1`, [needle]);
+  const { rows } = await txQuery(`SELECT ${USER_COLUMNS} FROM users WHERE email = $1 LIMIT 1`, [needle]);
   return mapUserRow(rows[0]);
 }
 
 export async function dbUpsertUser(user) {
   if (!dbPool || !user?.id) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `
       INSERT INTO users (
         id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
@@ -715,7 +830,7 @@ export async function dbUpsertUser(user) {
 
 export async function dbDeleteUser(id) {
   if (!dbPool || !id) return;
-  await dbPool.query(`DELETE FROM users WHERE id = $1`, [id]);
+  await txQuery(`DELETE FROM users WHERE id = $1`, [id]);
 }
 
 function mapProjectRow(row) {
@@ -733,7 +848,7 @@ function mapProjectRow(row) {
 
 export async function dbUpsertProject(project) {
   if (!dbPool || !project?.id || !project.userId || !project.domain) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `
       INSERT INTO projects (id, user_id, domain, name, created_at, updated_at)
       VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()), NOW())
@@ -757,12 +872,12 @@ export async function dbUpsertProject(project) {
 
 export async function dbListProjectsForUser(userId) {
   if (!dbPool || !userId) return [];
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, user_id, domain, name, created_at, updated_at FROM projects WHERE user_id = $1 ORDER BY updated_at DESC`,
     [userId]
   );
   const projects = rows.map(mapProjectRow);
-  const runRows = await dbPool.query(
+  const runRows = await txQuery(
     `SELECT id AS domain, run_id FROM runs WHERE user_id = $1 ORDER BY updated_at DESC`,
     [userId]
   );
@@ -776,13 +891,13 @@ export async function dbListProjectsForUser(userId) {
 
 export async function dbFindProjectByDomain(userId, domain) {
   if (!dbPool || !userId || !domain) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, user_id, domain, name, created_at, updated_at FROM projects WHERE user_id = $1 AND domain = $2 LIMIT 1`,
     [userId, String(domain).toLowerCase()]
   );
   const project = mapProjectRow(rows[0]);
   if (!project) return null;
-  const runRows = await dbPool.query(
+  const runRows = await txQuery(
     `SELECT run_id FROM runs WHERE user_id = $1 AND id = $2 ORDER BY updated_at DESC`,
     [userId, project.domain]
   );
@@ -792,7 +907,7 @@ export async function dbFindProjectByDomain(userId, domain) {
 
 export async function dbGetProject(id) {
   if (!dbPool || !id) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, user_id, domain, name, created_at, updated_at FROM projects WHERE id = $1 LIMIT 1`,
     [id]
   );
@@ -801,12 +916,12 @@ export async function dbGetProject(id) {
 
 export async function dbDeleteProjectsForUser(userId) {
   if (!dbPool || !userId) return;
-  await dbPool.query(`DELETE FROM projects WHERE user_id = $1`, [userId]);
+  await txQuery(`DELETE FROM projects WHERE user_id = $1`, [userId]);
 }
 
 export async function dbSetRunUserId(domain, runId, userId) {
   if (!dbPool || !domain || !runId || !userId) return;
-  await dbPool.query(
+  await txQuery(
     `UPDATE runs SET user_id = $3 WHERE id = $1 AND run_id = $2 AND user_id IS NULL`,
     [domain, runId, userId]
   );
@@ -814,7 +929,8 @@ export async function dbSetRunUserId(domain, runId, userId) {
 
 const PLAN_SELECT = `id, name, max_pages_per_scan, max_scans_per_month, max_pages_per_month, max_projects, features, price_cents, yearly_price_cents, billing_interval, active`;
 const SUB_SELECT = `id, user_id, plan_id, status, current_period_start, current_period_end,
-            stripe_subscription_id, stripe_customer_id, cancel_at_period_end, billing_interval, created_at, updated_at`;
+            stripe_subscription_id, stripe_customer_id, cancel_at_period_end, billing_interval,
+            updated_from_event_created, created_at, updated_at`;
 
 function mapPlanRow(row) {
   if (!row) return null;
@@ -835,13 +951,13 @@ function mapPlanRow(row) {
 
 export async function dbGetPlan(id) {
   if (!dbPool || !id) return null;
-  const { rows } = await dbPool.query(`SELECT ${PLAN_SELECT} FROM plans WHERE id = $1 LIMIT 1`, [id]);
+  const { rows } = await txQuery(`SELECT ${PLAN_SELECT} FROM plans WHERE id = $1 LIMIT 1`, [id]);
   return mapPlanRow(rows[0]);
 }
 
 export async function dbListPlans() {
   if (!dbPool) return [];
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT ${PLAN_SELECT} FROM plans WHERE active = TRUE ORDER BY price_cents ASC`
   );
   return rows.map(mapPlanRow);
@@ -849,7 +965,7 @@ export async function dbListPlans() {
 
 export async function dbUpsertPlan(plan) {
   if (!dbPool || !plan?.id) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `
       INSERT INTO plans (
         id, name, max_pages_per_scan, max_scans_per_month, max_pages_per_month, max_projects, features,
@@ -898,6 +1014,8 @@ function mapSubscriptionRow(row) {
     stripeCustomerId: row.stripe_customer_id || null,
     cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
     billingInterval: row.billing_interval || null,
+    updatedFromEventCreated:
+      row.updated_from_event_created == null ? null : Number(row.updated_from_event_created),
     createdAt: isoOrNull(row.created_at),
     updatedAt: isoOrNull(row.updated_at),
   };
@@ -905,7 +1023,7 @@ function mapSubscriptionRow(row) {
 
 export async function dbGetSubscription(userId) {
   if (!dbPool || !userId) return null;
-  const { rows } = await dbPool.query(`SELECT ${SUB_SELECT} FROM subscriptions WHERE user_id = $1 LIMIT 1`, [
+  const { rows } = await txQuery(`SELECT ${SUB_SELECT} FROM subscriptions WHERE user_id = $1 LIMIT 1`, [
     userId,
   ]);
   return mapSubscriptionRow(rows[0]);
@@ -913,7 +1031,7 @@ export async function dbGetSubscription(userId) {
 
 export async function dbGetSubscriptionByStripeCustomer(customerId) {
   if (!dbPool || !customerId) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT ${SUB_SELECT} FROM subscriptions WHERE stripe_customer_id = $1 LIMIT 1`,
     [customerId]
   );
@@ -922,7 +1040,7 @@ export async function dbGetSubscriptionByStripeCustomer(customerId) {
 
 export async function dbGetSubscriptionByStripeSubscription(subscriptionId) {
   if (!dbPool || !subscriptionId) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT ${SUB_SELECT} FROM subscriptions WHERE stripe_subscription_id = $1 LIMIT 1`,
     [subscriptionId]
   );
@@ -931,13 +1049,13 @@ export async function dbGetSubscriptionByStripeSubscription(subscriptionId) {
 
 export async function dbUpsertSubscription(sub) {
   if (!dbPool || !sub?.id || !sub.userId) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `
       INSERT INTO subscriptions (
         id, user_id, plan_id, status, current_period_start, current_period_end,
         stripe_subscription_id, stripe_customer_id, cancel_at_period_end, billing_interval,
-        created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11::timestamptz, NOW()), NOW())
+        updated_from_event_created, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12::timestamptz, NOW()), NOW())
       ON CONFLICT (user_id) DO UPDATE SET
         plan_id = EXCLUDED.plan_id,
         status = EXCLUDED.status,
@@ -947,6 +1065,7 @@ export async function dbUpsertSubscription(sub) {
         stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, subscriptions.stripe_customer_id),
         cancel_at_period_end = EXCLUDED.cancel_at_period_end,
         billing_interval = COALESCE(EXCLUDED.billing_interval, subscriptions.billing_interval),
+        updated_from_event_created = COALESCE(EXCLUDED.updated_from_event_created, subscriptions.updated_from_event_created),
         updated_at = NOW()
       RETURNING ${SUB_SELECT}
     `,
@@ -961,6 +1080,7 @@ export async function dbUpsertSubscription(sub) {
       sub.stripeCustomerId || null,
       Boolean(sub.cancelAtPeriodEnd),
       sub.billingInterval || null,
+      sub.updatedFromEventCreated == null ? null : Number(sub.updatedFromEventCreated),
       sub.createdAt || null,
     ]
   );
@@ -979,7 +1099,7 @@ function mapUsageRow(row) {
 
 export async function dbGetUsage(userId, period) {
   if (!dbPool || !userId || !period) return { userId, period, scansUsed: 0, pagesScanned: 0 };
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT user_id, period, scans_used, pages_scanned FROM usage WHERE user_id = $1 AND period = $2 LIMIT 1`,
     [userId, period]
   );
@@ -989,7 +1109,7 @@ export async function dbGetUsage(userId, period) {
 
 export async function dbIncrementUsage(userId, period, scans = 1, pages = 0) {
   if (!dbPool || !userId || !period) return dbGetUsage(userId, period);
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `
       INSERT INTO usage (user_id, period, scans_used, pages_scanned)
       VALUES ($1, $2, $3, $4)
@@ -1020,11 +1140,12 @@ function mapPaymentRow(row) {
 
 export async function dbInsertPayment(payment) {
   if (!dbPool || !payment?.id || !payment.userId) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `
       INSERT INTO payments (
         id, user_id, amount_cents, currency, status, description, stripe_payment_intent_id, invoice_url, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::timestamptz, NOW()))
+      ON CONFLICT (stripe_payment_intent_id) WHERE stripe_payment_intent_id IS NOT NULL DO NOTHING
       RETURNING id, user_id, amount_cents, currency, status, description, stripe_payment_intent_id, invoice_url, created_at
     `,
     [
@@ -1039,12 +1160,14 @@ export async function dbInsertPayment(payment) {
       payment.createdAt || null,
     ]
   );
-  return mapPaymentRow(rows[0]);
+  if (rows[0]) return mapPaymentRow(rows[0]);
+  if (payment.stripePaymentIntentId) return dbFindPaymentByStripeIntent(payment.stripePaymentIntentId);
+  return null;
 }
 
 export async function dbFindPaymentByStripeIntent(intentId) {
   if (!dbPool || !intentId) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, user_id, amount_cents, currency, status, description, stripe_payment_intent_id, invoice_url, created_at
        FROM payments WHERE stripe_payment_intent_id = $1 LIMIT 1`,
     [intentId]
@@ -1054,7 +1177,7 @@ export async function dbFindPaymentByStripeIntent(intentId) {
 
 export async function dbListPayments(userId, limit = 50) {
   if (!dbPool || !userId) return [];
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, user_id, amount_cents, currency, status, description, stripe_payment_intent_id, invoice_url, created_at
        FROM payments WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
     [userId, limit]
@@ -1080,7 +1203,7 @@ function mapTokenLotRow(row) {
 
 export async function dbListTokenLots(userId) {
   if (!dbPool || !userId) return [];
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
             stripe_checkout_session_id, stripe_payment_intent_id, created_at
        FROM token_lots
@@ -1093,7 +1216,7 @@ export async function dbListTokenLots(userId) {
 
 export async function dbGetTokenLotByCheckoutSession(sessionId) {
   if (!dbPool || !sessionId) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
             stripe_checkout_session_id, stripe_payment_intent_id, created_at
        FROM token_lots WHERE stripe_checkout_session_id = $1 LIMIT 1`,
@@ -1104,7 +1227,7 @@ export async function dbGetTokenLotByCheckoutSession(sessionId) {
 
 export async function dbInsertTokenLot(lot) {
   if (!dbPool || !lot?.id || !lot.userId) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `
       INSERT INTO token_lots (
         id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
@@ -1133,7 +1256,7 @@ export async function dbInsertTokenLot(lot) {
 
 export async function dbSetTokenLotRemaining(lotId, remaining) {
   if (!dbPool || !lotId) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `UPDATE token_lots SET tokens_remaining = $2
       WHERE id = $1
       RETURNING id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
@@ -1144,12 +1267,14 @@ export async function dbSetTokenLotRemaining(lotId, remaining) {
 }
 
 export async function dbConsumeTokens(userId, amount) {
-  if (!dbPool || !userId) return { consumed: 0 };
+  if (!dbPool || !userId) return { consumed: 0, lots: [] };
   const needed = Number(amount) || 0;
-  if (needed <= 0) return { consumed: 0 };
-  const client = await dbPool.connect();
+  if (needed <= 0) return { consumed: 0, lots: [] };
+  const existing = txAls.getStore();
+  const client = existing || (await dbPool.connect());
+  const own = !existing;
   try {
-    await client.query('BEGIN');
+    if (own) await client.query('BEGIN');
     const { rows } = await client.query(
       `SELECT id, tokens_remaining
          FROM token_lots
@@ -1159,6 +1284,7 @@ export async function dbConsumeTokens(userId, amount) {
       [userId]
     );
     let left = needed;
+    const lots = [];
     for (const row of rows) {
       if (left <= 0) break;
       const take = Math.min(Number(row.tokens_remaining || 0), left);
@@ -1166,21 +1292,26 @@ export async function dbConsumeTokens(userId, amount) {
         row.id,
         take,
       ]);
+      lots.push({ id: row.id, amount: take });
       left -= take;
     }
-    await client.query('COMMIT');
-    return { consumed: needed - left };
+    if (left > 0) {
+      if (own) await client.query('ROLLBACK');
+      return { consumed: needed - left, lots: [] };
+    }
+    if (own) await client.query('COMMIT');
+    return { consumed: needed, lots };
   } catch (err) {
-    await client.query('ROLLBACK');
+    if (own) await client.query('ROLLBACK');
     throw err;
   } finally {
-    client.release();
+    if (own) client.release();
   }
 }
 
 export async function dbClawbackTokenLotByPaymentIntent(intentId) {
   if (!dbPool || !intentId) return null;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `UPDATE token_lots SET tokens_remaining = 0
       WHERE stripe_payment_intent_id = $1
       RETURNING id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
@@ -1190,9 +1321,97 @@ export async function dbClawbackTokenLotByPaymentIntent(intentId) {
   return mapTokenLotRow(rows[0]);
 }
 
+export async function dbClaimStripeEvent(id, type) {
+  if (!dbPool || !id) return true;
+  const { rows } = await txQuery(
+    `INSERT INTO stripe_events (id, type) VALUES ($1, $2)
+     ON CONFLICT (id) DO NOTHING
+     RETURNING id`,
+    [id, type || null]
+  );
+  return Boolean(rows[0]);
+}
+
+export async function dbUpdatePaymentStatus(intentId, status) {
+  if (!dbPool || !intentId || !status) return null;
+  const { rows } = await txQuery(
+    `UPDATE payments SET status = $2
+      WHERE stripe_payment_intent_id = $1
+      RETURNING id, user_id, amount_cents, currency, status, description, stripe_payment_intent_id, invoice_url, created_at`,
+    [intentId, status]
+  );
+  return mapPaymentRow(rows[0]);
+}
+
+export async function dbAddTokensToLot(lotId, amount) {
+  if (!dbPool || !lotId) return null;
+  const add = Number(amount) || 0;
+  if (add <= 0) return dbSetTokenLotRemaining(lotId, 0);
+  const { rows } = await txQuery(
+    `UPDATE token_lots SET tokens_remaining = tokens_remaining + $2
+      WHERE id = $1
+      RETURNING id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
+                stripe_checkout_session_id, stripe_payment_intent_id, created_at`,
+    [lotId, add]
+  );
+  return mapTokenLotRow(rows[0]);
+}
+
+export async function dbDecrementUsage(userId, period, scans = 0, pages = 0) {
+  if (!dbPool || !userId || !period) return dbGetUsage(userId, period);
+  const { rows } = await txQuery(
+    `
+      INSERT INTO usage (user_id, period, scans_used, pages_scanned)
+      VALUES ($1, $2, 0, 0)
+      ON CONFLICT (user_id, period) DO UPDATE SET
+        scans_used = GREATEST(0, usage.scans_used - $3),
+        pages_scanned = GREATEST(0, usage.pages_scanned - $4)
+      RETURNING user_id, period, scans_used, pages_scanned
+    `,
+    [userId, period, Math.max(0, Number(scans) || 0), Math.max(0, Number(pages) || 0)]
+  );
+  return mapUsageRow(rows[0]);
+}
+
+export async function dbCountActiveRunsForUser(userId) {
+  if (!dbPool || !userId) return 0;
+  const { rows } = await txQuery(
+    `SELECT COUNT(*)::int AS n FROM runs
+      WHERE user_id = $1 AND status IN ('queued', 'running')`,
+    [userId]
+  );
+  return Number(rows[0]?.n || 0);
+}
+
+export async function dbGetRunByRunId(runId) {
+  if (!dbPool || !runId) return null;
+  const { rows } = await txQuery(
+    `SELECT id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
+            notify_requested, notify_email, result_json, manual_progress_json, updated_at,
+            tier, guest_token, user_id, entitlement_json, refunded_at
+       FROM runs WHERE run_id = $1 LIMIT 1`,
+    [runId]
+  );
+  return mapRunRow(rows[0]);
+}
+
+export async function dbClaimRunRefund(runId) {
+  if (!dbPool || !runId) return null;
+  const { rows } = await txQuery(
+    `UPDATE runs
+        SET refunded_at = NOW()
+      WHERE run_id = $1 AND refunded_at IS NULL
+      RETURNING id, run_id, status, urls, processed_urls, requested_urls, truncated, error,
+                notify_requested, notify_email, result_json, manual_progress_json, updated_at,
+                tier, guest_token, user_id, entitlement_json, refunded_at`,
+    [runId]
+  );
+  return mapRunRow(rows[0]);
+}
+
 export async function dbSumTokenBalance(userId) {
   if (!dbPool || !userId) return 0;
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT COALESCE(SUM(tokens_remaining), 0) AS tokens
        FROM token_lots
       WHERE user_id = $1 AND tokens_remaining > 0 AND expires_at > NOW()`,
@@ -1203,7 +1422,7 @@ export async function dbSumTokenBalance(userId) {
 
 export async function dbListRunsForUser(userId, limit = 200) {
   if (!dbPool || !userId) return [];
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, run_id, status, urls, processed_urls, requested_urls, result_json, updated_at, user_id, tier
        FROM runs
       WHERE user_id = $1
@@ -1227,7 +1446,7 @@ export async function dbListRunsForUser(userId, limit = 200) {
 
 export async function dbAnonymizeRunsForUser(userId) {
   if (!dbPool || !userId) return [];
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `UPDATE runs
         SET user_id = NULL, deleted_at = NOW()
       WHERE user_id = $1
@@ -1239,7 +1458,7 @@ export async function dbAnonymizeRunsForUser(userId) {
 
 export async function dbListGuestRunsOlderThan(cutoff) {
   if (!dbPool || !cutoff) return [];
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, run_id, guest_token
        FROM runs
       WHERE user_id IS NULL
@@ -1253,13 +1472,13 @@ export async function dbListGuestRunsOlderThan(cutoff) {
 
 export async function dbDeleteRun(domain, runId) {
   if (!dbPool || !domain || !runId) return false;
-  const { rowCount } = await dbPool.query(`DELETE FROM runs WHERE id = $1 AND run_id = $2`, [domain, runId]);
+  const { rowCount } = await txQuery(`DELETE FROM runs WHERE id = $1 AND run_id = $2`, [domain, runId]);
   return rowCount > 0;
 }
 
 export async function dbListLeadsByEmail(email) {
   if (!dbPool || !email) return [];
-  const { rows } = await dbPool.query(
+  const { rows } = await txQuery(
     `SELECT id, name, company, email, phone, message, scanned_url, domain, run_token, score, source, cta, emailed, created_at
        FROM leads WHERE lower(email) = $1 ORDER BY created_at DESC`,
     [String(email).trim().toLowerCase()]
@@ -1269,7 +1488,7 @@ export async function dbListLeadsByEmail(email) {
 
 export async function dbDeleteLeadsByEmail(email) {
   if (!dbPool || !email) return 0;
-  const { rowCount } = await dbPool.query(`DELETE FROM leads WHERE lower(email) = $1`, [
+  const { rowCount } = await txQuery(`DELETE FROM leads WHERE lower(email) = $1`, [
     String(email).trim().toLowerCase(),
   ]);
   return rowCount || 0;
@@ -1277,13 +1496,13 @@ export async function dbDeleteLeadsByEmail(email) {
 
 export async function dbDeleteLeadById(id) {
   if (!dbPool || id == null || id === '') return false;
-  const { rowCount } = await dbPool.query(`DELETE FROM leads WHERE id = $1`, [id]);
+  const { rowCount } = await txQuery(`DELETE FROM leads WHERE id = $1`, [id]);
   return (rowCount || 0) > 0;
 }
 
 export async function dbDeleteLeadsOlderThan(cutoff) {
   if (!dbPool || !cutoff) return 0;
-  const { rowCount } = await dbPool.query(`DELETE FROM leads WHERE created_at < $1::timestamptz`, [
+  const { rowCount } = await txQuery(`DELETE FROM leads WHERE created_at < $1::timestamptz`, [
     cutoff instanceof Date ? cutoff.toISOString() : cutoff,
   ]);
   return rowCount || 0;
@@ -1304,24 +1523,24 @@ export async function dbDeleteConsentsForAccount({ userId = null, email = null }
   }
   if (!orParts.length) return 0;
   clauses.push(`(${orParts.join(' OR ')})`);
-  const { rowCount } = await dbPool.query(`DELETE FROM consents WHERE ${clauses.join(' AND ')}`, params);
+  const { rowCount } = await txQuery(`DELETE FROM consents WHERE ${clauses.join(' AND ')}`, params);
   return rowCount || 0;
 }
 
 export async function dbClearExpiredAuthTokens(now = new Date()) {
   if (!dbPool) return { verify: 0, reset: 0, pendingEmail: 0 };
   const iso = now instanceof Date ? now.toISOString() : now;
-  const verify = await dbPool.query(
+  const verify = await txQuery(
     `UPDATE users SET verify_token = NULL, verify_expires_at = NULL
       WHERE verify_token IS NOT NULL AND verify_expires_at IS NOT NULL AND verify_expires_at < $1::timestamptz`,
     [iso]
   );
-  const reset = await dbPool.query(
+  const reset = await txQuery(
     `UPDATE users SET reset_token = NULL, reset_expires_at = NULL
       WHERE reset_token IS NOT NULL AND reset_expires_at IS NOT NULL AND reset_expires_at < $1::timestamptz`,
     [iso]
   );
-  const pending = await dbPool.query(
+  const pending = await txQuery(
     `UPDATE users SET pending_email = NULL, pending_email_token = NULL, pending_email_expires_at = NULL
       WHERE pending_email_token IS NOT NULL AND pending_email_expires_at IS NOT NULL AND pending_email_expires_at < $1::timestamptz`,
     [iso]
@@ -1335,7 +1554,7 @@ export async function dbClearExpiredAuthTokens(now = new Date()) {
 
 export async function dbDeleteExpiredTokenLots(cutoff) {
   if (!dbPool || !cutoff) return 0;
-  const { rowCount } = await dbPool.query(`DELETE FROM token_lots WHERE expires_at < $1::timestamptz`, [
+  const { rowCount } = await txQuery(`DELETE FROM token_lots WHERE expires_at < $1::timestamptz`, [
     cutoff instanceof Date ? cutoff.toISOString() : cutoff,
   ]);
   return rowCount || 0;
@@ -1343,7 +1562,7 @@ export async function dbDeleteExpiredTokenLots(cutoff) {
 
 export async function dbGetUserByPendingEmailToken(token) {
   if (!dbPool || !token) return null;
-  const { rows } = await dbPool.query(`SELECT ${USER_COLUMNS} FROM users WHERE pending_email_token = $1 LIMIT 1`, [
+  const { rows } = await txQuery(`SELECT ${USER_COLUMNS} FROM users WHERE pending_email_token = $1 LIMIT 1`, [
     token,
   ]);
   return mapUserRow(rows[0]);
@@ -1354,10 +1573,10 @@ async function seedDefaultPlans() {
   for (const plan of DEFAULT_PLANS) {
     await dbUpsertPlan(plan);
   }
-  await dbPool.query(
+  await txQuery(
     `UPDATE subscriptions SET plan_id = 'none' WHERE plan_id IN ('free', 'starter', 'agency')`
   );
-  await dbPool.query(`UPDATE plans SET active = FALSE WHERE id IN ('free', 'starter', 'agency')`);
+  await txQuery(`UPDATE plans SET active = FALSE WHERE id IN ('free', 'starter', 'agency')`);
 }
 
 async function migrateJsonStoresToPostgres() {
