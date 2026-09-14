@@ -6,7 +6,7 @@
 import express from 'express';
 import multer from 'multer';
 import { spawn } from 'child_process';
-import { createHash, randomBytes, timingSafeEqual } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { sendRunNotificationEmail, createSmtpTransport, sendAccessRequestEmail, sendLeadEmail } from '../server-email.js';
@@ -23,7 +23,6 @@ import {
   isValidRunId,
   isValidDomain,
   runDir as runDirOf,
-  domainDir as domainDirOf,
   latestRunIdOnDisk,
 } from './run-ids.js';
 import {
@@ -74,8 +73,16 @@ import {
   errorMiddleware,
   patchAppAsyncHandlers,
   requestIdMiddleware,
+  requireDebugEndpoints,
+  requireStaff,
   securityHeadersMiddleware,
 } from './http-utils.mjs';
+import {
+  consumeOauthState,
+  newOauthState,
+  readJiraOAuth,
+  writeJiraOAuth,
+} from './jira-oauth.mjs';
 import { clientKey, rateLimit } from './rate-limit.mjs';
 
 const DELIVERABLE_FILES = [
@@ -201,45 +208,6 @@ function getJiraConfig() {
     clientSecret: String(process.env.ATLASSIAN_CLIENT_SECRET || '').trim(),
     redirectUri: String(process.env.ATLASSIAN_REDIRECT_URI || '').trim(),
   };
-}
-
-function jiraOAuthFile(domain) {
-  return join(domainDirOf(domain), 'jira-oauth.json');
-}
-
-function readJiraOAuth(domain) {
-  if (!isValidDomain(domain)) return null;
-  const p = jiraOAuthFile(domain);
-  if (!existsSync(p)) return null;
-  try {
-    return JSON.parse(readFileSync(p, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function writeJiraOAuth(domain, data) {
-  if (!isValidDomain(domain)) return;
-  const dir = domainDirOf(domain);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(jiraOAuthFile(domain), JSON.stringify(data, null, 2), 'utf8');
-}
-
-/** @type {Map<string, { domain: string, expiresAt: number }>} */
-const jiraOauthState = new Map();
-
-function newOauthState(domain) {
-  const state = randomBytes(24).toString('hex');
-  jiraOauthState.set(state, { domain, expiresAt: Date.now() + 10 * 60 * 1000 });
-  return state;
-}
-
-function consumeOauthState(state) {
-  const row = jiraOauthState.get(state);
-  jiraOauthState.delete(state);
-  if (!row) return null;
-  if (row.expiresAt < Date.now()) return null;
-  return row;
 }
 
 async function atlassianTokenExchange(payload) {
@@ -1059,27 +1027,6 @@ app.post('/auth/logout', (req, res) => {
   return res.redirect(302, nextPath);
 });
 
-app.get('/auth/jira/connect', (req, res) => {
-  const cfg = getJiraConfig();
-  const domain = String(req.query?.domain || '').trim().toLowerCase();
-  if (!cfg.clientId || !cfg.clientSecret || !cfg.redirectUri) {
-    return res.status(501).send('Atlassian OAuth not configured on server.');
-  }
-  if (!isValidDomain(domain)) {
-    return res.status(400).send('Invalid domain.');
-  }
-  const state = newOauthState(domain);
-  const u = new URL('https://auth.atlassian.com/authorize');
-  u.searchParams.set('audience', 'api.atlassian.com');
-  u.searchParams.set('client_id', cfg.clientId);
-  u.searchParams.set('scope', 'read:jira-work write:jira-work offline_access');
-  u.searchParams.set('redirect_uri', cfg.redirectUri);
-  u.searchParams.set('state', state);
-  u.searchParams.set('response_type', 'code');
-  u.searchParams.set('prompt', 'consent');
-  return res.redirect(u.toString());
-});
-
 app.get('/auth/jira/callback', async (req, res) => {
   const cfg = getJiraConfig();
   const code = String(req.query?.code || '');
@@ -1228,7 +1175,7 @@ app.use(async (req, res, next) => {
   }
   if (req.path === '/robots.txt') return next();
   if (req.path === '/auth/login' || req.path === '/auth/logout') return next();
-  if (req.path.startsWith('/auth/jira/')) return next();
+  if (req.path === '/auth/jira/callback') return next();
   if (req.path === '/api/config') return next();
   if (
     req.method === 'GET' &&
@@ -1272,6 +1219,29 @@ app.use(async (req, res, next) => {
 
 registerAccountRoutes(app, { readGuestTokenRecord });
 registerStripeRoutes(app);
+
+app.get('/auth/jira/connect', requireStaff, (req, res) => {
+  const cfg = getJiraConfig();
+  const domain = String(req.query?.domain || '').trim().toLowerCase();
+  if (!cfg.clientId || !cfg.clientSecret || !cfg.redirectUri) {
+    return res.status(501).send('Atlassian OAuth not configured on server.');
+  }
+  if (!isValidDomain(domain)) {
+    return res.status(400).send('Invalid domain.');
+  }
+  const state = newOauthState(domain);
+  const u = new URL('https://auth.atlassian.com/authorize');
+  u.searchParams.set('audience', 'api.atlassian.com');
+  u.searchParams.set('client_id', cfg.clientId);
+  u.searchParams.set('scope', 'read:jira-work write:jira-work offline_access');
+  u.searchParams.set('redirect_uri', cfg.redirectUri);
+  u.searchParams.set('state', state);
+  u.searchParams.set('response_type', 'code');
+  u.searchParams.set('prompt', 'consent');
+  return res.redirect(u.toString());
+});
+
+app.use('/api/debug', requireStaff, requireDebugEndpoints);
 
 app.post('/api/run', upload.single('file'), async (req, res) => {
   const staff = requestIsStaff(req);
@@ -1737,7 +1707,7 @@ app.get('/api/health/db', async (req, res) => {
   }
 });
 
-app.get('/api/jira/oauth/status', async (req, res) => {
+app.get('/api/jira/oauth/status', requireStaff, async (req, res) => {
   const domain = String(req.query?.domain || '').trim().toLowerCase();
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
   try {
@@ -1755,7 +1725,7 @@ app.get('/api/jira/oauth/status', async (req, res) => {
   }
 });
 
-app.get('/api/jira/projects', async (req, res) => {
+app.get('/api/jira/projects', requireStaff, async (req, res) => {
   const domain = String(req.query?.domain || '').trim().toLowerCase();
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
   try {
@@ -1779,7 +1749,7 @@ app.get('/api/jira/projects', async (req, res) => {
   }
 });
 
-app.post('/api/jira/sprint', async (req, res) => {
+app.post('/api/jira/sprint', requireStaff, async (req, res) => {
   const projectKey = String(req.body?.projectKey || '').trim().toUpperCase();
   const tickets = Array.isArray(req.body?.tickets) ? req.body.tickets : [];
   const domain = String(req.body?.domain || '').trim().toLowerCase();

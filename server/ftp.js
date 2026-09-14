@@ -1,5 +1,5 @@
 import { Client } from 'basic-ftp';
-import { dirname, join } from 'path';
+import { basename, dirname, join } from 'path';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'fs';
 import { REPORTS_BASE } from './paths.js';
 
@@ -37,8 +37,14 @@ export async function ftpDownload(ftpConfig, remotePath) {
   }
 }
 
+/** Never push Atlassian OAuth tokens to FTP, even if a caller lists the file. */
+export function shouldSkipFtpUpload(localPath, remotePath = '') {
+  return [localPath, remotePath].some((p) => basename(String(p || '')) === 'jira-oauth.json');
+}
+
 export async function ftpUpload(ftpConfig, localPath, remotePath) {
   if (!ftpConfig) return;
+  if (shouldSkipFtpUpload(localPath, remotePath)) return;
   const client = new Client(60_000);
   try {
     await client.access({
@@ -110,6 +116,7 @@ export async function persistReportArtifactsToFtp(domain, runId, ftpConfig) {
     jobs.push({ local: f.local, remote: `${domain}/${runId}/${f.remote}` });
   });
   for (const j of jobs) {
+    if (shouldSkipFtpUpload(j.local, j.remote)) continue;
     await ftpUpload(ftpConfig, j.local, j.remote);
   }
 }
