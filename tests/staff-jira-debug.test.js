@@ -157,7 +157,8 @@ describe('jira oauth state map', () => {
     pruneJiraOauthState(map);
     assert.equal(map.size, JIRA_OAUTH_STATE_MAX - 1);
     assert.equal(map.has('s0'), false);
-    assert.equal(map.has('s20'), true);
+    assert.equal(map.has('s20'), false);
+    assert.equal(map.has('s21'), true);
 
     jiraOauthState.clear();
     for (let i = 0; i < 130; i += 1) {
