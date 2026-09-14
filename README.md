@@ -52,7 +52,10 @@ Staff sign in with `APP_USERNAME` / `APP_PASSWORD` (cookie session only — no H
 | `LEAD_RETENTION_DAYS` | no (default `365`) | Retention job (`node scripts/retention.mjs`, every 6 hours in `web/run-server.mjs`) deletes leads older than this. |
 | `GUEST_RUN_RETENTION_DAYS` | no (default `30`) | Retention job deletes guest-owned runs, token files, and FTP copies older than this. |
 | `WCAG_DISABLE_RATE_LIMIT` | no | Set `1` only in automated tests. Do not set in production. |
-| `SCANNER_NO_SANDBOX` | no (default off) | Set `true` only if Chromium cannot start because the host forbids the process sandbox (user namespaces / seccomp). Production Docker runs as `USER node` so this should stay unset. |
+| `SCANNER_NO_SANDBOX` | no (default off) | Set `true` only if Chromium cannot start because the host forbids the process sandbox (user namespaces / seccomp). Leave unset on the VPS. |
+| `MAIL_FROM` | yes | Envelope From for SMTP. Server exits in production if unset or if it ends with `@localhost`. |
+| `PUBLIC_BASE_URL` | yes | Public origin, e.g. `https://wcag.about-us.be`. Server exits in production if unset or if it contains `localhost`. |
+| `DATABASE_CA` | no | Path to a PEM CA bundle when `DATABASE_SSL=true` and the server cert is not in the system trust store. |
 | `COMPANY_LEGAL_NAME` | yes | Legal name shown in the footer, privacy, terms, and Stripe pack invoice footer. Server exits in production if empty. |
 | `COMPANY_KBO` | yes | Crossroads Bank for Enterprises number. Server exits in production if empty. |
 | `COMPANY_VAT` | yes | VAT number (for example `BE0123456789`). Server exits in production if empty. Also printed on pack invoices. |
@@ -99,10 +102,10 @@ Current behavior:
 
 To store run status/results/manual checklist progress **and** customer accounts (users, projects, plans, usage) in Postgres:
 
-- Set **`DATABASE_URL`** in the server environment (on the live VPS this lives in `/etc/accessibility-db.env`, loaded by the systemd drop-in — not `Environment=` with a password that contains `*` or `%`).
-- Optional for SSL-required connections: **`DATABASE_SSL=true`**. Localhost Postgres does **not** need SSL.
+- Set **`DATABASE_URL`** in `/etc/accessibility.env` on the VPS (loaded by the systemd unit — not `Environment=` with a password that contains `*` or `%`).
+- Optional for SSL-required connections: **`DATABASE_SSL=true`**. With SSL on, the pool uses `rejectUnauthorized: true` and, if set, **`DATABASE_CA`** (path to a PEM file). Localhost Postgres does **not** need SSL.
 
-When `DATABASE_URL` is set, the server creates `runs`, `leads`, `users`, `projects`, `plans`, `subscriptions`, `usage`, `payments`, `token_lots`, `consents`, and `stripe_events` tables. Duplicate Stripe webhook deliveries are ignored (`stripe_events` primary key). `payments.stripe_payment_intent_id` and `subscriptions.stripe_subscription_id` / `stripe_customer_id` are unique when set. Existing `reports/_saas/users.json` and `projects.json` are copied in on first boot. Scan HTML/screenshots stay on disk under `reports/<domain>/<runId>/`.
+When `DATABASE_URL` is set, the server creates `runs`, `leads`, `users`, `projects`, `plans`, `subscriptions`, `usage`, `payments`, `token_lots`, `consents`, and `stripe_events` tables. Duplicate Stripe webhook deliveries are ignored (`stripe_events` primary key). `payments.stripe_payment_intent_id` and `subscriptions.stripe_subscription_id` / `stripe_customer_id` are unique when set. Existing `reports/_saas/users.json` and `projects.json` are **inserted once** (`ON CONFLICT DO NOTHING`, never overwriting a DB `password_hash`) and then renamed to `*.imported`. Scan HTML/screenshots stay on disk under `reports/<domain>/<runId>/`.
 
 If `DATABASE_URL` is not set, accounts fall back to those JSON files (fine for local tests; not safe for a campaign).
 
@@ -110,7 +113,7 @@ If `DATABASE_URL` is not set, accounts fall back to those JSON files (fine for l
 
 Sellable Stripe items are **one Product each**: token pack 10, pack 50, pack 100, and **one** Pro product with monthly + yearly Prices. Do not put pack prices on the Pro product. Token packs use Checkout `mode: 'payment'`; Pro uses `mode: 'subscription'`. Fulfilment is from **webhooks**, not the success page. Prefer a [restricted API key](https://docs.stripe.com/keys.md#manage-your-api-keys) (`rk_`) over `sk_`. Never commit secrets.
 
-On the VPS, put these in `/etc/accessibility-db.env` (or a sibling env file loaded by systemd) and restart `accessibility.service`:
+On the VPS, put these in `/etc/accessibility.env` (see **[deploy/README.md](deploy/README.md)**) and restart `accessibility.service`:
 
 | Variable | Purpose |
 | --- | --- |
@@ -120,7 +123,7 @@ On the VPS, put these in `/etc/accessibility-db.env` (or a sibling env file load
 | `STRIPE_PRICE_PRO_MONTHLY` / `STRIPE_PRICE_PRO_YEARLY` | Pro Price IDs on the single Pro product. |
 | `STRIPE_AUTOMATIC_TAX` | Default `true`. Checkout in `NODE_ENV=production` returns **503** if this is `false`. Requires Tax Settings with a **head office** and **Collecting** registrations (Belgium domestic + Union OSS — confirm with your advisor). |
 | `STRIPE_TAX_CODE` | Product tax code (catalog script default `txcd_10103001`). The server logs a warning at boot if unset. |
-| `PUBLIC_BASE_URL` | `https://wcag.about-us.be` |
+| `PUBLIC_BASE_URL` | Public origin (`https://wcag.about-us.be`). Required in production. |
 | `SCAN_JOB_TTL_MS` | Optional. Default `86400000` (24h). Queued jobs older than this are dropped and consumed customer tokens are refunded. Not required in production. |
 
 Create sandbox Products with `node scripts/stripe-catalog.mjs` (uses placeholder tax code `txcd_10103001` SaaS – Business Use until the advisor confirms). Point a webhook at `https://wcag.about-us.be/api/stripe/webhook` for `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.*`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.refund.updated`, `charge.dispute.created`. Duplicate deliveries of the same event id return 200 without granting again. Out-of-order `customer.subscription.deleted` events for an old subscription id are ignored when a newer id is already stored.
@@ -131,12 +134,11 @@ Customer Portal: allow card update, monthly/yearly switch, and **cancel at perio
 
 Us-diensten (manual AT, remediation, training) has **no Stripe SKU** — link to https://about-us.be/contact/.
 
-After this change is merged to `development`, publish as **`deploy`** (not `debian`):
+After this change is merged to `development`, publish as **`deploy`** (not `debian`). Follow **[deploy/README.md](deploy/README.md)** (git pull, optional `npm ci`, Astro build, `systemctl restart accessibility.service`).
 
-1. Put the Stripe variables above plus `COMPANY_LEGAL_NAME`, `COMPANY_KBO`, `COMPANY_VAT`, `COMPANY_ADDRESS`, and `COMPANY_EMAIL` in `/etc/accessibility-db.env` (`chmod 600`). Keep `STRIPE_AUTOMATIC_TAX=true` once Tax Settings have a Belgian head office and Collecting registrations. Production checkout refuses to start if automatic tax is off. Do not open Postgres `5432` to the internet.
+1. Put the Stripe variables above plus `COMPANY_LEGAL_NAME`, `COMPANY_KBO`, `COMPANY_VAT`, `COMPANY_ADDRESS`, and `COMPANY_EMAIL` in `/etc/accessibility.env` (`chmod 600`). Keep `STRIPE_AUTOMATIC_TAX=true` once Tax Settings have a Belgian head office and Collecting registrations. Production checkout refuses to start if automatic tax is off. Do not open Postgres `5432` to the internet.
 2. In Stripe Dashboard → Developers → Webhooks, add `https://wcag.about-us.be/api/stripe/webhook` for the events listed above. Copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
 3. Dashboard → Tax: set the Belgian head office. Ask the advisor to record **Belgium domestic + Union OSS**. Dashboard → Settings → Billing → Invoices: set the subscription invoice footer to the company legal name and VAT. Threshold monitoring starts at the first **live** payment. Live Products/Prices and live `rk_` only after that confirmation.
-4. `sudo -u deploy git pull --ff-only origin development`, `sudo -H -u deploy npm ci` (lockfile changed), `sudo -H -u deploy npm run build --prefix web`, `sudo systemctl restart accessibility.service`.
 
 Monitoring:
 
@@ -146,95 +148,7 @@ Monitoring:
 
 ### Publish to the live VPS (OVH)
 
-The production app is on the OVH VPS. It pulls the **`development`** branch. Log in as **`debian`**, then run git, `npm`, and the Astro build as **`deploy`**. The systemd unit is **`accessibility.service`** (not `accessibility-tests`). There is no pm2.
-
-SSH:
-
-```bash
-ssh debian@135.125.226.198
-```
-
-Then paste:
-
-```bash
-cd /srv/accessibility-tests
-
-sudo -u deploy git fetch origin
-sudo -u deploy git checkout development
-sudo -u deploy git pull --ff-only origin development
-sudo -u deploy git log -1 --oneline
-
-# Only if package-lock.json or web/package-lock.json changed:
-# sudo -H -u deploy npm ci
-# sudo -H -u deploy npm ci --prefix web
-
-sudo -H -u deploy npm run build --prefix web
-sudo systemctl restart accessibility.service
-sudo systemctl status accessibility.service --no-pager
-```
-
-Do **not** run `npm ci` or `npm run build` as `debian` — `node_modules` is owned by `deploy` and you will get `EACCES`. After restart, hard-refresh the site.
-
-The Node process listens on **port 3000**. Caddy serves 80/443. In `ss` the process name is **`MainThread`**, not `node`, so `grep node` is empty even when the app is healthy:
-
-```bash
-sudo ss -lntp | grep -E '3000|MainThread'
-sudo journalctl -u accessibility.service -n 20 --no-pager | grep -i postgres
-curl -sS http://127.0.0.1:3000/api/health/db
-```
-
-Expect `{"ok":true,"db":"up"}` when Postgres is wired. `db: "disabled"` means `DATABASE_URL` is not loaded. A bad password crash-loops the unit (`password authentication failed for user "wcag"`) — move `override.conf` aside, restart, then fix `/etc/accessibility-db.env`.
-
-`DATABASE_URL` must be an env file, not a systemd `Environment=` line:
-
-```ini
-# /etc/systemd/system/accessibility.service.d/override.conf
-[Service]
-EnvironmentFile=/etc/accessibility-db.env
-```
-
-```
-# /etc/accessibility-db.env (chmod 600)
-DATABASE_URL=postgresql://wcag:HEXPASSWORD@127.0.0.1:5432/wcag
-```
-
-Test the role without a URI (special characters in passwords break URLs):
-
-```bash
-PGPASSWORD='HEXPASSWORD' psql -h 127.0.0.1 -U wcag -d wcag -c 'SELECT 1;'
-```
-
-Browse tables: `sudo -u postgres psql -d wcag` then `\dt` (MySQL `SHOW TABLES`) and `\d users` (`DESCRIBE`). From a laptop, Beekeeper Studio → PostgreSQL, SSH tunnel to `debian@135.125.226.198`, host `127.0.0.1`, port `5432`, database `wcag`, user `wcag`, SSL off.
-
-Daily dump:
-
-```bash
-sudo mkdir -p /var/backups/wcag-pg
-sudo chown postgres:postgres /var/backups/wcag-pg
-sudo tee /etc/cron.daily/wcag-pg-dump >/dev/null <<'EOF'
-#!/bin/sh
-set -e
-umask 077
-FILE=/var/backups/wcag-pg/wcag-$(date +%F).sql.gz
-sudo -u postgres pg_dump wcag | gzip > "$FILE"
-find /var/backups/wcag-pg -name 'wcag-*.sql.gz' -mtime +14 -delete
-EOF
-sudo chmod +x /etc/cron.daily/wcag-pg-dump
-```
-
-RAM: watch **MemAvailable**, not “used %”. Chromium scans are the risk. Alert when available memory is under ~400 MB (cron + the same `SMTP_*` the app uses). OVH ping checks do not warn about RAM.
-
-Before the first accounts publish, set **`SESSION_SECRET`** (≥32 random characters) and **`APP_PASSWORD`** (≥12 characters) on the VPS unit or env file used by `accessibility.service`. Staff login still uses **`APP_USERNAME` / `APP_PASSWORD`**. Stay on this OVH VPS (`wcag.about-us.be`); do not migrate this product to Combell.
-
-If the unit name is ever in doubt:
-
-```bash
-systemctl list-units --type=service --state=running | grep -iE 'access|node|wcag'
-```
-
-The app **must** be served by Node — the UI is rendered by the Astro shell at `web/` and is built with `npm run build --prefix web`. Static hosting alone is not enough (`/api/run`, `/api/status/:domain/:runId`, reports).
-
-For a new machine (not a routine publish): install dependencies and Chromium (`npm ci`, `npx playwright install chromium`), set **`APP_PASSWORD`** (keep auth enabled), **`PORT`** if needed, optional **`DATABASE_URL`**, optional **`PUBLIC_BASE_URL`**.
+Install, update, Caddy, systemd, and Postgres env-file commands live in **[deploy/README.md](deploy/README.md)**. The production app pulls the **`development`** branch and restarts **`accessibility.service`**.
 
 **Different origin for HTML vs API:** If users load the form from another host, add inside `<head>` of the Astro layout (`web/src/layouts/Layout.astro`):
 
@@ -250,20 +164,18 @@ For a new machine (not a routine publish): install dependencies and Chromium (`n
 <meta name="accessibility-app-base" content="/accessibility">
 ```
 
-**Heavy scans:** On small instances, tune **`MAX_URLS_PER_RUN`**, **`URL_CONCURRENCY`** (often `1`), and related env vars documented elsewhere in this README (memory section previously tied to Render applies to any low-RAM host).
-
-The repo may include **`render.yaml`** as an **optional** example blueprint — it is **not** required for local development.
+**Heavy scans:** On small instances, tune **`MAX_URLS_PER_RUN`**, **`URL_CONCURRENCY`** (often `1`), and related env vars documented elsewhere in this README.
 
 ### Optional: store manual checklist progress on FTP
 
-To persist the manual/assistive-tech checklist state on your FTP server (e.g. Combell), set these environment variables before starting the server:
+To persist the manual/assistive-tech checklist state on FTP, set these environment variables before starting the server:
 
 | Variable | Description |
 |----------|-------------|
 | `FTP_HOST` | FTP host (e.g. `ftp.yourdomain.com`) |
 | `FTP_USER` | FTP username |
 | `FTP_PASSWORD` | FTP password |
-| `FTP_SECURE` | Set to `true` for FTPS (TLS) |
+| `FTP_SECURE` | FTPS (TLS). Default `true`. Production refuses plaintext FTP. |
 | `FTP_REMOTE_PATH` | Optional. Base path on the server (e.g. `reports` or `accessibility/reports`) |
 
 Progress is stored per run as `{FTP_REMOTE_PATH}/{domain}/{runId}/manual-progress.json` (and `runs.manual_progress_json` in Postgres). Domain-level `manual-progress.json` files are no longer written. Migrate leftovers with `node scripts/migrate-manual-progress.mjs --apply`. If FTP variables are not set, progress is stored only on the server’s local disk (and in the browser).
@@ -289,10 +201,6 @@ node run-tests.js --report --urls="https://example.com,https://example.com/about
 ```bash
 npm run report
 ```
-
-## Deploy on Combell
-
-Shared web hosting with the **Node.js** add-on: follow **[deploy/COMBELL.md](deploy/COMBELL.md)** for the Git pipeline, required **`npm run build` / `npm run serve`** flow, environment variables (HTTPS cookies, Postgres, **`REPORTS_BASE`**), and a **support ticket template** before relying on Playwright on shared hosting.
 
 For day-to-day local UI work without reinstalling Chromium, prefer **`npm run build:web`** (Astro only) or **`npm run build --prefix web`**.
 

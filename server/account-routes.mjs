@@ -35,9 +35,10 @@ import { REPORTS_BASE } from './paths.js';
 import { isStrongPassword, verifyPassword } from './passwords.mjs';
 import { recordConsent } from './consents.mjs';
 import { LEGAL_PRIVACY_VERSION, LEGAL_TERMS_VERSION, isTruthyFlag } from './legal-versions.mjs';
+import { publicBaseUrl } from './config.mjs';
 
 function publicBase() {
-  return String(process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '') || 'http://localhost:3456';
+  return publicBaseUrl();
 }
 
 function formOrJson(req, res, htmlPath, jsonStatus, jsonBody) {

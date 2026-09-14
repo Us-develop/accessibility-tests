@@ -23,6 +23,7 @@ import { mergeConsentContext } from './consents.mjs';
 import { WITHDRAWAL_WAIVER_TEXT } from './legal-versions.mjs';
 import { dbClaimStripeEvent, dbPool, withDbTransaction } from './db.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
+import { publicBaseUrl } from './config.mjs';
 
 const STRIPE_API_VERSION = '2026-08-26.dahlia';
 
@@ -36,7 +37,7 @@ function parseBooleanEnv(name, defaultValue = false) {
 }
 
 export function publicAppBase() {
-  return String(process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '') || 'http://localhost:3456';
+  return publicBaseUrl();
 }
 
 export function stripeSecretKey() {

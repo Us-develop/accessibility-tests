@@ -49,3 +49,11 @@ export function writeJsonStore(name, value) {
   writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8');
   renameSync(tmp, file);
 }
+
+/** Rename `name` to `name.imported` after a one-shot JSON → Postgres copy. */
+export function archiveJsonStore(name) {
+  const file = saasFile(name);
+  if (!existsSync(file)) return false;
+  renameSync(file, `${file}.imported`);
+  return true;
+}

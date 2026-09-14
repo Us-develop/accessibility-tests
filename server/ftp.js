@@ -3,15 +3,37 @@ import { basename, dirname, join } from 'path';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'fs';
 import { REPORTS_BASE } from './paths.js';
 
+function parseBooleanEnv(name, defaultValue = false) {
+  const raw = process.env[name];
+  if (raw == null || String(raw).trim() === '') return defaultValue;
+  const value = String(raw).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(value)) return true;
+  if (['0', 'false', 'no', 'off'].includes(value)) return false;
+  return defaultValue;
+}
+
+/** FTPS by default. Explicit `FTP_SECURE=false` is allowed only outside production. */
+export function ftpSecureEnabled() {
+  return parseBooleanEnv('FTP_SECURE', true);
+}
+
 export function getFtpConfig() {
   if (!process.env.FTP_HOST || !process.env.FTP_USER) return null;
   return {
     host: process.env.FTP_HOST,
     user: process.env.FTP_USER,
     password: process.env.FTP_PASSWORD || '',
-    secure: process.env.FTP_SECURE === 'true',
+    secure: ftpSecureEnabled(),
     remotePath: (process.env.FTP_REMOTE_PATH || '').replace(/\/$/, ''),
   };
+}
+
+export function assertProductionFtpSecure() {
+  if (process.env.NODE_ENV !== 'production') return;
+  const cfg = getFtpConfig();
+  if (cfg && cfg.secure !== true) {
+    throw new Error('Plaintext FTP is not allowed in production. Set FTP_SECURE=true or omit it (default true).');
+  }
 }
 
 export async function ftpDownload(ftpConfig, remotePath) {

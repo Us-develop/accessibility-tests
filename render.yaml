@@ -1,9 +1,0 @@
-# Render Blueprint — optional hosted deploy only (not needed for local use)
-services:
-  - type: web
-    name: accessibility-tests
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    envVars:
-      - key: PORT
-        value: 3456
