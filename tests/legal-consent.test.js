@@ -2,7 +2,7 @@ import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import express from 'express';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -114,6 +114,12 @@ describe('legal consent and VAT', () => {
     const app = express();
     app.use(createAccessibilityApp(repoRoot));
     app.use(express.static(clientRoot, { redirect: false }));
+    // Stand in for Astro SSR: static with redirect:false must not 301 /privacy → /privacy/.
+    app.get(['/privacy', '/privacy/'], (_req, res) => {
+      res.status(200).type('html').send(
+        readFileSync(join(clientRoot, 'privacy', 'index.html'), 'utf8')
+      );
+    });
     const listening = await listen(app);
     server = listening.server;
     origin = listening.origin;
