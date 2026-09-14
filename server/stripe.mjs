@@ -552,9 +552,32 @@ export async function createPortalSession({ user }) {
   });
 }
 
+function stripeAlreadyGone(err) {
+  const code = String(err?.code || err?.raw?.code || '').toLowerCase();
+  const msg = String(err?.message || '').toLowerCase();
+  return (
+    code === 'resource_missing' ||
+    Number(err?.statusCode) === 404 ||
+    msg.includes('no such subscription') ||
+    msg.includes('no such customer') ||
+    msg.includes('already been canceled') ||
+    msg.includes('already canceled') ||
+    msg.includes('already cancelled')
+  );
+}
+
+function stripeTeardownError() {
+  return Object.assign(new Error('Could not cancel billing. Try again later.'), {
+    status: 409,
+    code: 'stripe_teardown_failed',
+  });
+}
+
 /**
  * Cancel an active Stripe subscription then delete (or anonymise) the customer.
  * Logs only the local user id — never email or Stripe ids.
+ * Throws if Stripe is configured and teardown cannot be confirmed, so the local
+ * account is not removed while billing may still be active.
  * @param {string} userId
  * @param {{ stripeSubscriptionId?: string|null, stripeCustomerId?: string|null } | null} local
  */
@@ -577,8 +600,15 @@ export async function cancelAndDeleteStripeCustomer(userId, local) {
       await stripe.subscriptions.cancel(local.stripeSubscriptionId);
       cancelled = true;
     } catch (err) {
-      console.warn('[stripe] subscription cancel failed for user', userId, err?.message || err);
+      if (stripeAlreadyGone(err)) {
+        cancelled = true;
+      } else {
+        console.warn('[stripe] subscription cancel failed for user', userId, err?.message || err);
+        throw stripeTeardownError();
+      }
     }
+  } else if (local.stripeSubscriptionId) {
+    throw stripeTeardownError();
   }
   let deletedCustomer = false;
   if (local.stripeCustomerId) {
@@ -589,21 +619,33 @@ export async function cancelAndDeleteStripeCustomer(userId, local) {
       } else if (typeof stripe.customers?.delete === 'function') {
         await stripe.customers.delete(local.stripeCustomerId);
         deletedCustomer = true;
+      } else {
+        throw new Error('customers.del missing');
       }
     } catch (err) {
-      try {
-        if (typeof stripe.customers?.update === 'function') {
-          await stripe.customers.update(local.stripeCustomerId, {
-            email: '',
-            name: 'deleted',
-            metadata: { deleted: 'true', userId: '' },
-          });
-          deletedCustomer = true;
+      if (stripeAlreadyGone(err)) {
+        deletedCustomer = true;
+      } else {
+        try {
+          if (typeof stripe.customers?.update === 'function') {
+            await stripe.customers.update(local.stripeCustomerId, {
+              email: '',
+              name: 'deleted',
+              metadata: { deleted: 'true', userId: '' },
+            });
+            deletedCustomer = true;
+          }
+        } catch (anonErr) {
+          if (stripeAlreadyGone(anonErr)) {
+            deletedCustomer = true;
+          } else {
+            console.warn('[stripe] customer delete failed for user', userId, anonErr?.message || err?.message || err);
+            throw stripeTeardownError();
+          }
         }
-      } catch (anonErr) {
-        console.warn('[stripe] customer delete failed for user', userId, anonErr?.message || err?.message || err);
       }
     }
+    if (!deletedCustomer) throw stripeTeardownError();
   }
   return { cancelled, deletedCustomer, skipped: false };
 }

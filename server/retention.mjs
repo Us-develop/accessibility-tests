@@ -22,7 +22,7 @@ import {
 } from './guest.mjs';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 import { REPORTS_BASE } from './paths.js';
-import { deleteRunDirectory } from './projects.mjs';
+import { customerOwnsRun, deleteRunDirectory } from './projects.mjs';
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 const QUEUE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -54,9 +54,12 @@ async function pruneGuestTokensAndRuns(now) {
       rec.unreadable || isGuestTokenExpired(rec, now) || (Number.isFinite(createdMs) && createdMs < cutoffMs);
     if (!stale) continue;
     if (rec.domain && rec.runId) {
-      await removeRunArtifacts(rec.domain, rec.runId);
-      if (dbPool && (await dbDeleteRun(rec.domain, rec.runId))) runs += 1;
-      else if (rec.domain && rec.runId) runs += 1;
+      const owned = await customerOwnsRun(rec.domain, rec.runId);
+      if (!owned) {
+        await removeRunArtifacts(rec.domain, rec.runId);
+        if (dbPool && (await dbDeleteRun(rec.domain, rec.runId))) runs += 1;
+        else runs += 1;
+      }
     }
     if (deleteGuestTokenFile(rec.token)) tokens += 1;
   }

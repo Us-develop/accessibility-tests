@@ -27,6 +27,8 @@ const { setStripeClientForTests } = await import('../server/stripe.mjs');
 const { upsertSubscription, getSubscription } = await import('../server/billing.mjs');
 const { getUserByEmail } = await import('../server/users.mjs');
 const { writeJob } = await import('../server/queue.mjs');
+const { upsertProject } = await import('../server/projects.mjs');
+const { readJsonStore } = await import('../server/json-store.mjs');
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -184,6 +186,24 @@ describe('retention job', () => {
     assert.equal(leads.some((row) => row.id === 'lead-fresh'), true);
     assert.equal(existsSync(join(tmp, '_queue', 'stale.example:stale-run.json')), false);
   });
+
+  it('does not delete a guest run that was attached to a customer', async () => {
+    const token = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const runId = '2020-01-01T00-00-00Z-kept01';
+    persistGuestToken(token, {
+      domain: 'kept.example',
+      runId,
+      url: 'https://kept.example/',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      expiresAt: '2020-01-31T00:00:00.000Z',
+    });
+    mkdirSync(join(tmp, 'kept.example', runId), { recursive: true });
+    writeFileSync(join(tmp, 'kept.example', runId, 'accessibility-results.json'), '{}', 'utf8');
+    await upsertProject({ userId: 'customer-kept', domain: 'kept.example', runId });
+    await runRetention(new Date('2026-09-14T00:00:00.000Z'));
+    assert.equal(existsSync(join(tmp, 'kept.example', runId)), true);
+    assert.equal(existsSync(join(tmp, '_guest-tokens', `${token}.json`)), false);
+  });
 });
 
 describe('account deletion, export, and email change', () => {
@@ -294,6 +314,11 @@ describe('account deletion, export, and email change', () => {
     assert.equal(deleted.status, 200, body.error || '');
     assert.equal(body.ok, true);
     assert.equal(await getUserByEmail('delete-me@example.com'), null);
+    const leftover = readJsonStore('users.json', { users: [] });
+    assert.equal(
+      (Array.isArray(leftover.users) ? leftover.users : []).some((u) => u.email === 'delete-me@example.com'),
+      false
+    );
     assert.equal(existsSync(join(tmp, 'delete.example', runId)), false);
     assert.equal(readLeadFileRows(50).some((row) => row.id === 'lead-delete-me'), false);
     assert.deepEqual(cancelled, ['sub_delete_me']);
@@ -301,6 +326,57 @@ describe('account deletion, export, and email change', () => {
     const blob = logs.join('\n');
     assert.match(blob, new RegExp(userId));
     assert.doesNotMatch(blob, /delete-me@example\.com/);
+  });
+
+  it('keeps the local account when Stripe cancel fails', async () => {
+    const { jar, res, data } = await signup(origin, 'stripe-fail@example.com');
+    assert.equal(res.status, 200, data.error || '');
+    const sub = await getSubscription(data.user.id);
+    await upsertSubscription({
+      ...sub,
+      stripeSubscriptionId: 'sub_fail',
+      stripeCustomerId: 'cus_fail',
+    });
+    setStripeClientForTests({
+      subscriptions: {
+        cancel: async () => {
+          throw new Error('stripe down');
+        },
+      },
+      customers: {
+        del: async () => {
+          throw new Error('stripe down');
+        },
+      },
+    });
+    try {
+      const deleted = await fetch(`${origin}/api/account/delete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: jar.header(),
+          'X-CSRF-Token': jar.get('wcag_csrf'),
+        },
+        body: JSON.stringify({ password: 'longenough1' }),
+      });
+      assert.equal(deleted.status, 409);
+      assert.ok(await getUserByEmail('stripe-fail@example.com'));
+    } finally {
+      setStripeClientForTests({
+        subscriptions: {
+          cancel: async (id) => {
+            cancelled.push(id);
+            return { id, status: 'canceled' };
+          },
+        },
+        customers: {
+          del: async (id) => {
+            deletedCustomers.push(id);
+            return { id, deleted: true };
+          },
+        },
+      });
+    }
   });
 
   it('lets staff delete a lead by id', async () => {
