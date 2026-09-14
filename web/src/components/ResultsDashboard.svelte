@@ -120,6 +120,12 @@
   let showFixCode = $state(false);
   let copyState = $state('idle');
   let manualChecked = $state(manualInitialChecked.length);
+  /** @type {HTMLElement | null} */
+  let lastIssueTrigger = null;
+  /** @type {HTMLElement | null} */
+  let drawerLayerEl = $state(null);
+  /** @type {HTMLElement | null} */
+  let drawerEl = $state(null);
 
   const passing = $derived(severityCounts.errors === 0);
   const automatedLabel = $derived(
@@ -206,15 +212,64 @@
 
   function selectIssue(item) {
     if (locked) return;
+    lastIssueTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     selected = item;
     showFixCode = false;
     copyState = 'idle';
   }
 
   function closeIssue() {
+    const trigger = lastIssueTrigger;
     selected = null;
     showFixCode = false;
     copyState = 'idle';
+    queueMicrotask(() => trigger?.focus?.());
+  }
+
+  $effect(() => {
+    if (typeof document === 'undefined') return;
+    if (!selected || !drawerLayerEl) {
+      document.getElementById('main')?.removeAttribute('inert');
+      return;
+    }
+    if (drawerLayerEl.parentElement !== document.body) {
+      document.body.appendChild(drawerLayerEl);
+    }
+    const main = document.getElementById('main');
+    main?.setAttribute('inert', '');
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeIssue();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    requestAnimationFrame(() => drawerEl?.focus());
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      main?.removeAttribute('inert');
+    };
+  });
+
+  function onTabListKeydown(event) {
+    const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+    if (!keys.includes(event.key)) return;
+    event.preventDefault();
+    const i = tabs.findIndex((t) => t.key === tab);
+    if (i < 0) return;
+    let next = i;
+    if (event.key === 'ArrowRight') next = (i + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') next = (i - 1 + tabs.length) % tabs.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = tabs.length - 1;
+    const dest = tabs[next];
+    if (!dest) return;
+    if (dest.key === 'coverage') {
+      gotoCoverage();
+      return;
+    }
+    tab = dest.key;
+    requestAnimationFrame(() => document.getElementById(`results-tab-${dest.key}`)?.focus());
   }
 
   async function copyFix() {
@@ -323,7 +378,7 @@
       {#if !locked}
         <div style="display: flex; gap: 8px;">
           <button class="btn btn-ghost btn-sm hero-btn" onclick={exportSalesPdf}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
@@ -336,7 +391,7 @@
     </div>
   </div>
 
-  <div class="container" style="padding: 32px 32px 80px;">
+  <div class="container results-body">
     {#if locked}
       <p class="locked-banner">
         Free 1-page snapshot — Overview is open. Other tabs are a blurred preview.
@@ -345,9 +400,19 @@
     {/if}
     <!-- Tabs + density switcher (only on Overview/Issues) -->
     <div class="tabs-row">
-      <div class="tabs" style="margin-bottom: 0; border: 0;">
+      <div class="tabs tabs-scroll" style="margin-bottom: 0; border: 0;" role="tablist" aria-label="Report sections" onkeydown={onTabListKeydown}>
         {#each tabs as t (t.key)}
-          <button class="tab" class:active={tab === t.key} onclick={() => (t.key === 'coverage' ? gotoCoverage() : (tab = t.key))}>
+          <button
+            type="button"
+            class="tab"
+            class:active={tab === t.key}
+            role="tab"
+            id={`results-tab-${t.key}`}
+            aria-selected={tab === t.key}
+            aria-controls="results-tabpanel"
+            tabindex={tab === t.key ? 0 : -1}
+            onclick={() => (t.key === 'coverage' ? gotoCoverage() : (tab = t.key))}
+          >
             {t.label}
             {#if t.count != null}<span class="count">{t.count}</span>{/if}
             {#if locked && t.key !== 'overview'}
@@ -360,13 +425,15 @@
         {/each}
       </div>
       {#if showDensitySwitcher}
-        <div class="variant-switcher" aria-label="Density">
+        <div class="variant-switcher" role="group" aria-label="Density">
           <span class="variant-label">Density</span>
           {#each variants as v (v.key)}
             <button
+              type="button"
               onclick={() => (variant = v.key)}
               class="variant-btn"
               class:active={variant === v.key}
+              aria-pressed={variant === v.key}
             >{v.label}</button>
           {/each}
         </div>
@@ -375,7 +442,13 @@
     <div class="hr"></div>
 
     <!-- Tab content -->
-    <div class="tab-panel" class:tab-panel--locked={contentLocked}>
+    <div
+      class="tab-panel"
+      class:tab-panel--locked={contentLocked}
+      role="tabpanel"
+      id="results-tabpanel"
+      aria-labelledby={`results-tab-${tab}`}
+    >
     <div class="tab-panel-inner" aria-hidden={contentLocked ? true : undefined} inert={contentLocked ? true : undefined}>
     <div class="fade-up" key={tab + variant}>
       {#if tab === 'overview'}
@@ -422,7 +495,7 @@
           <div class="card-flat">
             <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px;">
               <div>
-                <h3 style="font-size: 18px; margin-bottom: 2px;">Score trend</h3>
+                <h2 style="font-size: 18px; margin-bottom: 2px;">Score trend</h2>
                 {#if scoreDelta != null}
                   <div class="muted" style="font-size: 13px;">
                     {scoreDelta >= 0 ? '↑' : '↓'} {Math.abs(scoreDelta)} pts since last audit
@@ -442,7 +515,7 @@
             <div class="card-flat">
               <h3 style="font-size: 16px; margin-bottom: 14px;">Issue distribution</h3>
               <div style="display: flex; gap: 16px; align-items: center;">
-                <svg width="140" height="140" viewBox="0 0 140 140">
+                <svg width="140" height="140" viewBox="0 0 140 140" aria-hidden="true">
                   <circle cx="70" cy="70" r="60" fill="var(--us-n-30)" />
                   {#each distSegs as s, i (s.key)}
                     {@const cum = distSegs.slice(0, i).reduce((a, b) => a + b.value / distTotal, 0)}
@@ -475,7 +548,7 @@
         </div>
 
         <!-- PRINCIPLES + AFFECTED PAGES -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
+        <div class="principles-pages-grid">
           <div class="card-flat">
             <h3 style="font-size: 16px; margin-bottom: 14px;">WCAG principles (POUR)</h3>
             <div style="display: flex; flex-direction: column; gap: 12px;">
@@ -503,7 +576,7 @@
                   <span class="mono muted" style="font-size: 11px;">{String(i + 1).padStart(2, '0')}</span>
                   <div>
                     <div style="font-weight: 500; font-size: 14px;">{p.title}</div>
-                    <div class="mono muted" style="font-size: 11px;">{p.url}</div>
+                    <div class="mono muted break-anywhere" style="font-size: 11px;">{p.url}</div>
                   </div>
                   <div style="display: flex; gap: 6px;">
                     <span class="tag tag-error">{p.errors}</span>
@@ -518,13 +591,13 @@
         <!-- FILTERS -->
         <div style="display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
           <span class="muted" style="font-size: 13px;">Show:</span>
-          <button class="filter-chip" class:active={filter.error} onclick={() => (filter = { ...filter, error: !filter.error })}>
+          <button type="button" class="filter-chip" class:active={filter.error} aria-pressed={filter.error} onclick={() => (filter = { ...filter, error: !filter.error })}>
             <span class="dot dot-error"></span>{severityCounts.errors} errors
           </button>
-          <button class="filter-chip warning" class:active={filter.warning} onclick={() => (filter = { ...filter, warning: !filter.warning })}>
+          <button type="button" class="filter-chip warning" class:active={filter.warning} aria-pressed={filter.warning} onclick={() => (filter = { ...filter, warning: !filter.warning })}>
             <span class="dot dot-warning"></span>{severityCounts.warnings} warnings
           </button>
-          <button class="filter-chip success" class:active={filter.passed} onclick={() => (filter = { ...filter, passed: !filter.passed })}>
+          <button type="button" class="filter-chip success" class:active={filter.passed} aria-pressed={filter.passed} onclick={() => (filter = { ...filter, passed: !filter.passed })}>
             <span class="dot dot-success"></span>{severityCounts.passed} passed
           </button>
           <span style="flex: 1;"></span>
@@ -538,7 +611,7 @@
               <SeverityBadge severity={severityForBadge(sev)} />
               <div style="text-align: left;">
                 <div style="font-weight: 500; font-size: 15px; margin-bottom: 2px;">{item.rule}</div>
-                <div class="muted" style="font-size: 12px;">
+                <div class="muted break-anywhere" style="font-size: 12px;">
                   {#if item.duplicateIdLabel}
                     Duplicated: <span class="mono">{item.duplicateIdLabel}</span>
                     {#if item.wcag} · WCAG {wcagDisplay(item.wcag)}{/if}
@@ -550,7 +623,7 @@
                   {/if}
                 </div>
                 {#if item.occurrenceDetails && item.occurrenceDetails.length > 0}
-                  <div class="mono muted" style="font-size: 11px; margin-top: 4px;">
+                  <div class="mono muted break-anywhere" style="font-size: 11px; margin-top: 4px;">
                     {item.occurrenceDetails.slice(0, 2).join(' · ')}
                     {#if item.occurrenceDetails.length > 2}
                       · +{item.occurrenceDetails.length - 2} more
@@ -630,7 +703,7 @@
               <span class="mono muted" style="font-size: 11px;">{String(i + 1).padStart(2, '0')}</span>
               <div>
                 <div style="font-weight: 500; font-size: 14px;">{p.title}</div>
-                <div class="mono muted" style="font-size: 11px;">{p.url}</div>
+                <div class="mono muted break-anywhere" style="font-size: 11px;">{p.url}</div>
               </div>
               <span class="tag tag-error">{p.errors}</span>
               <span class="tag tag-warning">{p.warnings}</span>
@@ -715,17 +788,25 @@
     {@const fixUrls = urlsForFix(selected)}
     {@const occTotal = selected.occurrencesTotal ?? fixUrls.length}
     {@const occPage = selected.occurrencesOnPage ?? 0}
-    <div class="drawer-backdrop" onclick={closeIssue} role="presentation">
-      <div class="drawer" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+    <div class="drawer-layer" bind:this={drawerLayerEl}>
+      <button type="button" class="drawer-backdrop" aria-label="Close" onclick={closeIssue}></button>
+      <div
+        class="drawer"
+        bind:this={drawerEl}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="issue-drawer-title"
+        tabindex="-1"
+      >
         <div class="drawer-head">
           <SeverityBadge severity={severityForBadge(severityFor(selected))} />
-          <button class="btn btn-ghost btn-sm" onclick={closeIssue}>Close ✕</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick={closeIssue}>Close ✕</button>
         </div>
         <div class="drawer-body">
           <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
             {#if selected.wcag}WCAG {wcagDisplay(selected.wcag)} · {/if}<span class="mono">{selected.id}</span>
           </div>
-          <h2 style="font-size: 28px; margin-bottom: 14px;">{selected.rule}</h2>
+          <h2 id="issue-drawer-title" style="font-size: 28px; margin-bottom: 14px;">{selected.rule}</h2>
           {#if selected.duplicateIdLabel}
             <p style="font-size: 15px; margin: 0 0 16px;">
               Duplicated IDs: <span class="mono" style="font-weight: 600;">{selected.duplicateIdLabel}</span>
@@ -770,7 +851,7 @@
           {/if}
 
           {#if selected.occurrenceDetails && selected.occurrenceDetails.length > 0}
-            <h4 class="drawer-h4">Where they appear ({selected.occurrenceDetails.length})</h4>
+            <h2 class="drawer-h2">Where they appear ({selected.occurrenceDetails.length})</h2>
             <div class="affected-pages" style="margin-bottom: 24px;">
               {#each selected.occurrenceDetails as desc, i (`${desc}-${i}`)}
                 <span class="mono affected-page" class:affected-page--markup={desc.includes('<')}>{desc}</span>
@@ -779,7 +860,7 @@
           {/if}
 
           {#if fixUrls.length > 0}
-            <h4 class="drawer-h4">Pages affected ({fixUrls.length})</h4>
+            <h2 class="drawer-h2">Pages affected ({fixUrls.length})</h2>
             <div class="affected-pages">
               {#each fixUrls.slice(0, 12) as u (u)}
                 <a class="mono affected-page" href={u} target="_blank" rel="noopener">{u}</a>
@@ -857,8 +938,8 @@
   .score-info > summary {
     list-style: none;
     cursor: pointer;
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.12);
     color: var(--us-cream);
@@ -912,6 +993,9 @@
     color: var(--us-cream);
     border: 1px solid rgba(255, 255, 255, 0.2);
   }
+  .results-body {
+    padding-block: 32px 80px;
+  }
   .tabs-row {
     display: flex;
     justify-content: space-between;
@@ -919,6 +1003,18 @@
     flex-wrap: wrap;
     gap: 16px;
     margin-bottom: 8px;
+  }
+  .tabs-scroll {
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent);
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent);
+  }
+  .tabs-scroll .tab {
+    scroll-snap-align: start;
   }
   .variant-switcher {
     display: flex;
@@ -938,6 +1034,8 @@
   }
   .variant-btn {
     padding: 6px 14px;
+    min-height: 28px;
+    min-width: 24px;
     font-size: 12px;
     background: transparent;
     color: var(--fg-2);
@@ -996,6 +1094,12 @@
   .overview-grid.detailed {
     grid-template-columns: 1fr;
   }
+  .principles-pages-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 24px;
+  }
   .dash-principles-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -1016,14 +1120,18 @@
     .stat-strip,
     .stat-strip.compact,
     .stat-strip.detailed,
-    .overview-grid {
+    .overview-grid,
+    .principles-pages-grid {
       grid-template-columns: 1fr 1fr;
     }
   }
   @media (max-width: 600px) {
     .stat-strip,
     .stat-strip.compact,
-    .stat-strip.detailed {
+    .stat-strip.detailed,
+    .overview-grid,
+    .overview-grid.detailed,
+    .principles-pages-grid {
       grid-template-columns: 1fr;
     }
     .dash-principles-grid,
@@ -1036,6 +1144,8 @@
   }
   .filter-chip {
     padding: 6px 14px;
+    min-height: 28px;
+    min-width: 24px;
     border-radius: 999px;
     background: transparent;
     color: var(--fg-3);
@@ -1153,21 +1263,33 @@
   .pages-row {
     grid-template-columns: auto 1fr auto auto auto auto;
   }
-  .drawer-backdrop {
+  .drawer-layer {
     position: fixed;
     inset: 0;
-    background: rgba(25, 25, 27, 0.4);
-    backdrop-filter: blur(8px);
     z-index: 100;
     display: flex;
     justify-content: flex-end;
   }
+  .drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(25, 25, 27, 0.4);
+    backdrop-filter: blur(8px);
+    cursor: pointer;
+  }
   @media (max-width: 540px) {
-    .drawer-backdrop {
+    .drawer-layer {
       justify-content: stretch;
     }
   }
   .drawer {
+    position: relative;
+    z-index: 1;
     width: min(640px, 100%);
     max-width: 100%;
     height: 100dvh;
@@ -1175,6 +1297,13 @@
     background: var(--us-cream);
     overflow-y: auto;
     box-shadow: var(--shadow-pop);
+  }
+  .drawer:focus {
+    outline: none;
+  }
+  .drawer:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
   }
   .drawer-head {
     padding: 20px calc(16px + env(safe-area-inset-right, 0px)) 20px calc(16px + env(safe-area-inset-left, 0px));
@@ -1194,7 +1323,7 @@
       padding: 24px calc(32px + env(safe-area-inset-right, 0px)) 32px calc(32px + env(safe-area-inset-left, 0px));
     }
   }
-  .drawer-h4 {
+  .drawer-h2 {
     font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 0.08em;

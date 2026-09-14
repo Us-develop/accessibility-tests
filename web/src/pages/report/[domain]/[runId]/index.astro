@@ -120,7 +120,7 @@ const dashboardProps = {
 <Layout title={`Accessibility report · ${payload.primaryHost}`}>
   <div class="app-shell">
     <AppHeader domain={domain} runId={runId} active="results" />
-    <main class="app-main">
+    <main id="main" class="app-main" tabindex="-1">
       <ResultsDashboard client:load {...dashboardProps} />
     </main>
   </div>

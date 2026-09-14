@@ -8,7 +8,7 @@ const resetError = Astro.url.searchParams.get('error') === '1';
 <Layout title="Set a new password · Us" indexable={false} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Password" />
-    <main class="app-main">
+    <main id="main" class="app-main" tabindex="-1">
       <article class="container-narrow page-article">
         <h1>Set a new password</h1>
         <form id="reset-form" class="card stack-form stack-form-spaced" method="post" action="/api/auth/reset" data-astro-reload>
@@ -18,8 +18,8 @@ const resetError = Astro.url.searchParams.get('error') === '1';
             <input class="input" id="password" name="password" type="password" minlength="10" required autocomplete="new-password" />
           </div>
           <button class="btn btn-primary" type="submit">Save password</button>
-          <p id="reset-msg" class="muted" role="status">
-            {resetError ? 'Could not reset password. The link may have expired.' : ''}
+          <p id="reset-msg" class="muted" role={resetError ? 'alert' : 'status'}>
+          {resetError ? 'Could not reset password. The link may have expired.' : ''}
           </p>
         </form>
       </article>
@@ -43,8 +43,16 @@ const resetError = Astro.url.searchParams.get('error') === '1';
       });
       const data = await res.json().catch(() => ({}));
       const msg = document.getElementById('reset-msg');
+      const password = document.getElementById('password');
       if (!res.ok) {
-        if (msg) msg.textContent = data.error || 'Could not reset password.';
+        if (msg) {
+          msg.textContent = data.error || 'Could not reset password.';
+          msg.setAttribute('role', 'alert');
+        }
+        if (password) {
+          password.setAttribute('aria-invalid', 'true');
+          password.setAttribute('aria-describedby', 'reset-msg');
+        }
         return;
       }
       window.location.href = '/';

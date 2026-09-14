@@ -1,7 +1,7 @@
 ---
 /**
  * Glass sign-in overlay. On staff pages it blocks until login; on guest pages it is optional.
- * Coordinates with #wcag-main / #wcag-session-bar in Layout.astro.
+ * Coordinates with #wcag-main and #wcag-session-bar (session bar lives in AppHeader chrome).
  */
 interface Props {
   startLocked?: boolean;
@@ -115,7 +115,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
             </button>
           </p>
         </div>
-        <div class="wcag-login-face wcag-login-face--back">
+        <div class="wcag-login-face wcag-login-face--back" inert>
           <h2 id="wcag-request-title" class="wcag-login-title">Request Access</h2>
           <p class="wcag-access-lead">Tell us about yourself and we'll get back to you.</p>
           <p id="wcag-access-err" class="wcag-login-err" role="alert" hidden></p>
@@ -177,20 +177,30 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     return document.getElementById('wcag-session-bar');
   }
 
+  let lastLoginTrigger = null;
+
   function guestOk() {
     const overlay = qs('wcag-login-modal');
     return overlay?.getAttribute('data-start-locked') === 'false';
   }
 
+  function syncFlipInert() {
+    const inner = qs('wcag-login-flip-inner');
+    const front = inner?.querySelector('.wcag-login-face--front');
+    const back = inner?.querySelector('.wcag-login-face--back');
+    const flipped = inner?.classList.contains('is-flipped');
+    if (front instanceof HTMLElement) front.toggleAttribute('inert', !!flipped);
+    if (back instanceof HTMLElement) back.toggleAttribute('inert', !flipped);
+  }
+
   function lockAppShell() {
-    if (guestOk()) return;
     const main = getMain();
     const bar = getBar();
     if (main) {
-      main.hidden = true;
+      if (!guestOk()) main.hidden = true;
       main.setAttribute('inert', '');
     }
-    if (bar) bar.hidden = true;
+    if (bar && !guestOk()) bar.hidden = true;
   }
 
   /** @param {boolean} showLogout - show session bar only when auth is on and user has a session */
@@ -207,11 +217,16 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
   function openModal() {
     const overlay = qs('wcag-login-modal');
     if (!overlay) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && overlay.contains(active) === false) {
+      lastLoginTrigger = active;
+    }
     overlay.hidden = false;
     overlay.removeAttribute('hidden');
     overlay.setAttribute('aria-hidden', 'false');
     const flip = qs('wcag-login-flip-inner');
     if (flip) flip.classList.remove('is-flipped');
+    syncFlipInert();
     const dialogEl = qs('wcag-login-dialog');
     if (dialogEl) dialogEl.setAttribute('aria-labelledby', 'wcag-login-title');
     qs('wcag-access-form')?.reset();
@@ -240,6 +255,11 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     if (!overlay) return;
     overlay.hidden = true;
     overlay.setAttribute('aria-hidden', 'true');
+    const trigger = lastLoginTrigger;
+    lastLoginTrigger = null;
+    if (trigger && typeof trigger.focus === 'function') {
+      queueMicrotask(() => trigger.focus());
+    }
   }
 
   function syncCloseButton() {
@@ -515,6 +535,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     });
 
     document.addEventListener('wcag:open-login', () => {
+      lastLoginTrigger = qs('wcag-header-login') || document.activeElement;
       openModal();
       qs('wcag-login-user')?.focus();
     });
@@ -541,12 +562,14 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       if (!(target instanceof Element)) return;
       if (target.closest('#wcag-flip-to-request')) {
         qs('wcag-login-flip-inner')?.classList.add('is-flipped');
+        syncFlipInert();
         qs('wcag-login-dialog')?.setAttribute('aria-labelledby', 'wcag-request-title');
         qs('wcag-access-name')?.focus();
         return;
       }
       if (target.closest('#wcag-flip-to-login')) {
         qs('wcag-login-flip-inner')?.classList.remove('is-flipped');
+        syncFlipInert();
         qs('wcag-login-dialog')?.setAttribute('aria-labelledby', 'wcag-login-title');
         qs('wcag-flip-to-request')?.focus();
         return;
@@ -565,7 +588,10 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       if (e.key !== 'Escape') return;
       if (!guestOk()) return;
       const overlay = qs('wcag-login-modal');
-      if (overlay && !overlay.hidden) closeModal();
+      if (overlay && !overlay.hidden) {
+        closeModal();
+        unlockAppShell(false);
+      }
     });
   }
 </script>

@@ -40,6 +40,8 @@ function stepHref(stepKey: Step['key']): string | null {
 }
 
 const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
+const uiHint = Astro.cookies.get('wcag_ui')?.value;
+const sessionHint = uiHint === '1' || uiHint === 'c';
 ---
 
 <header class="app-header" data-screen-label="App header">
@@ -74,31 +76,49 @@ const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
       </nav>
     )}
 
-    <div class="app-header-chrome">
-      {domain ? (
-        <a
-          class={`btn btn-sm btn-all-scans ${active === 'history' ? 'btn-cream' : 'btn-secondary'}`}
-          href={`/report/${encodeURIComponent(domain)}/history`}
-          aria-label={`All scans of ${domain}`}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-          All scans
-        </a>
-      ) : null}
-      <a class="btn btn-ghost btn-sm wcag-header-account" href="/account">Account</a>
-      <a class="btn btn-ghost btn-sm" href="/pricing">Pricing</a>
-      <span class="muted" style="font-size: 13px;">WCAG 2.2 AA aligned</span>
-      <a class="btn btn-ghost wcag-header-signup" href="/signup">Create account</a>
-      <button type="button" class="btn btn-ghost wcag-header-login" id="wcag-header-login">
-        Log in
-      </button>
-    </div>
+    <details class="app-header-nav">
+      <summary class="app-header-menu-toggle" aria-label="Open menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </summary>
+      <div class="app-header-chrome">
+        {domain ? (
+          <a
+            class={`btn btn-sm btn-all-scans ${active === 'history' ? 'btn-cream' : 'btn-secondary'}`}
+            href={`/report/${encodeURIComponent(domain)}/history`}
+            aria-label={`All scans of ${domain}`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+            All scans
+          </a>
+        ) : null}
+        <a class="btn btn-ghost btn-sm wcag-header-account" href="/account">Account</a>
+        <a class="btn btn-ghost btn-sm" href="/pricing">Pricing</a>
+        <span class="muted" style="font-size: 13px;">WCAG 2.2 AA aligned</span>
+        <a class="btn btn-ghost wcag-header-signup" href="/signup">Create account</a>
+        <button type="button" class="btn btn-ghost wcag-header-login" id="wcag-header-login">
+          Log in
+        </button>
+        <div id="wcag-session-bar" class="wcag-session-bar" hidden={!sessionHint}>
+          <button type="button" id="wcag-logout-btn" class="wcag-session-logout" aria-label="Log out">
+            Log out
+          </button>
+        </div>
+      </div>
+    </details>
   </div>
 </header>
 
 <script>
+  function syncHeaderNav() {
+    document.querySelectorAll('details.app-header-nav').forEach((el) => {
+      if (!(el instanceof HTMLDetailsElement)) return;
+      if (window.matchMedia('(min-width: 481px)').matches) el.open = true;
+    });
+  }
   if (!globalThis.__wcagHeaderLoginBound) {
     globalThis.__wcagHeaderLoginBound = true;
     document.addEventListener('click', (event) => {
@@ -108,7 +128,10 @@ const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
         document.dispatchEvent(new CustomEvent('wcag:open-login'));
       }
     });
+    window.addEventListener('resize', syncHeaderNav);
+    document.addEventListener('astro:page-load', syncHeaderNav);
   }
+  syncHeaderNav();
 </script>
 
 <style>
@@ -126,5 +149,11 @@ const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
     align-items: center;
     gap: 6px;
     font-weight: 600;
+  }
+  .app-header-nav > summary {
+    list-style: none;
+  }
+  .app-header-nav > summary::-webkit-details-marker {
+    display: none;
   }
 </style>

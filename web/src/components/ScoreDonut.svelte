@@ -1,3 +1,6 @@
+<script module>
+  let donutSeq = 0;
+</script>
 <script>
   /** @type {{ score: number, size?: number, stroke?: number, label?: string, showLabel?: boolean, threshold?: number }} */
   let { score, size = 160, stroke = 14, label = 'Score', showLabel = true, threshold = 80 } = $props();
@@ -6,11 +9,11 @@
   const circumference = $derived(2 * Math.PI * radius);
   const offset = $derived(circumference - (Math.max(0, Math.min(100, score)) / 100) * circumference);
   const passing = $derived(score >= threshold);
-  const gradId = $derived(`donut-grad-${size}`);
+  const gradId = `donut-grad-${++donutSeq}`;
 </script>
 
 <div class="donut-wrap" style="width:{size}px; height:{size}px;">
-  <svg width={size} height={size} viewBox="0 0 {size} {size}">
+  <svg width={size} height={size} viewBox="0 0 {size} {size}" aria-hidden="true">
     <defs>
       <linearGradient id={gradId} x1="0" x2="1" y1="0" y2="1">
         <stop offset="0%" stop-color="#FFB985" />

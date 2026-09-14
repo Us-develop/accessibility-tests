@@ -12,7 +12,7 @@ const pack100Label = formatVatInclusivePrice(8000);
 <Layout title="Account · Us" authMode="required">
   <div class="app-shell">
     <AppHeader crumb="Account" />
-    <main class="app-main">
+    <main id="main" class="app-main" tabindex="-1">
       <article class="container-narrow page-article">
         <h1>Account</h1>
         <p id="account-status" class="muted mt-1">Loading…</p>
@@ -49,7 +49,7 @@ const pack100Label = formatVatInclusivePrice(8000);
         <section id="contact-card" class="card stack-form account-section" hidden>
           <h2>Contact details</h2>
           <form id="contact-form" class="account-form" method="post" action="/account" data-astro-reload>
-            <label>Name <input name="name" type="text" autocomplete="name" /></label>
+            <label>Name <input id="account-name" name="name" type="text" autocomplete="name" /></label>
             <label class="legal-check">
               <input type="checkbox" id="buying-for-business" name="buyingForBusiness" value="true" />
               <span>I'm buying for a business</span>
@@ -59,8 +59,14 @@ const pack100Label = formatVatInclusivePrice(8000);
               <label>VAT number <input name="vatNumber" type="text" /></label>
             </div>
             <label>Phone <input name="phone" type="tel" autocomplete="tel" /></label>
-            <label>Address <input name="addressLine1" type="text" autocomplete="address-line1" /></label>
-            <label class="sr-only">Address line 2 <input name="addressLine2" type="text" autocomplete="address-line2" /></label>
+            <label>
+              Address
+              <input name="addressLine1" type="text" autocomplete="address-line1" />
+            </label>
+            <label>
+              Address line 2
+              <input name="addressLine2" type="text" autocomplete="address-line2" />
+            </label>
             <div class="account-form-row">
               <label>City <input name="city" type="text" autocomplete="address-level2" /></label>
               <label>Postal code <input name="postalCode" type="text" autocomplete="postal-code" /></label>
@@ -73,8 +79,8 @@ const pack100Label = formatVatInclusivePrice(8000);
         <section id="password-card" class="card stack-form account-section" hidden>
           <h2>Change password</h2>
           <form id="password-form" class="account-form" method="post" action="/account" data-astro-reload>
-            <label>Current password <input name="currentPassword" type="password" autocomplete="current-password" required /></label>
-            <label>New password <input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
+            <label>Current password <input id="account-current-password" name="currentPassword" type="password" autocomplete="current-password" required /></label>
+            <label>New password <input id="account-new-password" name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
             <button type="submit" class="btn btn-ghost">Update password</button>
           </form>
         </section>
@@ -134,9 +140,11 @@ const pack100Label = formatVatInclusivePrice(8000);
   const headers = () =>
     typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' };
 
-  function setMsg(text) {
+  function setMsg(text, isError = false) {
     const msg = document.getElementById('account-msg');
-    if (msg) msg.textContent = text || '';
+    if (!msg) return;
+    msg.textContent = text || '';
+    msg.setAttribute('role', isError ? 'alert' : 'status');
   }
 
   function fillForm(form, user) {
@@ -173,7 +181,7 @@ const pack100Label = formatVatInclusivePrice(8000);
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setMsg(data.error || 'Could not attach that snapshot.');
+      setMsg(data.error || 'Could not attach that snapshot.', true);
       return;
     }
     setMsg(`Saved ${data.project?.domain || 'that snapshot'} to your projects.`);
@@ -331,7 +339,17 @@ const pack100Label = formatVatInclusivePrice(8000);
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
-    setMsg(res.ok ? 'Details saved.' : data.error || 'Could not save details.');
+    setMsg(res.ok ? 'Details saved.' : data.error || 'Could not save details.', !res.ok);
+    const nameField = document.getElementById('account-name');
+    if (nameField) {
+      if (res.ok) {
+        nameField.removeAttribute('aria-invalid');
+        nameField.removeAttribute('aria-describedby');
+      } else {
+        nameField.setAttribute('aria-invalid', 'true');
+        nameField.setAttribute('aria-describedby', 'account-msg');
+      }
+    }
   });
 
   document.getElementById('password-form')?.addEventListener('submit', async (event) => {
@@ -345,7 +363,19 @@ const pack100Label = formatVatInclusivePrice(8000);
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
-    setMsg(res.ok ? 'Password updated.' : data.error || 'Could not update password.');
+    setMsg(res.ok ? 'Password updated.' : data.error || 'Could not update password.', !res.ok);
+    const current = document.getElementById('account-current-password');
+    const next = document.getElementById('account-new-password');
+    for (const field of [current, next]) {
+      if (!field) continue;
+      if (res.ok) {
+        field.removeAttribute('aria-invalid');
+        field.removeAttribute('aria-describedby');
+      } else {
+        field.setAttribute('aria-invalid', 'true');
+        field.setAttribute('aria-describedby', 'account-msg');
+      }
+    }
     if (res.ok) form.reset();
   });
 
@@ -362,14 +392,14 @@ const pack100Label = formatVatInclusivePrice(8000);
       window.location.href = data.url;
       return;
     }
-    setMsg(data.error || 'Could not open the billing portal.');
+    setMsg(data.error || 'Could not open the billing portal.', true);
   });
 
   document.querySelectorAll('.token-buy').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const waiver = document.getElementById('withdrawal-waiver');
       if (!(waiver instanceof HTMLInputElement) || !waiver.checked) {
-        setMsg('Tick the immediate-delivery box before checkout.');
+        setMsg('Tick the immediate-delivery box before checkout.', true);
         return;
       }
       btn.disabled = true;
@@ -384,7 +414,7 @@ const pack100Label = formatVatInclusivePrice(8000);
         window.location.href = data.url;
         return;
       }
-      setMsg(data.error || 'Could not start checkout.');
+      setMsg(data.error || 'Could not start checkout.', true);
       btn.disabled = false;
     });
   });

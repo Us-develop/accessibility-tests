@@ -193,7 +193,8 @@
     {#each filters as f}
       <button
         type="button"
-        class="btn btn-sm {filter === f.key ? 'btn-primary' : 'btn-ghost'}"
+        class="btn btn-sm coverage-filter {filter === f.key ? 'btn-primary' : 'btn-ghost'}"
+        aria-pressed={filter === f.key}
         onclick={() => (filter = f.key)}
       >
         {f.label}
@@ -290,6 +291,10 @@
     flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 16px;
+  }
+  .coverage-filter {
+    min-width: 24px;
+    min-height: 24px;
   }
   .coverage-list {
     list-style: none;

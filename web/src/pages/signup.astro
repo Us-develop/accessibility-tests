@@ -10,7 +10,7 @@ const signupError = Astro.url.searchParams.get('error') === '1';
 <Layout title="Create account · Us" indexable={false} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Create account" />
-    <main class="app-main">
+    <main id="main" class="app-main" tabindex="-1">
       <article class="container-narrow page-article">
         <h1>Create account</h1>
         <p class="muted prose-width prose-lead">
@@ -54,7 +54,7 @@ const signupError = Astro.url.searchParams.get('error') === '1';
             </span>
           </label>
           <button type="submit" class="btn btn-primary" id="signup-btn">Create account</button>
-          <p id="signup-msg" class="muted" role="status">
+          <p id="signup-msg" class="muted" role={signupError ? 'alert' : 'status'}>
             {checkEmail
               ? 'Check your email to verify the account, then sign in.'
               : signupError
@@ -110,7 +110,17 @@ const signupError = Astro.url.searchParams.get('error') === '1';
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (msg) msg.textContent = data.error || 'Could not create account.';
+        if (msg) {
+          msg.textContent = data.error || 'Could not create account.';
+          msg.setAttribute('role', 'alert');
+        }
+        const email = document.getElementById('email');
+        const password = document.getElementById('password');
+        for (const field of [email, password]) {
+          if (!field) continue;
+          field.setAttribute('aria-invalid', 'true');
+          field.setAttribute('aria-describedby', 'signup-msg');
+        }
         return;
       }
       if (data.needsVerification) {

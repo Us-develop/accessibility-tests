@@ -7,7 +7,7 @@ const sent = Astro.url.searchParams.get('sent') === '1';
 <Layout title="Reset password · Us" indexable={false} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Password" />
-    <main class="app-main">
+    <main id="main" class="app-main" tabindex="-1">
       <article class="container-narrow page-article">
         <h1>Forgot password</h1>
         <form id="forgot-form" class="card stack-form stack-form-spaced" method="post" action="/api/auth/forgot" data-astro-reload>
@@ -40,7 +40,15 @@ const sent = Astro.url.searchParams.get('sent') === '1';
         body: JSON.stringify({ email }),
       });
       const msg = document.getElementById('forgot-msg');
-      if (msg) msg.textContent = 'If that account exists, we sent a reset link (or logged it when SMTP is off).';
+      const email = document.getElementById('email');
+      if (msg) {
+        msg.textContent = 'If that account exists, we sent a reset link (or logged it when SMTP is off).';
+        msg.setAttribute('role', 'status');
+      }
+      if (email) {
+        email.removeAttribute('aria-invalid');
+        email.removeAttribute('aria-describedby');
+      }
     }, true);
   }
 </script>

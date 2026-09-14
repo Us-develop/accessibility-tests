@@ -121,7 +121,7 @@ const autoPrint = Astro.url.searchParams.get('print') === '1';
 <Layout title={`Sales report · ${companyName}`}>
   <div class="app-shell">
     <AppHeader domain={domain} runId={runId} active="sales" />
-    <main class="app-main">
+    <main id="main" class="app-main" tabindex="-1">
       <SalesDeck client:only="svelte" {...deckProps} autoPrint={autoPrint} />
     </main>
   </div>

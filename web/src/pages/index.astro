@@ -12,10 +12,11 @@ export const prerender = false;
 <Layout title="Run a free accessibility check · Us" indexable={true} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader />
-    <main class="app-main">
-      <div class="container-narrow run-audit-page" style="position: relative; padding: clamp(32px, 5vw, 56px) 0 clamp(48px, 8vw, 96px);">
+    <main id="main" class="app-main" tabindex="-1">
+      <div class="container-narrow run-audit-page" style="position: relative; overflow: hidden; padding-block: clamp(32px, 5vw, 56px) clamp(48px, 8vw, 96px);">
         <div
           aria-hidden="true"
+          class="motion-drift"
           style="position: absolute; top: -120px; right: -100px; width: 460px; height: 460px; border-radius: 50%; background: var(--us-grad-iridescent); opacity: 0.5; filter: blur(40px); pointer-events: none; animation: drift 22s ease-in-out infinite;"
         >
         </div>
@@ -279,7 +280,7 @@ export const prerender = false;
           </div>
         </form>
 
-        <p id="form-err" class="muted" style="font-size: 14px; margin-top: 14px; color: var(--status-error); display: none;"></p>
+        <p id="form-err" class="muted" role="alert" hidden style="font-size: 14px; margin-top: 14px; color: var(--status-error);"></p>
 
         <p class="muted" style="font-size: 12px; margin-top: 14px; text-align: center;">
           <a href="/limitations" class="link">What this scan can and cannot test</a>
@@ -339,11 +340,29 @@ export const prerender = false;
     return {};
   }
 
+  const SCAN_FIELDS = ['guest-url', 'customer-url', 'urls'];
+
   function formErrorEl() {
     return document.getElementById('form-err');
   }
 
-  function showFormError(message, ctas) {
+  function markFieldInvalid(fieldId) {
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+    field.setAttribute('aria-invalid', 'true');
+    field.setAttribute('aria-describedby', 'form-err');
+  }
+
+  function clearInvalidFields() {
+    for (const id of SCAN_FIELDS) {
+      const field = document.getElementById(id);
+      if (!field) continue;
+      field.removeAttribute('aria-invalid');
+      field.removeAttribute('aria-describedby');
+    }
+  }
+
+  function showFormError(message, ctas, fieldId) {
     const errEl = formErrorEl();
     if (!errEl) return;
     errEl.replaceChildren();
@@ -364,14 +383,18 @@ export const prerender = false;
         errEl.append(a);
       });
     }
+    errEl.hidden = false;
     errEl.style.display = 'block';
+    if (fieldId) markFieldInvalid(fieldId);
   }
 
   function clearFormError() {
     const errEl = formErrorEl();
     if (!errEl) return;
     errEl.replaceChildren();
+    errEl.hidden = true;
     errEl.style.display = 'none';
+    clearInvalidFields();
   }
 
   function countUrls() {
@@ -525,6 +548,8 @@ export const prerender = false;
 
   async function submitStaffForm(form) {
     clearFormError();
+    const btn = document.getElementById('submit-btn');
+    if (btn) btn.disabled = true;
     const fd = new FormData(form);
     const token = csrfToken();
     if (token) fd.set('csrfToken', token);
@@ -538,23 +563,27 @@ export const prerender = false;
       const data = await parseJsonResponse(res);
       if (res.status === 401) {
         document.dispatchEvent(new CustomEvent('wcag:login-required'));
-        showFormError(data.error || 'Sign in to run an audit.');
+        showFormError(data.error || 'Sign in to run an audit.', null, 'urls');
         return;
       }
       if (!res.ok) {
         if (res.status === 403) {
           showFormError(
             data.error ||
-              'The server refused this request (403). If the response body mentions cross-site POST, you may be hitting Astro’s standalone listener: ensure `cd web && npm start` (run-server.mjs sets ASTRO_NODE_AUTOSTART), or open http://127.0.0.1:PORT instead of localhost. Otherwise: run the API on 3456, use the full stack build, and set PUBLIC_DEV_API_URL + RELAX_CORS_LOCALHOST for astro dev, or fix PUBLIC_APP_BASE.'
+              'The server refused this request (403). If the response body mentions cross-site POST, you may be hitting Astro’s standalone listener: ensure `cd web && npm start` (run-server.mjs sets ASTRO_NODE_AUTOSTART), or open http://127.0.0.1:PORT instead of localhost. Otherwise: run the API on 3456, use the full stack build, and set PUBLIC_DEV_API_URL + RELAX_CORS_LOCALHOST for astro dev, or fix PUBLIC_APP_BASE.',
+            null,
+            'urls'
           );
         } else {
-          showFormError(data.error || res.statusText || 'Request failed');
+          showFormError(data.error || res.statusText || 'Request failed', null, 'urls');
         }
         return;
       }
-      if (!goToRun(data)) showFormError('Could not start the audit.');
+      if (!goToRun(data)) showFormError('Could not start the audit.', null, 'urls');
     } catch {
-      showFormError('Network error — is the API running? For dev, start legacy server on port 3456.');
+      showFormError('Network error — is the API running? For dev, start legacy server on port 3456.', null, 'urls');
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 
@@ -580,13 +609,13 @@ export const prerender = false;
       });
       const data = await parseJsonResponse(res);
       if (!res.ok) {
-        showFormError(data.error || res.statusText || 'Request failed', data.ctas);
+        showFormError(data.error || res.statusText || 'Request failed', data.ctas, 'guest-url');
         if (window.turnstile && turnstileWidgetId != null) window.turnstile.reset(turnstileWidgetId);
         return;
       }
-      if (!goToRun(data, { guestFallback: true })) showFormError('Could not start the free scan.');
+      if (!goToRun(data, { guestFallback: true })) showFormError('Could not start the free scan.', null, 'guest-url');
     } catch {
-      showFormError('Network error — is the API running?');
+      showFormError('Network error — is the API running?', null, 'guest-url');
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -612,16 +641,16 @@ export const prerender = false;
       const data = await parseJsonResponse(res);
       if (res.status === 401) {
         document.dispatchEvent(new CustomEvent('wcag:login-required'));
-        showFormError(data.error || 'Sign in to run a scan.');
+        showFormError(data.error || 'Sign in to run a scan.', null, 'customer-url');
         return;
       }
       if (!res.ok) {
-        showFormError(data.error || res.statusText || 'Request failed', data.ctas);
+        showFormError(data.error || res.statusText || 'Request failed', data.ctas, 'customer-url');
         return;
       }
-      if (!goToRun(data, { guestFallback: true })) showFormError('Could not start the scan.');
+      if (!goToRun(data, { guestFallback: true })) showFormError('Could not start the scan.', null, 'customer-url');
     } catch {
-      showFormError('Network error — is the API running?');
+      showFormError('Network error — is the API running?', null, 'customer-url');
     } finally {
       if (btn) btn.disabled = false;
     }

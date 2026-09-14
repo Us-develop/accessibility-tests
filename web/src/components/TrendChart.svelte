@@ -19,6 +19,13 @@
       ? `${linePath} L ${points[points.length - 1].x} ${height - 18} L ${points[0].x} ${height - 18} Z`
       : ''
   );
+  const chartLabel = $derived.by(() => {
+    if (!data.length) return 'Score trend, no data';
+    const first = data[0];
+    const last = data[data.length - 1];
+    const best = data.reduce((a, b) => (b.score > a.score ? b : a), first);
+    return `Score trend from ${first.score} on ${first.date} to ${last.score} on ${last.date}, best ${best.score}`;
+  });
 </script>
 
 <svg
@@ -26,7 +33,7 @@
   preserveAspectRatio="xMidYMid meet"
   class="trend-chart-svg"
   role="img"
-  aria-hidden="true"
+  aria-label={chartLabel}
 >
   <defs>
     <linearGradient id="trend-fill" x1="0" x2="0" y1="0" y2="1">
