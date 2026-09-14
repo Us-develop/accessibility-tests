@@ -69,12 +69,27 @@ async function httpUrlIsBlocked(raw) {
   }
 }
 
-async function requestChainLeavesAllowlist(request) {
+function originOf(raw) {
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return '';
+  }
+}
+
+async function requestChainLeavesAllowlist(request, pageOrigin) {
   let current = request;
   const seen = new Set();
   while (current && !seen.has(current)) {
     seen.add(current);
-    if (await httpUrlIsBlocked(current.url())) return true;
+    const raw = current.url();
+    // The page under test may itself be loopback (scripts/self-scan.mjs). Allow
+    // that origin; still block other private/reserved hosts.
+    if (pageOrigin && originOf(raw) === pageOrigin) {
+      current = current.redirectedFrom();
+      continue;
+    }
+    if (await httpUrlIsBlocked(raw)) return true;
     current = current.redirectedFrom();
   }
   return false;
@@ -328,7 +343,7 @@ async function main() {
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await page.route('**/*', async (route) => {
         const request = route.request();
-        if (await requestChainLeavesAllowlist(request)) {
+        if (await requestChainLeavesAllowlist(request, originOf(url))) {
           return route.abort('blockedbyclient');
         }
         if (blockMediaRequests && request.resourceType() === 'media') {

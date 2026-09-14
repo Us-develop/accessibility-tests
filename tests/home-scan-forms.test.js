@@ -15,6 +15,8 @@ const a11yPage = readFileSync(join(repoRoot, 'web/src/pages/accessibility.astro'
 const appCss = readFileSync(join(repoRoot, 'web/public/styles/app.css'), 'utf8');
 const tokensCss = readFileSync(join(repoRoot, 'web/public/styles/tokens.css'), 'utf8');
 const createApp = readFileSync(join(repoRoot, 'server/create-app.mjs'), 'utf8');
+const runTestsJs = readFileSync(join(repoRoot, 'run-tests.js'), 'utf8');
+const selfScan = readFileSync(join(repoRoot, 'scripts/self-scan.mjs'), 'utf8');
 
 function formBlock(id) {
   const re = new RegExp(`<form[\\s\\S]*?id="${id}"[\\s\\S]*?>`);
@@ -87,5 +89,15 @@ describe('own product accessibility markup', () => {
     assert.match(a11yPage, /WCAG 2\.2 Level AA/);
     assert.match(createApp, /p === '\/accessibility'/);
     assert.match(createApp, /Allow: \/accessibility/);
+  });
+
+  it('lets run-tests.js load the page origin even on loopback', () => {
+    assert.match(runTestsJs, /originOf\(raw\) === pageOrigin/);
+    assert.match(runTestsJs, /requestChainLeavesAllowlist\(request, originOf\(url\)\)/);
+  });
+
+  it('fails self-scan when a page does not load', () => {
+    assert.match(selfScan, /no axe results \(page did not load\)/);
+    assert.match(selfScan, /id === 'page-load'/);
   });
 });

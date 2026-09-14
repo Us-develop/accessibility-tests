@@ -78,8 +78,13 @@ function waitForHttp(url, timeoutMs = 60000) {
   });
 }
 
-function collectFailures(report) {
+function collectFailures(report, expectedUrls = []) {
   const failures = [];
+  for (const expected of expectedUrls) {
+    if (!report.axeResults?.[expected]) {
+      failures.push(`${expected}: no axe results (page did not load)`);
+    }
+  }
   for (const [url, axe] of Object.entries(report.axeResults || {})) {
     for (const v of axe.violations || []) {
       if (v.impact === 'critical' || v.impact === 'serious') {
@@ -90,6 +95,9 @@ function collectFailures(report) {
   for (const row of report.customResults || []) {
     if (row.id === 'no-horizontal-scroll' && row.status === 'fail') {
       failures.push(`${row.url || ''}: no-horizontal-scroll FAIL — ${row.message || ''}`);
+    }
+    if (row.id === 'page-load' && row.status === 'fail') {
+      failures.push(`${row.url || ''}: page-load FAIL — ${row.message || ''}`);
     }
   }
   return failures;
@@ -155,7 +163,7 @@ async function main() {
       }
       const resultsPath = join(work, outputId, 'accessibility-results.json');
       const report = JSON.parse(readFileSync(resultsPath, 'utf8'));
-      allFailures.push(...collectFailures(report).map((line) => `[${outputId}] ${line}`));
+      allFailures.push(...collectFailures(report, urls).map((line) => `[${outputId}] ${line}`));
     }
     if (allFailures.length) {
       console.error('\nSelf-scan failed:');
