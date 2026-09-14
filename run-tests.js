@@ -21,9 +21,64 @@ import { runDynamicChecks } from './tests/chapter8-dynamic.js';
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { lookup as dnsLookup } from 'dns/promises';
+import { isIP } from 'net';
+import { isBlockedHostname, isBlockedIp, scannerUserAgent, stripBrackets } from './server/url-guard.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPORTS_BASE = join(__dirname, 'reports');
+const REPORTS_BASE = process.env.REPORTS_BASE?.trim() || join(__dirname, 'reports');
+
+/** @type {Map<string, Promise<{ address: string }[]>>} */
+const hostLookupCache = new Map();
+
+async function lookupHostCached(hostname) {
+  const host = stripBrackets(hostname).toLowerCase();
+  if (hostLookupCache.has(host)) return hostLookupCache.get(host);
+  const pending = dnsLookup(host, { all: true })
+    .then((records) => (Array.isArray(records) ? records : [records]))
+    .catch((err) => {
+      hostLookupCache.delete(host);
+      throw err;
+    });
+  hostLookupCache.set(host, pending);
+  return pending;
+}
+
+async function httpUrlIsBlocked(raw) {
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return true;
+  }
+  if (parsed.protocol === 'data:' || parsed.protocol === 'blob:' || parsed.protocol === 'about:') {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return true;
+  }
+  const hostname = stripBrackets(parsed.hostname);
+  if (isBlockedHostname(hostname)) return true;
+  if (isIP(hostname)) return isBlockedIp(hostname);
+  try {
+    const records = await lookupHostCached(hostname);
+    const addresses = records.map((row) => (typeof row === 'string' ? row : row.address)).filter(Boolean);
+    return !addresses.length || addresses.some((addr) => isBlockedIp(addr));
+  } catch {
+    return true;
+  }
+}
+
+async function requestChainLeavesAllowlist(request) {
+  let current = request;
+  const seen = new Set();
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    if (await httpUrlIsBlocked(current.url())) return true;
+    current = current.redirectedFrom();
+  }
+  return false;
+}
 
 function parseUrlsFromArgs() {
   const urlsArg = process.argv.find((a) => a.startsWith('--urls='));
@@ -82,6 +137,9 @@ async function getUrls() {
 }
 
 async function runAxeScan(page, url) {
+  await page.addStyleTag({
+    content: '* { animation: none !important; transition: none !important; }',
+  });
   const builder = new AxeBuilder({ page }).withTags([
     'wcag2a',
     'wcag2aa',
@@ -215,22 +273,29 @@ async function main() {
     screenshots: {},
   };
 
+  const chromiumArgs = [
+    '--disable-blink-features=AutomationControlled',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--disable-software-rasterizer',
+    '--disable-extensions',
+    '--disable-background-networking',
+    '--disable-default-apps',
+    '--disable-sync',
+    '--metrics-recording-only',
+    '--mute-audio',
+    '--no-first-run',
+  ];
+  // Chromium's sandbox needs user namespaces / seccomp. The Docker image runs as
+  // USER node so the sandbox can stay on. Set SCANNER_NO_SANDBOX=true only when
+  // the host forbids namespaced sandboxes (legacy root containers, some PaaS).
+  if (parseBooleanEnv('SCANNER_NO_SANDBOX', false)) {
+    chromiumArgs.push('--no-sandbox');
+  }
+
   const browser = await chromium.launch({
     headless: true,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--no-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-software-rasterizer',
-      '--disable-extensions',
-      '--disable-background-networking',
-      '--disable-default-apps',
-      '--disable-sync',
-      '--metrics-recording-only',
-      '--mute-audio',
-      '--no-first-run',
-    ],
+    args: chromiumArgs,
   });
 
   let completed = 0;
@@ -238,19 +303,21 @@ async function main() {
     await runWithConcurrency(urls, urlConcurrency, async (url) => {
       console.log(`\nTesting: ${url}`);
       const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        userAgent: scannerUserAgent(),
         viewport: { width: 1366, height: 768 },
       });
       const page = await context.newPage();
-      if (blockMediaRequests) {
-        await page.route('**/*', (route) => {
-          const type = route.request().resourceType();
-          if (type === 'media') {
-            return route.abort();
-          }
-          return route.continue();
-        });
-      }
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.route('**/*', async (route) => {
+        const request = route.request();
+        if (await requestChainLeavesAllowlist(request)) {
+          return route.abort('blockedbyclient');
+        }
+        if (blockMediaRequests && request.resourceType() === 'media') {
+          return route.abort();
+        }
+        return route.continue();
+      });
 
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageGotoTimeoutMs });
