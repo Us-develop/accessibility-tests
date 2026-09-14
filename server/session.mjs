@@ -5,6 +5,12 @@ const UI_COOKIE = 'wcag_ui';
 const CSRF_COOKIE = 'wcag_csrf';
 const LEGACY_COOKIE = 'wcag_access';
 const MAX_AGE_SEC = 12 * 60 * 60;
+const USER_CACHE_MS = 60 * 1000;
+
+/** @type {Map<string, { user: object | null, expiresAt: number }>} */
+const userCache = new Map();
+let generatedDevSecret = null;
+let loggedDevSecretWarning = false;
 
 function parseBooleanEnv(name, defaultValue = false) {
   const raw = process.env[name];
@@ -15,15 +21,31 @@ function parseBooleanEnv(name, defaultValue = false) {
   return defaultValue;
 }
 
+export function staffSessionVersion() {
+  const n = parseInt(String(process.env.STAFF_SESSION_VERSION || '1'), 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
 export function sessionSecret() {
   const explicit = String(process.env.SESSION_SECRET || '').trim();
-  if (explicit) return explicit;
-  const fallback = String(process.env.APP_PASSWORD || 'root');
-  return `dev-only:${fallback}`;
+  if (explicit.length >= 32) return explicit;
+  const authEnabled = parseBooleanEnv('AUTH_ENABLED', true);
+  if (process.env.NODE_ENV === 'production' || authEnabled) {
+    throw new Error('SESSION_SECRET (>=32 chars) is required');
+  }
+  if (!generatedDevSecret) {
+    generatedDevSecret = randomBytes(32).toString('hex');
+  }
+  if (!loggedDevSecretWarning) {
+    loggedDevSecretWarning = true;
+    console.warn('[session] SESSION_SECRET unset; using a random per-process secret (AUTH_ENABLED=false).');
+  }
+  return generatedDevSecret;
 }
 
 function cookieSecure(sameSite) {
   if (sameSite === 'None') return true;
+  if (process.env.NODE_ENV === 'production') return true;
   return parseBooleanEnv('AUTH_COOKIE_SECURE', false);
 }
 
@@ -86,8 +108,13 @@ function appendCookie(res, line) {
   res.append('Set-Cookie', line);
 }
 
-export function setSessionCookies(res, { userId, role, email }, sameSite = 'Lax') {
-  const token = encodeSession({ sub: userId, role, email });
+function clearLegacyCookie(res, sameSite) {
+  const secure = cookieSecure(sameSite) ? '; Secure' : '';
+  appendCookie(res, `${LEGACY_COOKIE}=; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=0${secure}`);
+}
+
+export function setSessionCookies(res, { userId, role, email, ver }, sameSite = 'Lax') {
+  const token = encodeSession({ sub: userId, role, email, ver: ver ?? 1 });
   const csrf = randomBytes(16).toString('hex');
   const suffix = cookieSuffix(sameSite);
   const httpOnly = `; HttpOnly`;
@@ -95,11 +122,7 @@ export function setSessionCookies(res, { userId, role, email }, sameSite = 'Lax'
   appendCookie(res, `${CSRF_COOKIE}=${csrf}${suffix}`);
   const uiValue = role === 'staff' ? '1' : 'c';
   appendCookie(res, `${UI_COOKIE}=${uiValue}${suffix}`);
-  if (role === 'staff') {
-    appendCookie(res, `${LEGACY_COOKIE}=1${httpOnly}${suffix}`);
-  } else {
-    appendCookie(res, `${LEGACY_COOKIE}=; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=0`);
-  }
+  clearLegacyCookie(res, sameSite);
   return csrf;
 }
 
@@ -113,21 +136,42 @@ export function clearSessionCookies(res, sameSite = 'Lax') {
   appendCookie(res, clear(CSRF_COOKIE, false));
 }
 
-export function readAccessFromCookies(req) {
+export function invalidateSessionUserCache(userId) {
+  if (userId) userCache.delete(String(userId));
+}
+
+async function loadCachedUser(userId) {
+  const id = String(userId || '');
+  if (!id) return null;
+  const now = Date.now();
+  const hit = userCache.get(id);
+  if (hit && hit.expiresAt > now) return hit.user;
+  const { getUserById } = await import('./users.mjs');
+  const user = await getUserById(id);
+  userCache.set(id, { user, expiresAt: now + USER_CACHE_MS });
+  return user;
+}
+
+export async function readAccessFromCookies(req) {
   const cookies = parseCookies(req);
   const session = decodeSession(cookies[SESSION_COOKIE]);
-  if (session?.sub && session.role) {
-    return {
-      role: session.role,
-      userId: session.sub,
-      email: session.email || '',
-      csrf: cookies[CSRF_COOKIE] || '',
-    };
+  if (!session?.sub || !session.role) return null;
+  const csrf = cookies[CSRF_COOKIE] || '';
+  if (session.role === 'staff' && session.sub === 'staff') {
+    if (Number(session.ver) !== staffSessionVersion()) return null;
+    return { role: 'staff', userId: 'staff', email: session.email || '', csrf, ver: session.ver };
   }
-  if (cookies[LEGACY_COOKIE] === '1') {
-    return { role: 'staff', userId: 'staff', email: '', csrf: cookies[CSRF_COOKIE] || '' };
-  }
-  return null;
+  const user = await loadCachedUser(session.sub);
+  if (!user) return null;
+  const currentVer = Number(user.sessionVersion) || 1;
+  if (Number(session.ver) !== currentVer) return null;
+  return {
+    role: session.role,
+    userId: session.sub,
+    email: session.email || user.email || '',
+    csrf,
+    ver: session.ver,
+  };
 }
 
 const CSRF_SAFE_PATHS = new Set([
@@ -140,6 +184,7 @@ const CSRF_SAFE_PATHS = new Set([
   '/api/lead',
   '/api/access-request',
   '/api/stripe/webhook',
+  '/auth/logout',
 ]);
 
 /**
@@ -169,4 +214,4 @@ export function csrfOk(req) {
   return timingSafeEqual(a, b);
 }
 
-export { SESSION_COOKIE, UI_COOKIE, CSRF_COOKIE, LEGACY_COOKIE };
+export { SESSION_COOKIE, UI_COOKIE, CSRF_COOKIE };

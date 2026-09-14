@@ -11,7 +11,8 @@ process.env.REPORTS_BASE = tmp;
 process.env.AUTH_ENABLED = 'true';
 process.env.APP_USERNAME = 'root';
 process.env.APP_PASSWORD = 'staff-secret-pass';
-process.env.SESSION_SECRET = 'unit-test-session-secret';
+process.env.SESSION_SECRET = 'unit-test-session-secret-32chars!!';
+process.env.WCAG_DISABLE_RATE_LIMIT = '1';
 process.env.AUTH_EMAIL_VERIFY = 'auto';
 process.env.DEFER_ROOT_LOGIN_TO_SHELL = 'true';
 
@@ -215,7 +216,7 @@ describe('account HTTP', () => {
     assert.equal(res.status, 200);
     assert.equal(data.role, 'staff');
     assert.equal(jar.get('wcag_ui'), '1');
-    assert.equal(jar.get('wcag_access'), '1');
+    assert.equal(jar.get('wcag_access'), '');
 
     const status = await fetch(`${origin}/api/auth/status`, { headers: { cookie: jar.header() } });
     const st = await status.json();

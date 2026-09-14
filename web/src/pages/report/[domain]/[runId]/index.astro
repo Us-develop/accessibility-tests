@@ -49,7 +49,7 @@ const suggestedFixes = payload.suggestedFixes || { points: 0, tickets: [] };
 // Pull score history for the trend chart from prior runs of this domain.
 const allRuns = await listVisibleRunsForDomain(dbPool, REPORTS_BASE, domain, {
   sessionToken: Astro.cookies.get('wcag_sid')?.value || '',
-  uiHint: Astro.cookies.get('wcag_ui')?.value || Astro.cookies.get('wcag_access')?.value,
+  access: Astro.locals?.access,
 });
 const trend = allRuns
   .slice()

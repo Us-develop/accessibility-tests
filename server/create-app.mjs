@@ -6,7 +6,7 @@
 import express from 'express';
 import multer from 'multer';
 import { spawn } from 'child_process';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { sendRunNotificationEmail, createSmtpTransport, sendAccessRequestEmail, sendLeadEmail } from '../server-email.js';
@@ -51,9 +51,11 @@ import {
   csrfOk,
   isHtmlFormPost,
   readAccessFromCookies,
+  sessionSecret,
   setSessionCookies,
+  staffSessionVersion,
 } from './session.mjs';
-import { authenticateUser, getUserById } from './users.mjs';
+import { authenticateUser, getUserById, GENERIC_CREDENTIALS_ERROR } from './users.mjs';
 import { attachRunToUser, canAccessDomain, findProjectByDomain, listProjectsForUser } from './projects.mjs';
 import { registerAccountRoutes } from './account-routes.mjs';
 import { registerStripeRoutes, registerStripeWebhook } from './stripe-routes.mjs';
@@ -67,6 +69,13 @@ import {
   recoverInterruptedJobs,
   setQueueExecutor,
 } from './queue.mjs';
+import {
+  errorMiddleware,
+  patchAppAsyncHandlers,
+  requestIdMiddleware,
+  securityHeadersMiddleware,
+} from './http-utils.mjs';
+import { clientKey, rateLimit } from './rate-limit.mjs';
 
 const DELIVERABLE_FILES = [
   'accessibility-developers.html',
@@ -103,8 +112,8 @@ function parseBooleanEnv(name, defaultValue = false) {
   return defaultValue;
 }
 let AUTH_ENABLED = parseBooleanEnv('AUTH_ENABLED', true);
-let APP_USERNAME = 'root';
-let APP_PASSWORD = 'root';
+let APP_USERNAME = '';
+let APP_PASSWORD = '';
 let AUTH_COOKIE_SAMESITE = 'Lax';
 
 // In-memory run status (running, done, error)
@@ -163,6 +172,7 @@ const PUBLIC_GET_PATHS = new Set([
   '/robots.txt',
   '/favicon.png',
   '/design-system.css',
+  '/api/__test/throw',
 ]);
 
 function isGuestOpenPath(req) {
@@ -472,13 +482,31 @@ export function createAccessibilityApp(repoRoot) {
     throw new Error('createAccessibilityApp(repoRoot): repoRoot must be a non-empty path string');
   }
   AUTH_ENABLED = parseBooleanEnv('AUTH_ENABLED', true);
-  APP_USERNAME = String(process.env.APP_USERNAME ?? 'root').trim() || 'root';
-  APP_PASSWORD = String(process.env.APP_PASSWORD ?? 'root').trim() || 'root';
+  APP_USERNAME = String(process.env.APP_USERNAME || '').trim();
+  APP_PASSWORD = String(process.env.APP_PASSWORD || '').trim();
+  if (AUTH_ENABLED && (!APP_PASSWORD || APP_PASSWORD.length < 12)) {
+    throw new Error('APP_PASSWORD (>=12 chars) is required when AUTH_ENABLED=true');
+  }
+  sessionSecret();
   const sameSiteRaw = String(process.env.AUTH_COOKIE_SAMESITE || 'Lax').trim();
   AUTH_COOKIE_SAMESITE = ['Lax', 'Strict', 'None'].includes(sameSiteRaw) ? sameSiteRaw : 'Lax';
   const loadingPath = '/loading';
 
   const app = express();
+  app.disable('x-powered-by');
+  const trustHops = Number(process.env.TRUST_PROXY_HOPS || 1);
+  app.set('trust proxy', Number.isFinite(trustHops) && trustHops >= 0 ? trustHops : 1);
+  patchAppAsyncHandlers(app);
+  app.use(requestIdMiddleware);
+  app.use(securityHeadersMiddleware);
+
+  const loginIpLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyFn: clientKey });
+  const loginUserLimit = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 20,
+    keyFn: (req) => String(req.body?.username || req.body?.email || '').trim().toLowerCase() || 'anon',
+  });
+  const leadIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyFn: clientKey });
 
   function launchScanProcess(job) {
     const {
@@ -758,7 +786,7 @@ app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, X-App-Username, X-App-Password, X-CSRF-Token'
+    'Content-Type, Authorization, X-CSRF-Token'
   );
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
@@ -787,38 +815,14 @@ function safeNextAfterLogin(raw) {
   return '/';
 }
 
-function parseBasicAuth(req) {
-  const raw = req.headers.authorization;
-  if (typeof raw !== 'string' || !raw.startsWith('Basic ')) return null;
-  try {
-    const decoded = Buffer.from(raw.slice(6), 'base64').toString('utf8');
-    const i = decoded.indexOf(':');
-    if (i === -1) return null;
-    return { user: decoded.slice(0, i), pass: decoded.slice(i + 1) };
-  } catch {
-    return null;
-  }
-}
-
-/** Username + password from Basic auth, headers, or query (legacy single-password queries use default username). */
-function credentialsFromRequest(req) {
-  const basic = parseBasicAuth(req);
-  if (basic) return basic;
-  const headerPwd = req.headers['x-app-password'];
-  if (typeof headerPwd === 'string' && headerPwd) {
-    const headerUser = req.headers['x-app-username'];
-    const user = typeof headerUser === 'string' && headerUser.trim() ? headerUser.trim() : APP_USERNAME;
-    return { user, pass: headerPwd };
-  }
-  const qp = req.query?.password;
-  if (typeof qp === 'string' && qp) {
-    return null;
-  }
-  return null;
+function digest(value) {
+  return createHash('sha256').update(String(value ?? '')).digest();
 }
 
 function credentialsValid(user, pass) {
-  return String(user || '') === String(APP_USERNAME) && String(pass || '') === String(APP_PASSWORD);
+  const userOk = timingSafeEqual(digest(user), digest(APP_USERNAME));
+  const passOk = timingSafeEqual(digest(pass), digest(APP_PASSWORD));
+  return userOk && passOk;
 }
 
 function setAuthCookie(res, session = { userId: 'staff', role: 'staff', email: '' }) {
@@ -1026,27 +1030,37 @@ app.get('/auth/login', (req, res) => {
   return res.status(200).send(loginPageHtml(nextPath));
 });
 
-app.post('/auth/login', async (req, res) => {
+app.post('/auth/login', loginIpLimit, loginUserLimit, async (req, res) => {
   if (!AUTH_ENABLED) return res.redirect('/');
   const nextPath = safeNextAfterLogin(typeof req.body?.next === 'string' ? req.body.next : '/');
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '');
   if (credentialsValid(username, password)) {
-    setAuthCookie(res, { userId: 'staff', role: 'staff', email: username });
+    setAuthCookie(res, { userId: 'staff', role: 'staff', email: username, ver: staffSessionVersion() });
     return res.redirect(nextPath);
   }
   const user = await authenticateUser(username, password);
   if (!user || !user.emailVerified) {
-    return res.status(401).send(loginPageHtml(nextPath, 'Invalid username or password. Try again.'));
+    return res.status(401).send(loginPageHtml(nextPath, GENERIC_CREDENTIALS_ERROR));
   }
-  setAuthCookie(res, { userId: user.id, role: user.role, email: user.email });
+  setAuthCookie(res, {
+    userId: user.id,
+    role: user.role,
+    email: user.email,
+    ver: user.sessionVersion || 1,
+  });
   return res.redirect(nextPath);
 });
 
-app.get('/auth/logout', (req, res) => {
+app.get('/auth/logout', (_req, res) => {
+  res.setHeader('Allow', 'POST');
+  return res.status(405).type('txt').send('Method Not Allowed');
+});
+
+app.post('/auth/logout', (req, res) => {
   if (!AUTH_ENABLED) return res.redirect('/');
   clearAuthCookie(res);
-  const nextPath = typeof req.query?.next === 'string' ? safeNextAfterLogin(req.query.next) : '/auth/login';
+  const nextPath = typeof req.body?.next === 'string' ? safeNextAfterLogin(req.body.next) : '/auth/login';
   return res.redirect(302, nextPath);
 });
 
@@ -1118,7 +1132,7 @@ app.get('/api/auth/status', async (req, res) => {
       csrf: '',
     });
   }
-  const access = readAccessFromCookies(req);
+  const access = await readAccessFromCookies(req);
   if (access) {
     const user = access.role === 'customer' ? await getUserById(access.userId) : { role: 'staff' };
     return res.json({
@@ -1161,24 +1175,27 @@ app.get('/api/auth/logout', (_req, res) => res.redirect(303, '/'));
 app.get('/api/auth/forgot', (_req, res) => res.redirect(303, '/forgot'));
 app.get('/api/auth/reset', (_req, res) => res.redirect(303, '/reset'));
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginIpLimit, loginUserLimit, async (req, res) => {
   if (!AUTH_ENABLED) return loginFormRedirect(req, res, '/', 200, { ok: true, role: 'staff' });
   const username = String(req.body?.username ?? req.body?.email ?? '').trim();
   const password = String(req.body?.password ?? '');
   if (credentialsValid(username, password)) {
-    setAuthCookie(res, { userId: 'staff', role: 'staff', email: username });
+    setAuthCookie(res, { userId: 'staff', role: 'staff', email: username, ver: staffSessionVersion() });
     return loginFormRedirect(req, res, '/', 200, { ok: true, role: 'staff' });
   }
   const user = await authenticateUser(username, password);
-  if (!user) {
-    return loginFormRedirect(req, res, '/?signin=failed', 401, { error: 'Invalid username or password.' });
-  }
-  if (!user.emailVerified) {
-    return loginFormRedirect(req, res, '/?signin=unverified', 403, {
-      error: 'Verify your email before signing in.',
+  if (!user || !user.emailVerified) {
+    const status = user && !user.emailVerified ? 403 : 401;
+    return loginFormRedirect(req, res, '/?signin=failed', status, {
+      error: GENERIC_CREDENTIALS_ERROR,
     });
   }
-  setAuthCookie(res, { userId: user.id, role: user.role, email: user.email });
+  setAuthCookie(res, {
+    userId: user.id,
+    role: user.role,
+    email: user.email,
+    ver: user.sessionVersion || 1,
+  });
   const next = user.role === 'staff' ? '/' : '/account';
   return loginFormRedirect(req, res, next, 200, { ok: true, role: user.role });
 });
@@ -1189,7 +1206,7 @@ app.post('/api/auth/logout', (req, res) => {
   return res.json({ ok: true });
 });
 
-app.post('/api/access-request', async (req, res) => {
+app.post('/api/access-request', leadIpLimit, async (req, res) => {
   const name = String(req.body?.name ?? '').trim();
   const company = String(req.body?.company ?? '').trim();
   const email = String(req.body?.email ?? '').trim();
@@ -1209,7 +1226,7 @@ app.post('/api/access-request', async (req, res) => {
   }
 });
 
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
   if (!AUTH_ENABLED) {
     req.access = { role: 'staff', userId: 'staff', email: '', csrf: '' };
     return next();
@@ -1228,19 +1245,12 @@ app.use((req, res, next) => {
     return next();
   }
 
-  const cookieAccess = readAccessFromCookies(req);
+  const cookieAccess = await readAccessFromCookies(req);
   if (cookieAccess) {
     req.access = cookieAccess;
     if (!csrfOk(req) && req.path.startsWith('/api/')) {
       return res.status(403).json({ error: 'Missing or invalid CSRF token.' });
     }
-    return next();
-  }
-
-  const creds = credentialsFromRequest(req);
-  if (creds && credentialsValid(creds.user, creds.pass)) {
-    setAuthCookie(res, { userId: 'staff', role: 'staff', email: creds.user });
-    req.access = { role: 'staff', userId: 'staff', email: creds.user, csrf: '' };
     return next();
   }
 
@@ -1633,7 +1643,7 @@ app.get('/api/guest/:token/teaser', async (req, res) => {
   return res.json(teaser);
 });
 
-app.post('/api/lead', async (req, res) => {
+app.post('/api/lead', leadIpLimit, async (req, res) => {
   const name = String(req.body?.name ?? '').trim();
   const company = String(req.body?.company ?? '').trim();
   const email = String(req.body?.email ?? '').trim();
@@ -2398,6 +2408,7 @@ app.get('/report/:domain/:runId/:file', async (req, res, next) => {
   }
   if (html) {
     res.setHeader('Content-Type', 'text/html');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     return res.send(html);
   }
   if (existsSync(join(reportDir, 'accessibility-report.html'))) {
@@ -2475,6 +2486,14 @@ app.get('/report/:domain/:runId/statement/', (req, res, next) => next());
    * When using `node server.js` alone, `server.js` registers a second handler to redirect to /audits.
    */
   app.get('/', (req, res, next) => next());
+
+  if (process.env.NODE_ENV !== 'production') {
+    app.get('/api/__test/throw', async () => {
+      throw new Error('test-throw');
+    });
+  }
+
+  app.use(errorMiddleware);
 
   return app;
 }

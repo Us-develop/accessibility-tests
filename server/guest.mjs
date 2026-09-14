@@ -68,12 +68,7 @@ export function newGuestToken() {
 }
 
 export function clientIp(req) {
-  const xf = req.headers['x-forwarded-for'];
-  if (typeof xf === 'string' && xf.trim()) {
-    return xf.split(',')[0].trim().slice(0, 128);
-  }
-  const raw = req.socket?.remoteAddress || req.ip || '';
-  return String(raw).slice(0, 128);
+  return String(req?.ip || '').slice(0, 128);
 }
 
 function normalizeIp(ip) {

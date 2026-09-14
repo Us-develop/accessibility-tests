@@ -133,10 +133,12 @@ export async function initDb() {
       city TEXT,
       postal_code TEXT,
       country TEXT,
+      session_version INTEGER NOT NULL DEFAULT 1,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1`);
   await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT`);
   await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT`);
   await dbPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vat_number TEXT`);
@@ -482,6 +484,7 @@ function mapUserRow(row) {
     city: row.city || '',
     postalCode: row.postal_code || '',
     country: row.country || '',
+    sessionVersion: Number(row.session_version) > 0 ? Number(row.session_version) : 1,
     createdAt: isoOrNull(row.created_at),
     updatedAt: isoOrNull(row.updated_at),
   };
@@ -489,7 +492,7 @@ function mapUserRow(row) {
 
 const USER_COLUMNS = `id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
             reset_token, reset_expires_at, phone, company, vat_number, address_line1, address_line2,
-            city, postal_code, country, created_at, updated_at`;
+            city, postal_code, country, session_version, created_at, updated_at`;
 
 export async function dbGetUserById(id) {
   if (!dbPool || !id) return null;
@@ -511,11 +514,11 @@ export async function dbUpsertUser(user) {
       INSERT INTO users (
         id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
         reset_token, reset_expires_at, phone, company, vat_number, address_line1, address_line2,
-        city, postal_code, country, created_at, updated_at
+        city, postal_code, country, session_version, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13, $14, $15,
-        $16, $17, $18, COALESCE($19::timestamptz, NOW()), NOW()
+        $16, $17, $18, $19, COALESCE($20::timestamptz, NOW()), NOW()
       )
       ON CONFLICT (id) DO UPDATE SET
         email = EXCLUDED.email,
@@ -535,6 +538,7 @@ export async function dbUpsertUser(user) {
         city = EXCLUDED.city,
         postal_code = EXCLUDED.postal_code,
         country = EXCLUDED.country,
+        session_version = EXCLUDED.session_version,
         updated_at = NOW()
       RETURNING ${USER_COLUMNS}
     `,
@@ -557,6 +561,7 @@ export async function dbUpsertUser(user) {
       user.city || '',
       user.postalCode || '',
       user.country || '',
+      Number(user.sessionVersion) > 0 ? Number(user.sessionVersion) : 1,
       user.createdAt || null,
     ]
   );

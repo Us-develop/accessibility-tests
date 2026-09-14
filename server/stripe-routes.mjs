@@ -1,5 +1,7 @@
 import express from 'express';
 import { getUserById } from './users.mjs';
+import { asyncHandler } from './http-utils.mjs';
+import { clientKey, rateLimit } from './rate-limit.mjs';
 import {
   billingPublicConfig,
   constructWebhookEvent,
@@ -23,7 +25,7 @@ function fail(res, err) {
 }
 
 export function registerStripeWebhook(app) {
-  app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), asyncHandler(async (req, res) => {
     const signature = String(req.headers['stripe-signature'] || '');
     try {
       const event = constructWebhookEvent(req.body, signature);
@@ -33,19 +35,25 @@ export function registerStripeWebhook(app) {
       if (err?.status === 503) return fail(res, err);
       return res.status(400).json({ error: 'Invalid Stripe signature.' });
     }
-  });
+  }));
 }
 
 export function registerStripeRoutes(app) {
-  app.get('/api/billing/config', async (_req, res) => {
+  const billingLimit = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 20,
+    keyFn: (req) => req.access?.userId || clientKey(req),
+  });
+
+  app.get('/api/billing/config', asyncHandler(async (_req, res) => {
     try {
       return res.json(await billingPublicConfig());
     } catch (err) {
       return fail(res, err);
     }
-  });
+  }));
 
-  app.post('/api/billing/checkout', async (req, res) => {
+  app.post('/api/billing/checkout', billingLimit, asyncHandler(async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
     if (!stripeConfigured()) {
@@ -67,9 +75,9 @@ export function registerStripeRoutes(app) {
     } catch (err) {
       return fail(res, err);
     }
-  });
+  }));
 
-  app.post('/api/billing/portal', async (req, res) => {
+  app.post('/api/billing/portal', billingLimit, asyncHandler(async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
     if (!stripeConfigured()) {
@@ -83,5 +91,5 @@ export function registerStripeRoutes(app) {
     } catch (err) {
       return fail(res, err);
     }
-  });
+  }));
 }

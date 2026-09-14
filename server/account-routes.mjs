@@ -9,11 +9,14 @@ import {
   consumePasswordReset,
   updateContactDetails,
   verifyUserEmail,
+  GENERIC_CREDENTIALS_ERROR,
 } from './users.mjs';
 import { attachRunToUser, deleteProjectsForUser, listProjectsForUser } from './projects.mjs';
 import { clearSessionCookies, isHtmlFormPost, parseCookies, setSessionCookies } from './session.mjs';
 import { isValidGuestToken, guestFreebieClaimed } from './guest.mjs';
 import { sendAccountEmail } from '../server-email.js';
+import { asyncHandler } from './http-utils.mjs';
+import { clientKey, rateLimit } from './rate-limit.mjs';
 import {
   currentPeriod,
   ensureCustomerSubscription,
@@ -138,8 +141,16 @@ async function accountBundle(user, req) {
  */
 export function registerAccountRoutes(app, ctx) {
   const { readGuestTokenRecord } = ctx;
+  const signupIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyFn: clientKey });
+  const forgotIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyFn: clientKey });
+  const forgotEmailLimit = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 3,
+    keyFn: (req) => String(req.body?.email || '').trim().toLowerCase() || 'anon',
+  });
+  const resetIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyFn: clientKey });
 
-  app.post('/api/auth/signup', async (req, res) => {
+  app.post('/api/auth/signup', signupIpLimit, asyncHandler(async (req, res) => {
     try {
       const { user, verifyToken } = await createUser({
         email: req.body?.email,
@@ -167,25 +178,25 @@ export function registerAccountRoutes(app, ctx) {
           text: `Confirm your email:\n${link}\n`,
         });
       } else {
-        setSessionCookies(res, { userId: user.id, role: user.role, email: user.email }, sameSiteFromEnv());
+        setSessionCookies(res, { userId: user.id, role: user.role, email: user.email, ver: 1 }, sameSiteFromEnv());
       }
       const next = verifyToken ? '/signup?check-email=1' : '/account';
       return formOrJson(req, res, next, 200, { ok: true, needsVerification: Boolean(verifyToken), user });
     } catch (err) {
       return formOrJson(req, res, '/signup?error=1', Number(err.status) || 400, {
-        error: err.message || 'Could not create account.',
+        error: err.status === 409 ? GENERIC_CREDENTIALS_ERROR : err.message || 'Could not create account.',
       });
     }
-  });
+  }));
 
-  app.get('/api/auth/verify', async (req, res) => {
+  app.get('/api/auth/verify', asyncHandler(async (req, res) => {
     const user = await verifyUserEmail(String(req.query?.token || ''));
     if (!user) return res.status(400).send('Invalid or expired verification link.');
-    setSessionCookies(res, { userId: user.id, role: user.role, email: user.email }, sameSiteFromEnv());
+    setSessionCookies(res, { userId: user.id, role: user.role, email: user.email, ver: 1 }, sameSiteFromEnv());
     return res.redirect('/account');
-  });
+  }));
 
-  app.post('/api/auth/forgot', async (req, res) => {
+  app.post('/api/auth/forgot', forgotIpLimit, forgotEmailLimit, asyncHandler(async (req, res) => {
     const started = await startPasswordReset(req.body?.email);
     if (started) {
       const link = `${publicBase()}/reset?token=${encodeURIComponent(started.token)}`;
@@ -196,9 +207,9 @@ export function registerAccountRoutes(app, ctx) {
       });
     }
     return formOrJson(req, res, '/forgot?sent=1', 200, { ok: true });
-  });
+  }));
 
-  app.post('/api/auth/reset', async (req, res) => {
+  app.post('/api/auth/reset', resetIpLimit, asyncHandler(async (req, res) => {
     const token = String(req.body?.token || '');
     const user = await consumePasswordReset(token);
     if (!user) {
@@ -213,9 +224,9 @@ export function registerAccountRoutes(app, ctx) {
         error: err.message,
       });
     }
-  });
+  }));
 
-  app.get('/api/account', async (req, res) => {
+  app.get('/api/account', asyncHandler(async (req, res) => {
     if (req.access?.role === 'staff' && req.access.userId === 'staff') {
       return res.json({
         role: 'staff',
@@ -233,17 +244,17 @@ export function registerAccountRoutes(app, ctx) {
     const user = await getUserById(userId);
     if (!user) return res.status(401).json({ error: 'Sign in first.' });
     return res.json(await accountBundle(user, req));
-  });
+  }));
 
-  app.put('/api/account', async (req, res) => {
+  app.put('/api/account', asyncHandler(async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
     const user = await updateContactDetails(userId, req.body || {});
     if (!user) return res.status(401).json({ error: 'Sign in first.' });
     return res.json({ ok: true, user });
-  });
+  }));
 
-  app.put('/api/account/password', async (req, res) => {
+  app.put('/api/account/password', asyncHandler(async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
     const user = await getUserById(userId);
@@ -261,9 +272,9 @@ export function registerAccountRoutes(app, ctx) {
     } catch (err) {
       return res.status(Number(err.status) || 400).json({ error: err.message });
     }
-  });
+  }));
 
-  app.get('/api/account/usage', async (req, res) => {
+  app.get('/api/account/usage', asyncHandler(async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
     const subscription = await ensureCustomerSubscription(userId);
@@ -281,23 +292,23 @@ export function registerAccountRoutes(app, ctx) {
       tokens,
       ctas: commercialCtas(),
     });
-  });
+  }));
 
-  app.get('/api/account/payments', async (req, res) => {
+  app.get('/api/account/payments', asyncHandler(async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
     await ensureCustomerSubscription(userId, { guestFreebieUsed: guestFreebieClaimed(req) });
     return res.json({ payments: await listPaymentsWithFreebie(userId) });
-  });
+  }));
 
-  app.get('/api/account/scans', async (req, res) => {
+  app.get('/api/account/scans', asyncHandler(async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
     const limit = Math.min(500, Math.max(1, Number(req.query?.limit) || 100));
     return res.json({ scans: await scansForUser(userId, limit) });
-  });
+  }));
 
-  app.get('/api/account/export', async (req, res) => {
+  app.get('/api/account/export', asyncHandler(async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
     const user = await getUserById(userId);
@@ -320,7 +331,7 @@ export function registerAccountRoutes(app, ctx) {
       res.setHeader('Content-Disposition', 'attachment; filename="us-accessibility-scans.csv"');
       return res.send([header, ...lines].join('\n'));
     }
-      const payload = {
+    const payload = {
       ...exportUserData(user),
       projects: await listProjectsForUser(user.id),
       scans,
@@ -329,18 +340,18 @@ export function registerAccountRoutes(app, ctx) {
     };
     res.setHeader('Content-Disposition', 'attachment; filename="us-accessibility-export.json"');
     return res.json(payload);
-  });
+  }));
 
-  app.post('/api/account/delete', async (req, res) => {
+  app.post('/api/account/delete', asyncHandler(async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
     await deleteProjectsForUser(userId);
     await deleteUser(userId);
     clearSessionCookies(res, sameSiteFromEnv());
     return res.json({ ok: true });
-  });
+  }));
 
-  app.post('/api/account/attach-guest', async (req, res) => {
+  app.post('/api/account/attach-guest', asyncHandler(async (req, res) => {
     const userId = requireCustomer(req, res);
     if (!userId) return;
     const token = String(req.body?.guestToken || parseCookies(req).wcag_guest || '').trim();
@@ -350,5 +361,5 @@ export function registerAccountRoutes(app, ctx) {
     const project = await attachRunToUser(userId, binding.domain, binding.runId);
     await ensureFreebieLot(userId, { guestFreebieUsed: true });
     return res.json({ ok: true, project });
-  });
+  }));
 }

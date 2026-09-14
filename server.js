@@ -9,12 +9,21 @@ import { fileURLToPath } from 'url';
 import { loadAllAppEnv } from './server/load-env.mjs';
 import { initDb, dbPool } from './server/db.js';
 import { createAccessibilityApp } from './server/create-app.mjs';
+import { installProcessGuards } from './server/http-utils.mjs';
+
+installProcessGuards();
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
 loadAllAppEnv(repoRoot);
 const PORT = process.env.PORT || 3456;
 
-const app = createAccessibilityApp(repoRoot);
+let app;
+try {
+  app = createAccessibilityApp(repoRoot);
+} catch (err) {
+  console.error(err?.message || err);
+  process.exit(1);
+}
 /** API-only process has no Astro shell; after auth, `/` would otherwise 404. */
 app.get('/', (req, res) => res.redirect(302, '/audits'));
 

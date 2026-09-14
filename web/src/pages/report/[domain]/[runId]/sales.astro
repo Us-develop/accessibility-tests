@@ -61,7 +61,7 @@ const plainEnglish = payload.plainEnglish || { headline: '', cards: [] };
 
 const allRuns = await listVisibleRunsForDomain(dbPool, REPORTS_BASE, domain, {
   sessionToken: Astro.cookies.get('wcag_sid')?.value || '',
-  uiHint: Astro.cookies.get('wcag_ui')?.value || Astro.cookies.get('wcag_access')?.value,
+  access: Astro.locals?.access,
 });
 const trend = allRuns
   .slice()

@@ -28,13 +28,24 @@ npx playwright install chromium   # ~250MB; required for tests
 
 ### Web UI authentication
 
-The server defaults to `AUTH_ENABLED=true` and **requires** `APP_PASSWORD`; it exits on startup if the password is missing. For **local development**, use:
+The server defaults to `AUTH_ENABLED=true` and **requires** `APP_PASSWORD` (≥12 characters) and `SESSION_SECRET` (≥32 characters). It **exits on start** if either is missing or too short. For **local development** only, use:
 
 ```bash
 AUTH_ENABLED=false npm start
 ```
 
-Staff can still sign in with `APP_USERNAME` / `APP_PASSWORD`. Customers sign up at `/signup` (email + hashed password, signed `wcag_sid` session, CSRF). Set **`SESSION_SECRET`** in production (defaults to a dev-only value derived from `APP_PASSWORD`). Guest 1-page snapshots can attach to the new account (`/signup?guest=TOKEN`).
+Staff sign in with `APP_USERNAME` / `APP_PASSWORD` (cookie session only — no HTTP Basic or `X-App-Password` headers). Customers sign up at `/signup` (email + hashed password, signed `wcag_sid` session, CSRF). Guest 1-page snapshots can attach to the new account (`/signup?guest=TOKEN`).
+
+| Variable | Required in production | Purpose |
+| --- | --- | --- |
+| `AUTH_ENABLED` | yes (keep `true`) | `false` only for local demos. |
+| `APP_USERNAME` | yes | Staff login username. No default. |
+| `APP_PASSWORD` | yes | Staff login password, ≥12 characters. Server exits if missing when auth is on. |
+| `SESSION_SECRET` | yes | HMAC key for `wcag_sid`, ≥32 characters. Server exits if missing when auth is on or `NODE_ENV=production`. |
+| `STAFF_SESSION_VERSION` | no (default `1`) | Bump to invalidate all staff sessions after rotating `APP_PASSWORD`. |
+| `AUTH_COOKIE_SECURE` | yes (`true` on HTTPS) | Cookie `Secure` flag. Forced `true` when `NODE_ENV=production`; may be `false` only outside production. |
+| `TRUST_PROXY_HOPS` | no (default `1`) | Express `trust proxy` hop count (Caddy sits in front). |
+| `WCAG_DISABLE_RATE_LIMIT` | no | Set `1` only in automated tests. Do not set in production. |
 
 The public homepage stays the free 1-page **Gratis snapshot** (one per person, guest or signed-in — not both) unless someone is actually signed in with remaining tokens or Pro. Complimentary token is spent first, then **Pro** (300 pages/month), then prepaid **tokens** (1 token = 1 URL, 12-month expiry). A second scan while one is queued or running returns 409. Empty Pro pages and tokens return 429 with buy / subscribe / Us-diensten CTAs. Pricing is at `/pricing`. Draft legal pages (`/terms`, `/privacy`, `/cookies`) are marked for lawyer review.
 
@@ -194,7 +205,7 @@ sudo chmod +x /etc/cron.daily/wcag-pg-dump
 
 RAM: watch **MemAvailable**, not “used %”. Chromium scans are the risk. Alert when available memory is under ~400 MB (cron + the same `SMTP_*` the app uses). OVH ping checks do not warn about RAM.
 
-Before the first accounts publish, set **`SESSION_SECRET`** (a long random value) on the VPS unit or env file used by `accessibility.service`. Staff login still uses **`APP_USERNAME` / `APP_PASSWORD`**. Stay on this OVH VPS (`wcag.about-us.be`); do not migrate this product to Combell.
+Before the first accounts publish, set **`SESSION_SECRET`** (≥32 random characters) and **`APP_PASSWORD`** (≥12 characters) on the VPS unit or env file used by `accessibility.service`. Staff login still uses **`APP_USERNAME` / `APP_PASSWORD`**. Stay on this OVH VPS (`wcag.about-us.be`); do not migrate this product to Combell.
 
 If the unit name is ever in doubt:
 
