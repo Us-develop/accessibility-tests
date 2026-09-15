@@ -441,6 +441,81 @@ describe('account HTTP', () => {
     assert.match(String(data.error || ''), /password/i);
   });
 
+  it('redirects GET /api/account/delete to the account page', async () => {
+    const jar = new CookieJar();
+    const login = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'attached@example.com', password: 'newevenlonger1' }),
+    });
+    jar.store(login.headers);
+    const res = await fetch(`${origin}/api/account/delete`, {
+      headers: { cookie: jar.header() },
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/account');
+  });
+
+  it('redirects a CSRF-less HTML delete POST back to the account page', async () => {
+    const jar = new CookieJar();
+    const login = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'attached@example.com', password: 'newevenlonger1' }),
+    });
+    jar.store(login.headers);
+    const res = await fetch(`${origin}/api/account/delete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'text/html',
+        cookie: jar.header(),
+      },
+      body: new URLSearchParams({ password: 'newevenlonger1' }),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/account?error=csrf');
+    const still = await fetch(`${origin}/api/auth/status`, { headers: { cookie: jar.header() } });
+    const st = await still.json();
+    assert.equal(st.authenticated, true);
+  });
+
+  it('accepts a native HTML delete POST with csrfToken', async () => {
+    const jar = new CookieJar();
+    const signup = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'delete-html@example.com',
+        password: 'longenough1',
+        acceptTerms: true,
+      }),
+    });
+    jar.store(signup.headers);
+    assert.equal(signup.status, 200);
+    const res = await fetch(`${origin}/api/account/delete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'text/html',
+        cookie: jar.header(),
+      },
+      body: new URLSearchParams({
+        password: 'longenough1',
+        csrfToken: jar.get('wcag_csrf'),
+      }),
+      redirect: 'manual',
+    });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/');
+    jar.store(res.headers);
+    const status = await fetch(`${origin}/api/auth/status`, { headers: { cookie: jar.header() } });
+    const st = await status.json();
+    assert.equal(st.authenticated, false);
+  });
+
   it('exports scan history as csv', async () => {
     const jar = new CookieJar();
     const login = await fetch(`${origin}/api/auth/login`, {

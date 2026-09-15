@@ -1167,6 +1167,7 @@ app.get('/api/auth/signup', (_req, res) => res.redirect(303, '/signup'));
 app.get('/api/auth/logout', (_req, res) => res.redirect(303, '/'));
 app.get('/api/auth/forgot', (_req, res) => res.redirect(303, '/forgot'));
 app.get('/api/auth/reset', (_req, res) => res.redirect(303, '/reset'));
+app.get('/api/account/delete', (_req, res) => res.redirect(303, '/account'));
 
 app.post('/api/auth/login', loginIpLimit, loginUserLimit, async (req, res) => {
   if (!AUTH_ENABLED) return loginFormRedirect(req, res, '/', 200, { ok: true, role: 'staff' });
@@ -1244,6 +1245,10 @@ app.use(async (req, res, next) => {
   if (cookieAccess) {
     req.access = cookieAccess;
     if (!csrfOk(req) && req.path.startsWith('/api/')) {
+      if (isHtmlFormPost(req)) {
+        const next = req.path.startsWith('/api/account') ? '/account?error=csrf' : '/?error=csrf';
+        return res.redirect(303, next);
+      }
       return res.status(403).json({ error: 'Missing or invalid CSRF token.' });
     }
     return next();

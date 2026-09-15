@@ -444,10 +444,12 @@ export function registerAccountRoutes(app, ctx) {
     if (!user) return res.status(401).json({ error: 'Sign in first.' });
     const password = String(req.body?.password || req.body?.currentPassword || '');
     const ok = await verifyPassword(password, user.passwordHash);
-    if (!ok) return res.status(400).json({ error: 'Password is incorrect.' });
+    if (!ok) {
+      return formOrJson(req, res, '/account?error=delete', 400, { error: 'Password is incorrect.' });
+    }
     await deleteAccount(userId);
     clearSessionCookies(res, sameSiteFromEnv());
-    return res.json({ ok: true });
+    return formOrJson(req, res, '/', 200, { ok: true });
   }));
 
   app.post('/api/account/attach-guest', asyncHandler(async (req, res) => {
