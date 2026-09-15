@@ -423,10 +423,20 @@ describe('account deletion, export, and email change', () => {
     assert.equal(stillOld.email, 'old-mail@example.com');
     const token = stillOld.pendingEmailToken;
     assert.ok(token);
-    const verify = await fetch(`${origin}/api/auth/verify?token=${encodeURIComponent(token)}`, {
+    const peek = await fetch(`${origin}/api/auth/verify?token=${encodeURIComponent(token)}`, {
       redirect: 'manual',
     });
-    assert.equal(verify.status, 302);
+    assert.equal(peek.status, 303);
+    assert.equal(peek.headers.get('location'), `/verify?token=${encodeURIComponent(token)}`);
+    assert.equal((await getUserByEmail('old-mail@example.com')).email, 'old-mail@example.com');
+
+    const verify = await fetch(`${origin}/api/auth/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const verifyBody = await verify.json();
+    assert.equal(verify.status, 200, verifyBody.error || '');
     assert.equal(await getUserByEmail('old-mail@example.com'), null);
     const next = await getUserByEmail('new-mail@example.com');
     assert.equal(next.email, 'new-mail@example.com');

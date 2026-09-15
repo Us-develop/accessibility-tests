@@ -181,6 +181,7 @@ const CSRF_SAFE_PATHS = new Set([
   '/api/auth/forgot',
   '/api/auth/reset',
   '/api/auth/verify',
+  '/api/auth/verify/resend',
   '/api/lead',
   '/api/access-request',
   '/api/stripe/webhook',

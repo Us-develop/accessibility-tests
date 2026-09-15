@@ -1,0 +1,91 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+
+export const prerender = false;
+const token = String(Astro.url.searchParams.get('token') || '').trim();
+const invalid = Astro.url.searchParams.get('error') === 'invalid';
+const sent = Astro.url.searchParams.get('sent') === '1';
+---
+<Layout title="Confirm email · Us" description="Confirm your Us accessibility scanner email address." noindex={true} authMode="guest-ok">
+  <div class="app-shell">
+    <AppHeader crumb="Confirm email" />
+    <main id="main" class="app-main" tabindex="-1">
+      <article class="container-narrow page-article">
+        <h1>Confirm your email</h1>
+        {token && !invalid ? (
+          <form id="verify-form" class="card stack-form" method="post" action="/api/auth/verify" data-astro-reload>
+            <input type="hidden" name="token" value={token} />
+            <p class="muted">Click the button to finish creating the account. Mail apps that open the link first will not use it up.</p>
+            <button type="submit" class="btn btn-primary" id="verify-btn">Confirm email</button>
+          </form>
+        ) : (
+          <div class="card stack-form">
+            <p id="verify-msg" class="muted" role={invalid ? 'alert' : 'status'}>
+              {sent
+                ? 'If that account still needs verifying, we sent a new link.'
+                : invalid
+                  ? 'This confirmation link is invalid or has already been used. Try logging in. If you never got in, ask for a new link.'
+                  : 'Open the confirm link from your email, then click the button on this page.'}
+            </p>
+            <p class="muted" style="font-size: 13px; margin: 0;">
+              Already verified? Use <button type="button" class="linklike" id="verify-open-login">Log in</button>.
+            </p>
+            <form id="verify-resend-form" class="stack-form" method="post" action="/api/auth/verify/resend" data-astro-reload>
+              <div class="field">
+                <label class="field-label" for="verify-email">Email</label>
+                <input class="input" id="verify-email" name="email" type="email" autocomplete="email" required />
+              </div>
+              <button type="submit" class="btn btn-ghost">Send a new confirmation link</button>
+            </form>
+          </div>
+        )}
+      </article>
+    </main>
+  </div>
+</Layout>
+<script>
+  if (!globalThis.__wcagVerifyDelegated) {
+    globalThis.__wcagVerifyDelegated = true;
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest('#verify-open-login')) return;
+      document.dispatchEvent(new CustomEvent('wcag:open-login'));
+    });
+    document.addEventListener('submit', async (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
+      const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
+      if (form.id === 'verify-form') {
+        event.preventDefault();
+        event.stopPropagation();
+        const token = String(new FormData(form).get('token') || '');
+        const res = await fetch(api('/api/auth/verify'), {
+          method: 'POST',
+          credentials: creds,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        if (res.ok) {
+          window.location.href = '/account';
+          return;
+        }
+        window.location.href = '/verify?error=invalid';
+        return;
+      }
+      if (form.id === 'verify-resend-form') {
+        event.preventDefault();
+        event.stopPropagation();
+        const email = new FormData(form).get('email');
+        await fetch(api('/api/auth/verify/resend'), {
+          method: 'POST',
+          credentials: creds,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        window.location.href = '/verify?sent=1';
+      }
+    }, true);
+  }
+</script>

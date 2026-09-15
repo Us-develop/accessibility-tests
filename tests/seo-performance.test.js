@@ -70,6 +70,7 @@ describe('indexable paths', () => {
     }
     assert.equal(isIndexablePath('/teaser/abc'), false);
     assert.equal(isIndexablePath('/signup'), false);
+    assert.equal(isIndexablePath('/verify'), false);
     assert.equal(isIndexablePath('/forgot'), false);
     assert.equal(isIndexablePath('/reset'), false);
     assert.equal(isIndexablePath('/loading'), false);
