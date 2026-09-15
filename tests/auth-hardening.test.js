@@ -147,6 +147,61 @@ describe('auth hardening HTTP', () => {
     assert.ok(last.headers.get('retry-after'));
   });
 
+  it('does not lock out signup after validation retries', async () => {
+    for (let i = 0; i < 8; i += 1) {
+      const res = await fetch(`${origin}/api/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: `retry${i}@example.com`,
+          password: 'longenough1',
+          acceptTerms: false,
+        }),
+      });
+      assert.equal(res.status, 400, `validation ${i + 1} should not be rate-limited`);
+    }
+    const created = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'signup-ok@example.com',
+        password: 'longenough1',
+        acceptTerms: true,
+      }),
+    });
+    const body = await created.json();
+    assert.equal(created.status, 200, body.error || 'signup should succeed after validation retries');
+    assert.equal(body.ok, true);
+  });
+
+  it('rate-limits the 11th created account from the same IP', async () => {
+    for (let i = 0; i < 9; i += 1) {
+      const res = await fetch(`${origin}/api/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: `cap${i}@example.com`,
+          password: 'longenough1',
+          acceptTerms: true,
+        }),
+      });
+      assert.equal(res.status, 200, `account ${i + 2} should still be allowed`);
+    }
+    const extra = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'cap-final@example.com',
+        password: 'longenough1',
+        acceptTerms: true,
+      }),
+    });
+    assert.equal(extra.status, 429);
+    const data = await extra.json();
+    assert.match(String(data.error || ''), /sign-up/i);
+    assert.ok(extra.headers.get('retry-after'));
+  });
+
   it('rejects GET /auth/logout', async () => {
     const res = await fetch(`${origin}/auth/logout`, { redirect: 'manual' });
     assert.ok(res.status === 404 || res.status === 405);
