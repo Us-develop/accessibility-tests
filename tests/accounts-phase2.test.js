@@ -18,7 +18,9 @@ process.env.DEFER_ROOT_LOGIN_TO_SHELL = 'true';
 
 const { hashPassword, isStrongPassword, verifyPassword } = await import('../server/passwords.mjs');
 const { decodeSession, encodeSession, isHtmlFormPost } = await import('../server/session.mjs');
-const { authenticateUser } = await import('../server/users.mjs');
+const { authenticateUser, GENERIC_CREDENTIALS_ERROR, SIGNUP_EMAIL_TAKEN_ERROR } = await import(
+  '../server/users.mjs'
+);
 const { readJsonStore, writeJsonStore } = await import('../server/json-store.mjs');
 const { canAccessDomain } = await import('../server/projects.mjs');
 const { persistGuestToken } = await import('../server/guest.mjs');
@@ -207,7 +209,55 @@ describe('account HTTP', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'customer@example.com', password: 'longenough1', acceptTerms: true }),
     });
+    const data = await res.json();
     assert.equal(res.status, 409);
+    assert.equal(data.error, SIGNUP_EMAIL_TAKEN_ERROR);
+    assert.equal(data.field, 'email');
+    assert.notEqual(data.error, GENERIC_CREDENTIALS_ERROR);
+  });
+
+  it('returns a field hint for signup validation failures', async () => {
+    const short = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'hint@example.com', password: 'short', acceptTerms: true }),
+    });
+    const shortBody = await short.json();
+    assert.equal(short.status, 400);
+    assert.equal(shortBody.field, 'password');
+    assert.match(String(shortBody.error), /10 characters/);
+
+    const company = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'biz-hint@example.com',
+        password: 'longenough1',
+        acceptTerms: true,
+        buyingForBusiness: true,
+      }),
+    });
+    const companyBody = await company.json();
+    assert.equal(company.status, 400);
+    assert.equal(companyBody.field, 'company');
+    assert.match(String(companyBody.error), /company name/i);
+
+    const vat = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'vat-hint@example.com',
+        password: 'longenough1',
+        acceptTerms: true,
+        buyingForBusiness: true,
+        company: 'Us NV',
+        vatNumber: '12345',
+      }),
+    });
+    const vatBody = await vat.json();
+    assert.equal(vat.status, 400);
+    assert.equal(vatBody.field, 'vatNumber');
+    assert.match(String(vatBody.error), /VAT number/);
   });
 
   it('logs in staff with APP_USERNAME / APP_PASSWORD', async () => {
@@ -501,6 +551,8 @@ describe('account HTTP', () => {
     assert.match(signup, /method="post"/);
     assert.match(signup, /action="\/api\/auth\/signup"/);
     assert.match(signup, /data-astro-reload/);
+    assert.match(signup, /id="email-error"/);
+    assert.match(signup, /showSignupFieldError\(data\.field, error\)/);
     const home = readFileSync(join(repoRoot, 'web/src/pages/index.astro'), 'utf8');
     assert.match(home, /id="customer-usage"/);
     const loading = readFileSync(join(repoRoot, 'web/src/components/LoadingMonitor.svelte'), 'utf8');
@@ -560,7 +612,7 @@ describe('account HTTP', () => {
     });
     assert.equal(res.status, 401);
     const data = await res.json();
-    assert.match(String(data.error || ''), /invalid/i);
+    assert.equal(data.error, GENERIC_CREDENTIALS_ERROR);
   });
 
   it('authenticates a user that exists only in the JSON store', async () => {

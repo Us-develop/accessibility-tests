@@ -140,6 +140,9 @@ describe('legal consent and VAT', () => {
       body: JSON.stringify({ email: 'no-terms@example.com', password: 'longenough1' }),
     });
     assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.equal(data.field, 'acceptTerms');
+    assert.match(String(data.error), /Terms of Service/);
     assert.equal(await getUserByEmail('no-terms@example.com'), null);
   });
 

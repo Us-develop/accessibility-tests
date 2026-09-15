@@ -11,7 +11,6 @@ import {
   consumePendingEmailChange,
   updateContactDetails,
   verifyUserEmail,
-  GENERIC_CREDENTIALS_ERROR,
   normalizeCustomerType,
 } from './users.mjs';
 import { attachRunToUser, listProjectsForUser } from './projects.mjs';
@@ -148,7 +147,13 @@ async function accountBundle(user, req) {
  */
 export function registerAccountRoutes(app, ctx) {
   const { readGuestTokenRecord, patchMemoryRunOwner } = ctx;
-  const signupIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyFn: clientKey });
+  const signupIpLimit = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 10,
+    keyFn: clientKey,
+    countFailures: true,
+    message: 'Too many sign-up attempts. Try again in an hour.',
+  });
   const forgotIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyFn: clientKey });
   const forgotEmailLimit = rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -162,7 +167,7 @@ export function registerAccountRoutes(app, ctx) {
       if (!isTruthyFlag(req.body?.acceptTerms)) {
         throw Object.assign(
           new Error('Accept the Terms of Service and Privacy Notice to create an account.'),
-          { status: 400 }
+          { status: 400, field: 'acceptTerms' }
         );
       }
       const buyingForBusiness =
@@ -227,11 +232,18 @@ export function registerAccountRoutes(app, ctx) {
         setSessionCookies(res, { userId: user.id, role: user.role, email: user.email, ver: 1 }, sameSiteFromEnv());
       }
       const next = verifyToken ? '/signup?check-email=1' : '/account';
+      if (typeof req.recordRateLimitHit === 'function') req.recordRateLimitHit();
       return formOrJson(req, res, next, 200, { ok: true, needsVerification: Boolean(verifyToken), user });
     } catch (err) {
-      return formOrJson(req, res, '/signup?error=1', Number(err.status) || 400, {
-        error: err.status === 409 ? GENERIC_CREDENTIALS_ERROR : err.message || 'Could not create account.',
-      });
+      const status = Number(err.status) || 400;
+      if (status === 409 && typeof req.recordRateLimitHit === 'function') {
+        req.recordRateLimitHit();
+      }
+      const payload = {
+        error: err.message || 'Could not create account.',
+      };
+      if (err.field) payload.field = err.field;
+      return formOrJson(req, res, '/signup?error=1', status, payload);
     }
   }));
 

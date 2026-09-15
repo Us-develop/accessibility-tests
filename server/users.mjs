@@ -29,6 +29,12 @@ import { deleteProjectsForUser, deleteRunDirectory, listRunRefsForUser } from '.
 import { ensureFreebieLot } from './tokens.mjs';
 
 export const GENERIC_CREDENTIALS_ERROR = 'Invalid username or password.';
+export const SIGNUP_EMAIL_TAKEN_ERROR =
+  'An account with this email already exists. Log in, or use a different email.';
+
+function httpError(message, status, field) {
+  return Object.assign(new Error(message), { status, ...(field ? { field } : {}) });
+}
 
 /** Dummy scrypt hash so missing users still pay the verifyPassword cost. */
 const DUMMY_PASSWORD_HASH =
@@ -78,9 +84,7 @@ export function normalizeVatNumber(value) {
     .replace(/[\s.\-]/g, '');
   if (!raw) return '';
   if (!VAT_NUMBER_RE.test(raw)) {
-    throw Object.assign(new Error('Enter a valid EU VAT number (for example BE0123456789).'), {
-      status: 400,
-    });
+    throw httpError('Enter a valid EU VAT number (for example BE0123456789).', 400, 'vatNumber');
   }
   return raw;
 }
@@ -225,7 +229,7 @@ export async function persistUser(user) {
 
 function assertBusinessCompany(customerType, company) {
   if (customerType === 'business' && !String(company || '').trim()) {
-    throw Object.assign(new Error('Enter a company name for a business account.'), { status: 400 });
+    throw httpError('Enter a company name for a business account.', 400, 'company');
   }
 }
 
@@ -239,13 +243,13 @@ export async function createUser({
 } = {}) {
   const normalized = String(email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
-    throw Object.assign(new Error('Enter a valid email address.'), { status: 400 });
+    throw httpError('Enter a valid email address.', 400, 'email');
   }
   if (!isStrongPassword(password)) {
-    throw Object.assign(new Error('Use a password of at least 10 characters.'), { status: 400 });
+    throw httpError('Use a password of at least 10 characters.', 400, 'password');
   }
   if (await getUserByEmail(normalized)) {
-    throw Object.assign(new Error(GENERIC_CREDENTIALS_ERROR), { status: 409 });
+    throw httpError(SIGNUP_EMAIL_TAKEN_ERROR, 409, 'email');
   }
   const type = normalizeCustomerType(customerType);
   const companyName = String(company || '').trim().slice(0, 200);
@@ -278,7 +282,7 @@ export async function createUser({
     await persistUser(user);
   } catch (err) {
     if (err?.code === '23505') {
-      throw Object.assign(new Error(GENERIC_CREDENTIALS_ERROR), { status: 409 });
+      throw httpError(SIGNUP_EMAIL_TAKEN_ERROR, 409, 'email');
     }
     throw err;
   }
@@ -412,7 +416,7 @@ export async function startEmailChange(userId, nextEmail, password) {
   }
   const taken = await getUserByEmail(normalized);
   if (taken && taken.id !== user.id) {
-    throw Object.assign(new Error(GENERIC_CREDENTIALS_ERROR), { status: 409 });
+    throw httpError('That email is already in use.', 409, 'email');
   }
   const token = randomBytes(16).toString('hex');
   const saved = await updateUser(user.id, {
