@@ -23,7 +23,8 @@ export async function runFormChecks(page) {
       const ariaLabel = input.getAttribute('aria-label');
       const ariaLabelledby = input.getAttribute('aria-labelledby');
       const placeholder = input.getAttribute('placeholder');
-      const label = id ? document.querySelector(`label[for="${id}"]`) : input.closest('label');
+      const byFor = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
+      const label = byFor || input.closest('label');
       const hasLabel = !!(label?.textContent?.trim() || ariaLabel || ariaLabelledby);
       if (!hasLabel) missingLabel.push(input);
       if (hasLabel && !label?.textContent?.trim() && !ariaLabel && !ariaLabelledby && placeholder) {

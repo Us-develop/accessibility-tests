@@ -99,6 +99,7 @@
   --fg-1:               #19191B;   /* primary text */
   --fg-2:               #2E2E2E;   /* secondary text */
   --fg-3:               #5F5F66;   /* tertiary/muted text; ≥ 4.5:1 on cream/white/n-30 */
+  --stat-label:         #5F5F66;   /* solid (no opacity) so stat captions stay ≥ 4.5:1 */
   --fg-on-dark:         #FFFFFF;
   --fg-link:            #19191B;
   --fg-disabled:        #A7A7A7;

@@ -229,14 +229,18 @@
   $effect(() => {
     if (typeof document === 'undefined') return;
     if (!selected || !drawerLayerEl) {
-      document.getElementById('main')?.removeAttribute('inert');
       return;
     }
     if (drawerLayerEl.parentElement !== document.body) {
       document.body.appendChild(drawerLayerEl);
     }
-    const main = document.getElementById('main');
-    main?.setAttribute('inert', '');
+    const inerted = [];
+    for (const el of document.body.children) {
+      if (!(el instanceof HTMLElement) || el === drawerLayerEl) continue;
+      if (el.hasAttribute('inert')) continue;
+      el.setAttribute('inert', '');
+      inerted.push(el);
+    }
     const onKey = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -247,7 +251,7 @@
     requestAnimationFrame(() => drawerEl?.focus());
     return () => {
       window.removeEventListener('keydown', onKey);
-      main?.removeAttribute('inert');
+      for (const el of inerted) el.removeAttribute('inert');
     };
   });
 
@@ -1005,8 +1009,8 @@
     margin-bottom: 8px;
   }
   .tabs-scroll {
-    flex: 1;
-    min-width: 0;
+    flex: 1 1 100%;
+    min-width: 60%;
     overflow-x: auto;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
@@ -1066,7 +1070,7 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    opacity: 0.7;
+    color: var(--stat-label);
     margin-bottom: 6px;
   }
   .stat-value {

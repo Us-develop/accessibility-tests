@@ -18,6 +18,7 @@ const {
   setQueueJobErrorHandler,
   deleteJob,
 } = await import('../server/queue.mjs');
+const { setUrlGuardLookup } = await import('../server/url-guard.mjs');
 
 function waitFor(check, timeoutMs = 1000) {
   const started = Date.now();
@@ -43,6 +44,7 @@ function waitFor(check, timeoutMs = 1000) {
 }
 
 after(() => {
+  setUrlGuardLookup(null);
   rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -79,6 +81,7 @@ describe('scan queue', () => {
   });
 
   it('runs a queued job through the executor then removes it', async () => {
+    setUrlGuardLookup(async () => [{ address: '1.1.1.1', family: 4 }]);
     let seen = null;
     setQueueExecutor(async (job) => {
       seen = job.id;

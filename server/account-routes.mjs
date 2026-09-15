@@ -147,7 +147,7 @@ async function accountBundle(user, req) {
  * @param {{ readGuestTokenRecord: Function }} ctx
  */
 export function registerAccountRoutes(app, ctx) {
-  const { readGuestTokenRecord } = ctx;
+  const { readGuestTokenRecord, patchMemoryRunOwner } = ctx;
   const signupIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyFn: clientKey });
   const forgotIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyFn: clientKey });
   const forgotEmailLimit = rateLimit({
@@ -201,6 +201,9 @@ export function registerAccountRoutes(app, ctx) {
         const binding = readGuestTokenRecord(guestToken);
         if (binding?.domain && binding?.runId) {
           await attachRunToUser(user.id, binding.domain, binding.runId);
+          if (typeof patchMemoryRunOwner === 'function') {
+            patchMemoryRunOwner(binding.domain, binding.runId, user.id);
+          }
           deleteGuestTokenFile(guestToken);
           attached = true;
         }
@@ -443,6 +446,9 @@ export function registerAccountRoutes(app, ctx) {
     const binding = readGuestTokenRecord(token);
     if (!binding) return res.status(404).json({ error: 'That snapshot was not found.' });
     const project = await attachRunToUser(userId, binding.domain, binding.runId);
+    if (typeof patchMemoryRunOwner === 'function') {
+      patchMemoryRunOwner(binding.domain, binding.runId, userId);
+    }
     deleteGuestTokenFile(token);
     await ensureFreebieLot(userId, { guestFreebieUsed: true });
     return res.json({ ok: true, project });

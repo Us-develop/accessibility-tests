@@ -7,7 +7,7 @@ import AppHeader from '../components/AppHeader.astro';
     <AppHeader crumb="All audits" />
     <main id="main" class="app-main" tabindex="-1">
       <div data-screen-label="All audits" style="background: var(--us-cream); min-height: calc(100dvh - 65px); min-height: calc(100vh - 65px); position: relative; overflow: hidden;">
-        <div aria-hidden="true" style="position: absolute; top: -180px; right: -120px; width: 520px; height: 520px; border-radius: 50%; background: var(--us-grad-iridescent); opacity: 0.35; filter: blur(60px); animation: drift 24s ease-in-out infinite; pointer-events: none;"></div>
+        <div aria-hidden="true" class="motion-drift" style="position: absolute; top: -180px; right: -120px; width: 520px; height: 520px; border-radius: 50%; background: var(--us-grad-iridescent); opacity: 0.35; filter: blur(60px); animation: drift 24s ease-in-out infinite; pointer-events: none;"></div>
 
         <div class="container" style="padding: clamp(32px, 5vw, 56px) 0 clamp(48px, 8vw, 96px); position: relative;">
           <div class="audits-head">

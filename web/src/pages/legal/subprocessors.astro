@@ -31,7 +31,7 @@ function renderSubprocessorsMarkdown(md) {
       const cells = line.split('|').slice(1, -1).map((c) => c.trim());
       if (cells.every((c) => /^[-:]+$/.test(c))) continue;
       if (!inTable) {
-        html.push('<table class="account-table"><thead><tr>');
+        html.push('<div class="table-wrap"><table class="account-table"><thead><tr>');
         html.push(cells.map((c) => `<th scope="col">${inlineMarkdown(c)}</th>`).join(''));
         html.push('</tr></thead><tbody>');
         inTable = true;
@@ -41,7 +41,7 @@ function renderSubprocessorsMarkdown(md) {
       continue;
     }
     if (inTable) {
-      html.push('</tbody></table>');
+      html.push('</tbody></table></div>');
       inTable = false;
     }
     if (!line.trim()) {
@@ -66,7 +66,7 @@ function renderSubprocessorsMarkdown(md) {
     html.push(`<p>${inlineMarkdown(line.trim())}</p>`);
   }
   flushList();
-  if (inTable) html.push('</tbody></table>');
+  if (inTable) html.push('</tbody></table></div>');
   return html.join('\n');
 }
 

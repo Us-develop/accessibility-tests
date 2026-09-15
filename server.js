@@ -10,11 +10,13 @@ import { loadAllAppEnv } from './server/load-env.mjs';
 import { initDb, dbPool } from './server/db.js';
 import { createAccessibilityApp } from './server/create-app.mjs';
 import { installProcessGuards } from './server/http-utils.mjs';
+import { assertProductionDatabaseUrl } from './server/config.mjs';
 
 installProcessGuards();
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
 loadAllAppEnv(repoRoot);
+assertProductionDatabaseUrl();
 const PORT = process.env.PORT || 3456;
 
 let app;

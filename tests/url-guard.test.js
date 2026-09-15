@@ -7,6 +7,7 @@ import {
   collectUrlCandidates,
   fetchSitemapDocument,
   filterPublicHttpUrls,
+  hostResolverRulesFromTargets,
   isBlockedIp,
   scannerUserAgent,
   setUrlGuardLookup,
@@ -93,6 +94,13 @@ describe('filterPublicHttpUrls', () => {
     assert.match(rejected[0].reason, /cannot be scanned/i);
     assert.equal(rejected[1].url, 'file:///etc/passwd');
   });
+
+  it('pins Chromium resolver rules to the validated IP', () => {
+    assert.equal(
+      hostResolverRulesFromTargets([{ hostname: 'ok.example', addresses: ['8.8.8.8'] }]),
+      'MAP ok.example 8.8.8.8'
+    );
+  });
 });
 
 describe('collectUrlCandidates', () => {
@@ -133,6 +141,7 @@ describe('scanner user agent and child env', () => {
       NODE_ENV: 'production',
       REPORTS_BASE: '/tmp/reports',
       PLAYWRIGHT_BROWSERS_PATH: '/ms-playwright',
+      PUBLIC_BASE_URL: 'https://wcag.about-us.be',
       URL_CONCURRENCY: '1',
       PAGE_GOTO_TIMEOUT_MS: '90000',
       BLOCK_MEDIA_REQUESTS: 'true',
@@ -141,14 +150,17 @@ describe('scanner user agent and child env', () => {
       STRIPE_WEBHOOK_SECRET: 'whsec_leak',
       SESSION_SECRET: 'unit-test-session-secret-32chars!!',
       DATABASE_URL: 'postgres://wcag:pw@127.0.0.1/wcag',
+      SELF_SCAN_ALLOW_LOOPBACK: '1',
     });
     assert.equal(env.PATH, '/usr/bin');
+    assert.equal(env.PUBLIC_BASE_URL, 'https://wcag.about-us.be');
     assert.equal(env.URL_CONCURRENCY, '1');
     assert.equal(env.PAGE_GOTO_TIMEOUT_MS, '90000');
     assert.equal(env.STRIPE_SECRET_KEY, undefined);
     assert.equal(env.STRIPE_WEBHOOK_SECRET, undefined);
     assert.equal(env.SESSION_SECRET, undefined);
     assert.equal(env.DATABASE_URL, undefined);
+    assert.equal(env.SELF_SCAN_ALLOW_LOOPBACK, undefined);
     assert.ok(!Object.keys(env).some((key) => key.startsWith('STRIPE_')));
   });
 });

@@ -27,7 +27,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable accessibility.service
 ```
 
-Create `/etc/accessibility.env` (`chmod 600`) with every production variable from the root [`.env.example`](../.env.example). At minimum: `PORT=3000`, `NODE_ENV=production` (also set by the unit), `SESSION_SECRET`, `APP_PASSWORD`, `MAIL_FROM`, `PUBLIC_BASE_URL=https://wcag.about-us.be`, company identity, Stripe keys, and `DATABASE_URL`.
+Create `/etc/accessibility.env` (`chmod 600`) with every production variable from the root [`.env.example`](../.env.example). At minimum: `PORT=3000`, `NODE_ENV=production` (also set by the unit), `SESSION_SECRET`, `APP_PASSWORD`, `MAIL_FROM`, `PUBLIC_BASE_URL=https://wcag.about-us.be`, company identity, Stripe keys, and **`DATABASE_URL`**. The process **exits at startup** when `NODE_ENV=production` and `DATABASE_URL` is unset (JSON-store fallback is not used in production).
 
 If a drop-in still loads `/etc/accessibility-db.env`, merge those values into `/etc/accessibility.env` and remove the drop-in so there is one file.
 

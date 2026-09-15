@@ -20,3 +20,15 @@ export function assertProductionPublicBaseUrl() {
     );
   }
 }
+
+/**
+ * Production persistence is Postgres. JSON-store fallback is for local/tests only.
+ */
+export function assertProductionDatabaseUrl() {
+  if (process.env.NODE_ENV !== 'production') return;
+  if (!String(process.env.DATABASE_URL || '').trim()) {
+    throw new Error(
+      'DATABASE_URL is required in production (see deploy/README.md and .env.example).'
+    );
+  }
+}

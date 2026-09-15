@@ -20,6 +20,7 @@ import {
   pruneGuestFreebies,
   pruneLeadFileRows,
 } from './guest.mjs';
+import { pruneLeadPrivacyConsents } from './consents.mjs';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 import { REPORTS_BASE } from './paths.js';
 import { customerOwnsRun, deleteRunDirectory } from './projects.mjs';
@@ -174,7 +175,11 @@ export async function runRetention(now = new Date()) {
   if (dbPool) {
     dbLeads = await dbDeleteLeadsOlderThan(new Date(now.getTime() - leadAgeMs));
   }
+  const leadPrivacy = await pruneLeadPrivacyConsents({
+    olderThan: new Date(now.getTime() - leadAgeMs),
+  });
   logStep('leads', fileLeads.pruned + dbLeads, { file: fileLeads.pruned, db: dbLeads });
+  logStep('leadPrivacyConsents', leadPrivacy);
 
   let tokens = { verify: 0, reset: 0, pendingEmail: 0 };
   if (dbPool) tokens = await dbClearExpiredAuthTokens(now);

@@ -6,6 +6,7 @@ import {
   dbListConsents,
   dbMergeConsentContext,
   dbDeleteConsentsForAccount,
+  dbDeleteLeadPrivacyConsents,
 } from './db.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 
@@ -32,7 +33,8 @@ function nextJsonId(rows) {
 export function hashIp(ip) {
   const raw = String(ip || '').trim();
   if (!raw) return null;
-  return createHash('sha256').update(`consent-ip:${raw}`).digest('hex');
+  const salt = String(process.env.GUEST_IP_HASH_SALT || process.env.SESSION_SECRET || 'consent-ip-salt');
+  return createHash('sha256').update(`consent-ip:${salt}:${raw}`).digest('hex');
 }
 
 export function hashEmail(email) {
@@ -126,6 +128,33 @@ export async function deleteConsentsForAccount({ userId = null, email = null } =
     });
     deleted = consents.length - kept.length;
     if (deleted) saveConsents(kept);
+  }
+  return deleted;
+}
+
+export async function pruneLeadPrivacyConsents({ email = null, olderThan = null } = {}) {
+  const needleEmail = email ? String(email).trim().toLowerCase() : '';
+  const cutoffMs = olderThan instanceof Date ? olderThan.getTime() : olderThan ? Date.parse(olderThan) : NaN;
+  if (!needleEmail && !Number.isFinite(cutoffMs)) return 0;
+  let deleted = 0;
+  if (useDb()) {
+    deleted = await dbDeleteLeadPrivacyConsents({
+      email: needleEmail || null,
+      olderThan: Number.isFinite(cutoffMs) ? new Date(cutoffMs) : null,
+    });
+  } else {
+    const consents = loadConsents();
+    const next = consents.filter((row) => {
+      if (row.kind !== 'lead_privacy') return true;
+      if (needleEmail && String(row.email || '').toLowerCase() === needleEmail) return false;
+      if (Number.isFinite(cutoffMs)) {
+        const ts = Date.parse(row.acceptedAt || '');
+        if (Number.isFinite(ts) && ts < cutoffMs) return false;
+      }
+      return true;
+    });
+    deleted = consents.length - next.length;
+    if (deleted) saveConsents(next);
   }
   return deleted;
 }

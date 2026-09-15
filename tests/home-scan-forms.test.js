@@ -12,10 +12,15 @@ const guestLead = readFileSync(join(repoRoot, 'web/src/components/GuestLeadForm.
 const signupAstro = readFileSync(join(repoRoot, 'web/src/pages/signup.astro'), 'utf8');
 const accountAstro = readFileSync(join(repoRoot, 'web/src/pages/account.astro'), 'utf8');
 const a11yPage = readFileSync(join(repoRoot, 'web/src/pages/accessibility.astro'), 'utf8');
+const pricingAstro = readFileSync(join(repoRoot, 'web/src/pages/pricing.astro'), 'utf8');
+const termsAstro = readFileSync(join(repoRoot, 'web/src/pages/terms.astro'), 'utf8');
 const appCss = readFileSync(join(repoRoot, 'web/public/styles/app.css'), 'utf8');
 const tokensCss = readFileSync(join(repoRoot, 'web/public/styles/tokens.css'), 'utf8');
 const runTestsJs = readFileSync(join(repoRoot, 'run-tests.js'), 'utf8');
 const selfScan = readFileSync(join(repoRoot, 'scripts/self-scan.mjs'), 'utf8');
+const chapter7 = readFileSync(join(repoRoot, 'tests/chapter7-forms.js'), 'utf8');
+const loginModal = readFileSync(join(repoRoot, 'web/src/components/LoginModal.astro'), 'utf8');
+const runServer = readFileSync(join(repoRoot, 'web/run-server.mjs'), 'utf8');
 
 function formBlock(id) {
   const re = new RegExp(`<form[\\s\\S]*?id="${id}"[\\s\\S]*?>`);
@@ -92,13 +97,53 @@ describe('own product accessibility markup', () => {
     assert.match(robots, /Disallow: \$\{path\}/);
   });
 
-  it('lets run-tests.js load the page origin even on loopback', () => {
+  it('lets run-tests.js load the page origin on loopback only when SELF_SCAN_ALLOW_LOOPBACK=1', () => {
     assert.match(runTestsJs, /originOf\(raw\) === pageOrigin/);
+    assert.match(runTestsJs, /SELF_SCAN_ALLOW_LOOPBACK/);
     assert.match(runTestsJs, /requestChainLeavesAllowlist\(request, originOf\(url\)\)/);
+    assert.match(runTestsJs, /serviceWorkers:\s*'block'/);
   });
 
   it('fails self-scan when a page does not load', () => {
     assert.match(selfScan, /no axe results \(page did not load\)/);
     assert.match(selfScan, /id === 'page-load'/);
+    assert.match(selfScan, /INDEXABLE_PATHS/);
+    assert.match(selfScan, /SELF_SCAN_ALLOW_LOOPBACK:\s*'1'/);
+    assert.match(selfScan, /WCAG_DOTENV_OVERRIDE:\s*'0'/);
+    assert.match(selfScan, /keyboard\.press\('Tab'\)/);
+  });
+
+  it('prompts for the current password on the account deletion form', () => {
+    assert.match(accountAstro, /id="delete-form"/);
+    assert.match(accountAstro, /id="delete-password"[^>]*name="password"[^>]*type="password"/);
+    assert.match(accountAstro, /api\('\/api\/account\/delete'\)/);
+    assert.doesNotMatch(accountAstro, /\bprompt\s*\(/);
+    assert.match(accountAstro, /id="email-form"/);
+    assert.match(accountAstro, /api\('\/api\/account\/email'\)/);
+  });
+
+  it('uses the reverse-charge VAT copy on pricing and terms', () => {
+    const copy =
+      'Businesses outside Belgium with a valid EU VAT number are charged without VAT under the reverse-charge rule. Belgian businesses pay 21 % VAT. Prices shown include Belgian VAT; consumers in other EU countries see their local rate at checkout.';
+    assert.match(pricingAstro, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(termsAstro, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  });
+
+  it('wraps the report tab strip before it shrinks on a phone', () => {
+    assert.match(dashboard, /flex:\s*1 1 100%/);
+    assert.match(dashboard, /min-width:\s*60%/);
+    assert.match(tokensCss, /--stat-label:/);
+    assert.match(appCss, /label:not\(\.legal-check\)/);
+  });
+
+  it('inerts every sibling of an open dialog, not only main', () => {
+    assert.match(loginModal, /setOverlaySiblingsInert/);
+    assert.match(dashboard, /document\.body\.children/);
+    assert.match(runServer, /app\.disable\('x-powered-by'\)/);
+    assert.match(runServer, /app\.set\('trust proxy'/);
+  });
+
+  it('treats wrapping labels as programmatically associated', () => {
+    assert.match(chapter7, /byFor \|\| input\.closest\('label'\)/);
   });
 });

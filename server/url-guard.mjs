@@ -106,9 +106,9 @@ function recordsToAddresses(records) {
  * Guest/staff/customer scans: a public http(s) URL. Rejects private/reserved IPs after DNS.
  * @param {string} raw
  * @param {{ lookup?: typeof dnsLookup }} [options]
- * @returns {Promise<string>} canonical URL
+ * @returns {Promise<{ url: string, hostname: string, addresses: string[] }>}
  */
-export async function assertPublicHttpUrl(raw, options = {}) {
+export async function resolvePublicHttpUrl(raw, options = {}) {
   const input = String(raw || '').trim();
   if (!input || input.length > 2048) {
     throw httpError('Enter a single public http(s) URL.', 400, 'invalid_url');
@@ -134,7 +134,7 @@ export async function assertPublicHttpUrl(raw, options = {}) {
       throw httpError('That host cannot be scanned.', 400, 'blocked_target');
     }
     parsed.hash = '';
-    return parsed.toString();
+    return { url: parsed.toString(), hostname, addresses: [hostname] };
   }
   const resolve = options.lookup || injectedLookup || dnsLookup;
   let records;
@@ -148,24 +148,55 @@ export async function assertPublicHttpUrl(raw, options = {}) {
     throw httpError('That host cannot be scanned.', 400, 'blocked_target');
   }
   parsed.hash = '';
-  return parsed.toString();
+  return { url: parsed.toString(), hostname, addresses };
+}
+
+/**
+ * Guest/staff/customer scans: a public http(s) URL. Rejects private/reserved IPs after DNS.
+ * @param {string} raw
+ * @param {{ lookup?: typeof dnsLookup }} [options]
+ * @returns {Promise<string>} canonical URL
+ */
+export async function assertPublicHttpUrl(raw, options = {}) {
+  const target = await resolvePublicHttpUrl(raw, options);
+  return target.url;
+}
+
+/**
+ * Chromium `--host-resolver-rules` value pinning hostnames to the IPs validated at accept time.
+ * @param {{ hostname?: string, addresses?: string[] }[]} targets
+ */
+export function hostResolverRulesFromTargets(targets) {
+  const maps = [];
+  const seen = new Set();
+  for (const target of targets || []) {
+    const host = String(target?.hostname || '').toLowerCase();
+    const ip = target?.addresses?.[0];
+    if (!host || !ip || isIP(host) || seen.has(host)) continue;
+    seen.add(host);
+    maps.push(`MAP ${host} ${ip}`);
+  }
+  return maps.join(',');
 }
 
 /**
  * @param {string[]} candidates
  * @param {{ lookup?: typeof dnsLookup }} [options]
- * @returns {Promise<{ accepted: string[], rejected: { url: string, reason: string }[] }>}
+ * @returns {Promise<{ accepted: string[], rejected: { url: string, reason: string }[], targets: { url: string, hostname: string, addresses: string[] }[] }>}
  */
 export async function filterPublicHttpUrls(candidates, options = {}) {
   const accepted = [];
   const rejected = [];
+  const targets = [];
   const seen = new Set();
   for (const raw of candidates || []) {
     const input = String(raw || '').trim();
     if (seen.has(input)) continue;
     seen.add(input);
     try {
-      accepted.push(await assertPublicHttpUrl(input, options));
+      const target = await resolvePublicHttpUrl(input, options);
+      accepted.push(target.url);
+      targets.push(target);
     } catch (err) {
       rejected.push({
         url: input,
@@ -173,7 +204,7 @@ export async function filterPublicHttpUrls(candidates, options = {}) {
       });
     }
   }
-  return { accepted: [...new Set(accepted)], rejected };
+  return { accepted: [...new Set(accepted)], rejected, targets };
 }
 
 /**
@@ -238,7 +269,7 @@ export async function fetchSitemapDocument(loc, options = {}) {
   }
 }
 
-const SCAN_ENV_FIXED = ['PATH', 'HOME', 'NODE_ENV', 'REPORTS_BASE', 'PLAYWRIGHT_BROWSERS_PATH'];
+const SCAN_ENV_FIXED = ['PATH', 'HOME', 'NODE_ENV', 'REPORTS_BASE', 'PLAYWRIGHT_BROWSERS_PATH', 'PUBLIC_BASE_URL'];
 const SCAN_ENV_NAMED = new Set([
   'URL_CONCURRENCY',
   'BLOCK_MEDIA_REQUESTS',
