@@ -10,6 +10,7 @@ const layoutAstro = readFileSync(join(repoRoot, 'web/src/layouts/Layout.astro'),
 const dashboard = readFileSync(join(repoRoot, 'web/src/components/ResultsDashboard.svelte'), 'utf8');
 const guestLead = readFileSync(join(repoRoot, 'web/src/components/GuestLeadForm.svelte'), 'utf8');
 const signupAstro = readFileSync(join(repoRoot, 'web/src/pages/signup.astro'), 'utf8');
+const verifyAstro = readFileSync(join(repoRoot, 'web/src/pages/verify.astro'), 'utf8');
 const accountAstro = readFileSync(join(repoRoot, 'web/src/pages/account.astro'), 'utf8');
 const a11yPage = readFileSync(join(repoRoot, 'web/src/pages/accessibility.astro'), 'utf8');
 const pricingAstro = readFileSync(join(repoRoot, 'web/src/pages/pricing.astro'), 'utf8');
@@ -86,6 +87,14 @@ describe('own product accessibility markup', () => {
     assert.match(signupAstro, /data\.field/);
     assert.match(appCss, /\.field-error \{/);
     assert.doesNotMatch(signupAstro, /for \(const field of \[email, password\]\)/);
+  });
+
+  it('confirms email with a button instead of consuming the GET from a mail preview', () => {
+    assert.match(verifyAstro, /id="verify-form"/);
+    assert.match(verifyAstro, /method="post"/);
+    assert.match(verifyAstro, /action="\/api\/auth\/verify"/);
+    assert.match(verifyAstro, /id="verify-resend-form"/);
+    assert.match(signupAstro, /click Confirm email/);
   });
 
   it('does not hide custom checkboxes with display:none', () => {

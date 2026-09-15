@@ -336,23 +336,42 @@ export async function updateContactDetails(userId, patch) {
   return publicUser(await updateUser(userId, allowed));
 }
 
-export async function verifyUserEmail(token) {
-  if (!token) return null;
+export async function findUserByVerifyToken(token) {
+  const value = String(token || '').trim();
+  if (!value) return null;
   let user = null;
   if (useDb()) {
-    const { rows } = await dbPool.query(
-      `SELECT id FROM users WHERE verify_token = $1 LIMIT 1`,
-      [token]
-    );
+    const { rows } = await dbPool.query(`SELECT id FROM users WHERE verify_token = $1 LIMIT 1`, [value]);
     if (rows[0]) user = await getUserById(rows[0].id);
+    if (!user) {
+      const fromJson = loadUsers().find((u) => u.verifyToken && u.verifyToken === value) || null;
+      if (fromJson) user = await hydrateJsonUser(fromJson);
+    }
   } else {
-    user = loadUsers().find((u) => u.verifyToken && u.verifyToken === token) || null;
+    user = loadUsers().find((u) => u.verifyToken && u.verifyToken === value) || null;
   }
   if (!user) return null;
   if (user.verifyExpiresAt && Date.parse(user.verifyExpiresAt) < Date.now()) return null;
+  return withContactDefaults(user);
+}
+
+export async function verifyUserEmail(token) {
+  const user = await findUserByVerifyToken(token);
+  if (!user) return null;
   const saved = await updateUser(user.id, { emailVerified: true, verifyToken: null, verifyExpiresAt: null });
   await ensureFreebieLot(user.id);
   return publicUser(saved);
+}
+
+export async function restartEmailVerification(email) {
+  const user = await getUserByEmail(email);
+  if (!user || user.emailVerified) return null;
+  const token = randomBytes(16).toString('hex');
+  const saved = await updateUser(user.id, {
+    verifyToken: token,
+    verifyExpiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+  });
+  return { user: publicUser(saved), token };
 }
 
 export async function setPassword(id, password) {
@@ -427,18 +446,32 @@ export async function startEmailChange(userId, nextEmail, password) {
   return { user: publicUser(saved), token, previousEmail: user.email, pendingEmail: normalized };
 }
 
-export async function consumePendingEmailChange(token) {
-  if (!token) return null;
+export async function peekPendingEmailChange(token) {
+  const value = String(token || '').trim();
+  if (!value) return null;
   let user = null;
   if (useDb()) {
-    user = withContactDefaults(await dbGetUserByPendingEmailToken(token));
+    user = withContactDefaults(await dbGetUserByPendingEmailToken(value));
+    if (!user) {
+      const fromJson =
+        loadUsers().find((u) => u.pendingEmailToken && u.pendingEmailToken === value) || null;
+      if (fromJson) user = await hydrateJsonUser(fromJson);
+    }
   } else {
-    user = withContactDefaults(loadUsers().find((u) => u.pendingEmailToken && u.pendingEmailToken === token) || null);
+    user = withContactDefaults(
+      loadUsers().find((u) => u.pendingEmailToken && u.pendingEmailToken === value) || null
+    );
   }
   if (!user) return null;
   if (user.pendingEmailExpiresAt && Date.parse(user.pendingEmailExpiresAt) < Date.now()) return null;
+  if (!String(user.pendingEmail || '').trim()) return null;
+  return user;
+}
+
+export async function consumePendingEmailChange(token) {
+  const user = await peekPendingEmailChange(token);
+  if (!user) return null;
   const nextEmail = String(user.pendingEmail || '').trim().toLowerCase();
-  if (!nextEmail) return null;
   const taken = await getUserByEmail(nextEmail);
   if (taken && taken.id !== user.id) return null;
   const saved = await updateUser(user.id, {

@@ -9,6 +9,9 @@ import {
   startEmailChange,
   consumePasswordReset,
   consumePendingEmailChange,
+  peekPendingEmailChange,
+  findUserByVerifyToken,
+  restartEmailVerification,
   updateContactDetails,
   verifyUserEmail,
   normalizeCustomerType,
@@ -161,6 +164,13 @@ export function registerAccountRoutes(app, ctx) {
     keyFn: (req) => String(req.body?.email || '').trim().toLowerCase() || 'anon',
   });
   const resetIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyFn: clientKey });
+  const verifyIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 20, keyFn: clientKey });
+  const resendIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyFn: clientKey });
+  const resendEmailLimit = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 3,
+    keyFn: (req) => String(req.body?.email || '').trim().toLowerCase() || 'anon',
+  });
 
   app.post('/api/auth/signup', signupIpLimit, asyncHandler(async (req, res) => {
     try {
@@ -223,7 +233,7 @@ export function registerAccountRoutes(app, ctx) {
           kind: 'verify',
           to: user.email,
           subject: 'Verify your Us accessibility account',
-          text: `Confirm your email:\n${link}\n`,
+        text: `Confirm your email:\n${link}\nOpen the link, then click Confirm email. This link expires in 48 hours.\n`,
         });
       } else {
         await ensureFreebieLot(user.id, {
@@ -248,7 +258,16 @@ export function registerAccountRoutes(app, ctx) {
   }));
 
   app.get('/api/auth/verify', asyncHandler(async (req, res) => {
-    const token = String(req.query?.token || '');
+    const token = String(req.query?.token || '').trim();
+    if (!token) return res.redirect(303, '/verify?error=invalid');
+    const pending = await peekPendingEmailChange(token);
+    const signup = pending ? null : await findUserByVerifyToken(token);
+    if (!pending && !signup) return res.redirect(303, '/verify?error=invalid');
+    return res.redirect(303, `/verify?token=${encodeURIComponent(token)}`);
+  }));
+
+  app.post('/api/auth/verify', verifyIpLimit, asyncHandler(async (req, res) => {
+    const token = String(req.body?.token || req.query?.token || '').trim();
     const changed = await consumePendingEmailChange(token);
     if (changed) {
       setSessionCookies(
@@ -256,12 +275,30 @@ export function registerAccountRoutes(app, ctx) {
         { userId: changed.id, role: changed.role, email: changed.email, ver: changed.sessionVersion || 1 },
         sameSiteFromEnv()
       );
-      return res.redirect('/account');
+      return formOrJson(req, res, '/account', 200, { ok: true, email: changed.email });
     }
     const user = await verifyUserEmail(token);
-    if (!user) return res.status(400).send('Invalid or expired verification link.');
+    if (!user) {
+      return formOrJson(req, res, '/verify?error=invalid', 400, {
+        error: 'Invalid or expired verification link.',
+      });
+    }
     setSessionCookies(res, { userId: user.id, role: user.role, email: user.email, ver: 1 }, sameSiteFromEnv());
-    return res.redirect('/account');
+    return formOrJson(req, res, '/account', 200, { ok: true, email: user.email });
+  }));
+
+  app.post('/api/auth/verify/resend', resendIpLimit, resendEmailLimit, asyncHandler(async (req, res) => {
+    const started = await restartEmailVerification(req.body?.email);
+    if (started) {
+      const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(started.token)}`;
+      await sendAccountEmail({
+        kind: 'verify',
+        to: started.user.email,
+        subject: 'Verify your Us accessibility account',
+        text: `Confirm your email:\n${link}\nThis link expires in 48 hours.\n`,
+      });
+    }
+    return formOrJson(req, res, '/verify?sent=1', 200, { ok: true });
   }));
 
   app.post('/api/auth/forgot', forgotIpLimit, forgotEmailLimit, asyncHandler(async (req, res) => {

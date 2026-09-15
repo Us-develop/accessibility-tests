@@ -198,6 +198,7 @@ const PUBLIC_GET_PATHS = new Set([
   '/legal/subprocessors',
   '/accessibility',
   '/signup',
+  '/verify',
   '/forgot',
   '/reset',
   '/teaser',

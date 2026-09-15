@@ -63,7 +63,7 @@ const signupError = Astro.url.searchParams.get('error') === '1';
           <button type="submit" class="btn btn-primary" id="signup-btn">Create account</button>
           <p id="signup-msg" class="muted" role={signupError ? 'alert' : 'status'}>
             {checkEmail
-              ? 'Check your email to verify the account, then sign in.'
+              ? 'Check your email, open the link, then click Confirm email. Mail previews do not finish this for you.'
               : signupError
                 ? 'Could not create account. Try a different email, or log in if you already have one.'
                 : ''}
