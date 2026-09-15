@@ -9,12 +9,12 @@ import { spawn } from 'child_process';
 import { createHash, timingSafeEqual } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { sendRunNotificationEmail, createSmtpTransport, sendAccessRequestEmail, sendLeadEmail, assertProductionMailFrom } from '../server-email.js';
+import { sendRunNotificationEmail, sendAccessRequestEmail, sendLeadEmail, assertProductionMailFrom, warnIfBrevoMisconfigured, logMailFailure } from '../server-email.js';
 import { REPORTS_BASE } from './paths.js';
 import { dbPool, dbUpsertRun, dbGetRun, dbGetLatestRun, dbGetRunByGuestToken, dbInsertLead, dbListLeads } from './db.js';
-import { mergeReportData } from './report-data.js';
+import { mergeReportData, computeIssueCountFromResult } from './report-data.js';
 import { readJsonIfExists, isValidReportId } from './fs-utils.js';
-import { listAuditEntries, listRunsForDomain, filterRunsForViewer } from './audit-list.js';
+import { listAuditEntries, listRunsForDomain, filterRunsForViewer, scoreFromResult } from './audit-list.js';
 import { getFtpConfig, ftpDownload, ftpUpload, persistReportArtifactsToFtp, assertProductionFtpSecure } from './ftp.js';
 import { normalizeManualProgress, resolvePersistedManualChecked } from '../manual-checklist.js';
 import { analysisCacheBody, anthropicConfigured, buildWcagAnalysisPayload } from '../anthropic-wcag-analysis.js';
@@ -333,22 +333,48 @@ async function maybeSendRunEmail(domain, runId) {
   notificationAttempted.set(key, Date.now());
   const base = publicBaseUrl();
   const reportUrl = `${base}/report/${domain}/${runId}/`;
-  if (!createSmtpTransport()) {
-    console.warn(
-      `[run ${domain}/${runId}] Notification requested for ${cur.notifyEmail} but SMTP is not configured (set SMTP_HOST and related env vars).`
-    );
-    return;
+  let score = '';
+  let pagesScanned = 0;
+  let issueCount = 0;
+  try {
+    let resultJson = null;
+    if (dbPool) {
+      try {
+        const row = await dbGetRun(domain, runId);
+        if (row?.resultJson) resultJson = row.resultJson;
+      } catch (err) {
+        console.error(`[run ${domain}/${runId}] DB result read failed:`, err.message);
+      }
+    }
+    if (!resultJson) {
+      resultJson = readJsonIfExists(join(runDirOf(domain, runId), 'accessibility-results.json'));
+    }
+    if (resultJson) {
+      const rawScore = scoreFromResult(resultJson);
+      score = rawScore == null ? '' : rawScore;
+      const urls = Array.isArray(resultJson.urls) ? resultJson.urls : [];
+      pagesScanned = urls.length;
+      issueCount = computeIssueCountFromResult(resultJson);
+    } else if (Array.isArray(cur.processedUrls)) {
+      pagesScanned = cur.processedUrls.length;
+    }
+  } catch (err) {
+    console.error(`[run ${domain}/${runId}] notification params failed:`, err.message);
   }
   try {
     await sendRunNotificationEmail({
       to: cur.notifyEmail,
-      reportId: `${domain}/${runId}`,
+      domain,
+      runId,
       status: cur.status,
-      error: cur.error || null,
+      error: cur.error || '',
       reportUrl,
+      score,
+      pagesScanned,
+      issueCount,
     });
   } catch (err) {
-    console.error(`[run ${domain}/${runId}] Notification email failed:`, err.message);
+    logMailFailure('run-notification', cur.notifyEmail, err);
   }
 }
 
@@ -506,6 +532,7 @@ export function createAccessibilityApp(repoRoot, options = {}) {
   sessionSecret();
   assertCompanyIdentityForProduction();
   assertProductionMailFrom();
+  warnIfBrevoMisconfigured();
   assertProductionPublicBaseUrl();
   assertProductionFtpSecure();
   warnStripeTaxCodeIfUnset();
@@ -1217,8 +1244,8 @@ app.post('/api/access-request', leadIpLimit, async (req, res) => {
     const { emailed } = await sendAccessRequestEmail({ name, company, email, message });
     return res.json({ ok: true, emailed });
   } catch (err) {
-    console.error('[access-request]', err?.message || err);
-    return res.status(500).json({ error: 'Could not submit your request. Try again later.' });
+    logMailFailure('access-request', process.env.ACCESS_REQUEST_TO || email, err);
+    return res.json({ ok: true, emailed: false });
   }
 });
 
@@ -1746,6 +1773,7 @@ app.post('/api/lead', leadIpLimit, async (req, res) => {
       }
     }
   }
+  const teaserUrl = token ? `${publicBaseUrl()}/teaser/${encodeURIComponent(token)}` : '';
   const row = {
     name,
     company,
@@ -1759,9 +1787,19 @@ app.post('/api/lead', leadIpLimit, async (req, res) => {
     source: 'scan-teaser',
     cta: 'wcag-services',
   };
+  let emailed = false;
   try {
-    const { emailed } = await sendLeadEmail(row);
-    row.emailed = emailed;
+    const sent = await sendLeadEmail({
+      ...row,
+      score: score == null ? '' : String(score),
+      teaserUrl,
+    });
+    emailed = sent.emailed === true;
+  } catch (err) {
+    logMailFailure('lead', process.env.ACCESS_REQUEST_TO || email, err);
+  }
+  row.emailed = emailed;
+  try {
     if (dbPool) {
       try {
         await dbInsertLead(row);

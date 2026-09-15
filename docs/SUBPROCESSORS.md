@@ -6,7 +6,8 @@ Processors that may handle personal data for the Us accessibility scanner. Conta
 | --- | --- | --- |
 | OVH | Virtual private server hosting the app | EU |
 | Postgres host | Account, scan metadata, consents, billing records | Same VPS unless `DATABASE_URL` points elsewhere |
-| SMTP provider | Transactional mail (verify, reset, lead notify) | Depends on `SMTP_*` configuration |
+| Brevo (Sendinblue SAS, France, EU) | Transactional e-mail delivery | EU |
+| SMTP provider | Fallback transactional mail when a Brevo template id is unset | Depends on `SMTP_*` configuration |
 | Stripe | Payments, invoicing, VAT/tax, customer portal | EU with possible US support staff |
 | Cloudflare Turnstile | Bot challenge on guest scans when enabled | Global / US |
 | Anthropic | Optional WCAG coverage write-up when `ANTHROPIC_API_KEY` is set | US |
