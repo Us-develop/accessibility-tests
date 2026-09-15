@@ -49,6 +49,7 @@ import {
   collectUrlCandidates,
   fetchSitemapDocument,
   filterPublicHttpUrls,
+  hostResolverRulesFromTargets,
   looksLikeUrlCandidate,
   setUrlGuardLookup,
 } from './url-guard.mjs';
@@ -192,15 +193,10 @@ const PUBLIC_GET_PATHS = new Set([
   '/limitations',
   '/pricing',
   '/terms',
-  '/terms/',
   '/privacy',
-  '/privacy/',
   '/cookies',
-  '/cookies/',
   '/legal/subprocessors',
-  '/legal/subprocessors/',
   '/accessibility',
-  '/accessibility/',
   '/signup',
   '/forgot',
   '/reset',
@@ -214,9 +210,20 @@ const PUBLIC_GET_PATHS = new Set([
   '/api/__test/throw',
 ]);
 
+function canonicalPublicPath(req) {
+  const raw = String(req.path || '').split('#')[0].split('?')[0];
+  if (!raw || raw === '/') return '/';
+  const trimmed = raw.replace(/\/+$/, '');
+  return trimmed === '' ? '/' : trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
+
+function isReadHttpMethod(method) {
+  return method === 'GET' || method === 'HEAD';
+}
+
 function isGuestOpenPath(req) {
-  const p = req.path;
-  if (req.method === 'GET') {
+  const p = canonicalPublicPath(req);
+  if (isReadHttpMethod(req.method)) {
     if (PUBLIC_GET_PATHS.has(p)) return true;
     if (PUBLIC_GET_PREFIXES.some((prefix) => p.startsWith(prefix))) return true;
   }
@@ -513,11 +520,12 @@ export function createAccessibilityApp(repoRoot, options = {}) {
   app.use(requestIdMiddleware);
   app.use(securityHeadersMiddleware);
 
-  const loginIpLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyFn: clientKey });
+  const loginIpLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyFn: clientKey, countFailures: true });
   const loginUserLimit = rateLimit({
     windowMs: 60 * 60 * 1000,
     max: 20,
     keyFn: (req) => String(req.body?.username || req.body?.email || '').trim().toLowerCase() || 'anon',
+    countFailures: true,
   });
   const leadIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyFn: clientKey });
 
@@ -554,7 +562,10 @@ export function createAccessibilityApp(repoRoot, options = {}) {
         {
           cwd: repoRoot,
           stdio: ['ignore', 'pipe', 'pipe'],
-          env: buildScanProcessEnv(process.env),
+          env: {
+            ...buildScanProcessEnv(process.env),
+            ...(job.hostResolverRules ? { SCANNER_HOST_RESOLVER_RULES: job.hostResolverRules } : {}),
+          },
         }
       );
 
@@ -1043,6 +1054,7 @@ app.post('/auth/login', loginIpLimit, loginUserLimit, async (req, res) => {
   }
   const user = await authenticateUser(username, password);
   if (!user || !user.emailVerified) {
+    if (typeof req.recordRateLimitFailure === 'function') req.recordRateLimitFailure();
     return res.status(401).send(loginPageHtml(nextPath, GENERIC_CREDENTIALS_ERROR));
   }
   setAuthCookie(res, {
@@ -1166,6 +1178,7 @@ app.post('/api/auth/login', loginIpLimit, loginUserLimit, async (req, res) => {
   }
   const user = await authenticateUser(username, password);
   if (!user || !user.emailVerified) {
+    if (typeof req.recordRateLimitFailure === 'function') req.recordRateLimitFailure();
     const status = user && !user.emailVerified ? 403 : 401;
     return loginFormRedirect(req, res, '/?signin=failed', status, {
       error: GENERIC_CREDENTIALS_ERROR,
@@ -1217,8 +1230,8 @@ app.use(async (req, res, next) => {
   if (req.path === '/auth/jira/callback') return next();
   if (req.path === '/api/config') return next();
   if (
-    req.method === 'GET' &&
-    (req.path === '/loading' ||
+    isReadHttpMethod(req.method) &&
+    (canonicalPublicPath(req) === '/loading' ||
       req.path.startsWith('/assets/') ||
       req.path.startsWith('/styles/') ||
       req.path.startsWith('/fonts/') ||
@@ -1242,7 +1255,7 @@ app.use(async (req, res, next) => {
   }
 
   /** Main domain: serve glass login at `/` unless the Node host defers to an Astro shell (web/run-server.mjs). */
-  if (req.method === 'GET' && req.path === '/') {
+  if (isReadHttpMethod(req.method) && canonicalPublicPath(req) === '/') {
     if (parseBooleanEnv('DEFER_ROOT_LOGIN_TO_SHELL', false)) {
       req.access = { role: 'guest' };
       return next();
@@ -1257,7 +1270,16 @@ app.use(async (req, res, next) => {
   return res.redirect(`/auth/login?next=${encodeURIComponent(nextPath)}`);
 });
 
-registerAccountRoutes(app, { readGuestTokenRecord });
+registerAccountRoutes(app, {
+  readGuestTokenRecord,
+  patchMemoryRunOwner(domain, runId, userId) {
+    if (!domain || !runId || !userId) return;
+    const key = runKey(domain, runId);
+    const cur = runStatus.get(key);
+    if (!cur) return;
+    rememberRunStatus(key, { ...cur, userId, tier: 'customer', guestToken: null });
+  },
+});
 registerStripeRoutes(app);
 registerRetentionRoutes(app);
 
@@ -1530,6 +1552,7 @@ app.post('/api/run', upload.single('file'), async (req, res) => {
       userId: initialState.userId,
       tier: initialState.tier,
       guestIp: initialState.guestIp,
+      hostResolverRules: hostResolverRulesFromTargets(filtered.targets),
     });
   } catch (err) {
     if (customerUser) {

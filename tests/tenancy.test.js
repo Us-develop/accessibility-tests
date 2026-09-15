@@ -21,6 +21,7 @@ const { attachRunToUser, upsertProject, canAccessRun, parseTenantPath } = await 
 const { newRunId, isValidRunId, runDir } = await import('../server/run-ids.js');
 const { persistGuestToken, readGuestTokenRecord, pruneExpiredGuestTokens } = await import('../server/guest.mjs');
 const { findRunningRun } = await import('../server/queue.mjs');
+const { enqueueScanJob, listJobs, deleteJob } = await import('../server/queue.mjs');
 const { migrateDomainManualProgress } = await import('../scripts/migrate-manual-progress.mjs');
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -106,6 +107,29 @@ function headers(jar, extra = {}) {
   };
 }
 
+function waitFor(check, timeoutMs = 2000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      try {
+        if (check()) {
+          resolve();
+          return;
+        }
+      } catch (err) {
+        reject(err);
+        return;
+      }
+      if (Date.now() - started > timeoutMs) {
+        reject(new Error('timed out waiting'));
+        return;
+      }
+      setTimeout(tick, 20);
+    };
+    tick();
+  });
+}
+
 describe('run ids', () => {
   it('uses at least 12 random hex chars after the timestamp', () => {
     const id = newRunId(new Date('2026-05-04T13:45:12.000Z'));
@@ -128,6 +152,32 @@ describe('parseTenantPath', () => {
   it('keeps history and audits runs domain-scoped', () => {
     assert.equal(parseTenantPath('/report/example.com/history').scoped, 'domain');
     assert.equal(parseTenantPath('/api/audits/example.com/runs').scoped, 'domain');
+  });
+});
+
+describe('canAccessRun memory fallthrough', () => {
+  it('does not deny when the in-memory run has a null userId', async () => {
+    const ownerId = 'owner-guest-attach';
+    const runId = '2026-01-01T00-00-00Z-fallthroughaa';
+    await seedRun(ownerId, runId);
+    assert.equal(
+      await canAccessRun(
+        { role: 'customer', userId: ownerId },
+        domain,
+        runId,
+        { memoryRun: { userId: null, guestToken: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', tier: 'guest' } }
+      ),
+      true
+    );
+    assert.equal(
+      await canAccessRun(
+        { role: 'customer', userId: 'someone-else' },
+        domain,
+        runId,
+        { memoryRun: { userId: null } }
+      ),
+      false
+    );
   });
 });
 
@@ -209,7 +259,12 @@ describe('tenant isolation HTTP', () => {
   let runIdA;
 
   it('starts the app', async () => {
-    const app = createAccessibilityApp(repoRoot);
+    const app = createAccessibilityApp(repoRoot, {
+      lookup: async () => [{ address: '1.1.1.1', family: 4 }],
+    });
+    app.get('/report/:domain/:runId/', (req, res) => {
+      res.status(200).type('html').send('<html><body>ok</body></html>');
+    });
     const started = await listen(app);
     server = started.server;
     origin = started.origin;
@@ -283,6 +338,56 @@ describe('tenant isolation HTTP', () => {
     const aBody = await auditsA.json();
     const aRow = (aBody.audits || []).find((item) => item.domain === domain);
     assert.equal(aRow?.latestRunId, runIdA);
+  });
+
+  it('lets a customer open an attached guest run while the memory record still exists', async () => {
+    const guestDomain = 'guest-attach.example';
+    const guestRunId = '2026-01-01T00-00-00Z-aabbccddeeff';
+    const guestToken = 'dddddddddddddddddddddddddddddddd';
+    persistGuestToken(guestToken, {
+      domain: guestDomain,
+      runId: guestRunId,
+      url: `https://${guestDomain}/`,
+    });
+    const dir = runDir(guestDomain, guestRunId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'accessibility-results.json'), JSON.stringify({ urls: [`https://${guestDomain}/`] }), 'utf8');
+    writeFileSync(join(dir, 'accessibility-report.html'), '<html><body>guest</body></html>', 'utf8');
+
+    enqueueScanJob({
+      id: `${guestDomain}:${guestRunId}`,
+      domain: guestDomain,
+      runId: guestRunId,
+      userId: null,
+      guestToken,
+      tier: 'guest',
+      urls: ['http://127.0.0.1/blocked'],
+    });
+    await waitFor(() => listJobs().every((job) => job.id !== `${guestDomain}:${guestRunId}`));
+
+    const jar = new CookieJar();
+    const res = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'guest-owner@example.com',
+        password: 'longenough1',
+        guestToken,
+        acceptTerms: true,
+      }),
+    });
+    jar.store(res.headers);
+    assert.equal(res.status, 200, (await res.clone().json().catch(() => ({}))).error || 'signup failed');
+
+    const status = await fetch(`${origin}/api/status/${guestDomain}/${guestRunId}`, { headers: headers(jar) });
+    assert.equal(status.status, 200);
+
+    const report = await fetch(`${origin}/report/${guestDomain}/${guestRunId}/`, {
+      headers: headers(jar),
+      redirect: 'manual',
+    });
+    assert.equal(report.status, 200);
+    deleteJob(`${guestDomain}:${guestRunId}`);
   });
 
   it('lets customer A write manual progress only on their run', async () => {

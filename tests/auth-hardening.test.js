@@ -122,6 +122,18 @@ describe('auth hardening HTTP', () => {
     assert.equal(after.status, 401);
   });
 
+  it('does not count successful logins toward the IP limiter', async () => {
+    let last;
+    for (let i = 0; i < 11; i += 1) {
+      last = await fetch(`${origin}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'root', password: 'staff-secret-pass' }),
+      });
+      assert.equal(last.status, 200, `success ${i + 1} should not be rate-limited`);
+    }
+  });
+
   it('returns 429 on the 11th login attempt in a window', async () => {
     let last;
     for (let i = 0; i < 11; i += 1) {

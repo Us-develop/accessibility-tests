@@ -1,8 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import pg from 'pg';
 import { archiveJsonStore, readJsonStore } from './json-store.mjs';
 import { DEFAULT_PLANS } from './plan-catalog.mjs';
+import { REPORTS_BASE } from './paths.js';
+import { join } from 'node:path';
 
 const { Pool } = pg;
 const txAls = new AsyncLocalStorage();
@@ -416,14 +418,48 @@ export async function initDb() {
   );
   await txQuery(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ`);
   await txQuery(`ALTER TABLE runs ADD COLUMN IF NOT EXISTS entitlement_json JSONB`);
-  await txQuery(
-    `CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active_per_user_uidx
-       ON runs (user_id)
-     WHERE status IN ('queued', 'running') AND user_id IS NOT NULL`
-  );
+  await sweepStaleActiveRuns();
+  try {
+    await txQuery(`DROP INDEX IF EXISTS runs_one_active_per_user_uidx`);
+    await txQuery(
+      `CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active_per_user_uidx
+         ON runs (user_id)
+       WHERE status IN ('queued', 'running') AND user_id IS NOT NULL AND user_id <> 'staff'`
+    );
+  } catch (err) {
+    console.error('[db] could not create runs_one_active_per_user_uidx:', err?.message || err);
+  }
 
   await seedDefaultPlans();
   await migrateJsonStoresToPostgres();
+}
+
+/**
+ * Mark queued/running DB rows as error when the matching reports/_queue file is gone.
+ * Prevents a stale unique-index row from locking out later scans (permanent 409).
+ */
+export async function sweepStaleActiveRuns() {
+  if (!dbPool) return { swept: 0 };
+  const { rows } = await txQuery(
+    `SELECT id, run_id FROM runs WHERE status IN ('queued', 'running')`
+  );
+  const queueDir = join(REPORTS_BASE, '_queue');
+  let swept = 0;
+  for (const row of rows) {
+    const jobFile = join(queueDir, `${row.id}:${row.run_id}.json`);
+    if (existsSync(jobFile)) continue;
+    const updated = await txQuery(
+      `UPDATE runs
+          SET status = 'error',
+              error = COALESCE(NULLIF(error, ''), 'stale_active'),
+              updated_at = NOW()
+        WHERE id = $1 AND run_id = $2 AND status IN ('queued', 'running')`,
+      [row.id, row.run_id]
+    );
+    swept += updated.rowCount || 0;
+  }
+  if (swept) console.info('[db] swept stale active runs', { swept });
+  return { swept };
 }
 
 /**
@@ -1516,6 +1552,23 @@ export async function dbDeleteConsentsForAccount({ userId = null, email = null }
   }
   if (!orParts.length) return 0;
   clauses.push(`(${orParts.join(' OR ')})`);
+  const { rowCount } = await txQuery(`DELETE FROM consents WHERE ${clauses.join(' AND ')}`, params);
+  return rowCount || 0;
+}
+
+export async function dbDeleteLeadPrivacyConsents({ email = null, olderThan = null } = {}) {
+  if (!dbPool) return 0;
+  const clauses = [`kind = 'lead_privacy'`];
+  const params = [];
+  if (email) {
+    params.push(String(email).trim().toLowerCase());
+    clauses.push(`email = $${params.length}`);
+  }
+  if (olderThan) {
+    params.push(olderThan instanceof Date ? olderThan.toISOString() : olderThan);
+    clauses.push(`accepted_at < $${params.length}::timestamptz`);
+  }
+  if (clauses.length === 1) return 0;
   const { rowCount } = await txQuery(`DELETE FROM consents WHERE ${clauses.join(' AND ')}`, params);
   return rowCount || 0;
 }

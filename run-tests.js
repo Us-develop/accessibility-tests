@@ -80,12 +80,13 @@ function originOf(raw) {
 async function requestChainLeavesAllowlist(request, pageOrigin) {
   let current = request;
   const seen = new Set();
+  const allowPageOrigin = String(process.env.SELF_SCAN_ALLOW_LOOPBACK || '').trim() === '1';
   while (current && !seen.has(current)) {
     seen.add(current);
     const raw = current.url();
-    // The page under test may itself be loopback (scripts/self-scan.mjs). Allow
-    // that origin; still block other private/reserved hosts.
-    if (pageOrigin && originOf(raw) === pageOrigin) {
+    // Self-scan of the product on loopback (scripts/self-scan.mjs) may allow that origin.
+    // Production children never get SELF_SCAN_ALLOW_LOOPBACK — pin DNS with host-resolver-rules instead.
+    if (allowPageOrigin && pageOrigin && originOf(raw) === pageOrigin) {
       current = current.redirectedFrom();
       continue;
     }
@@ -325,6 +326,10 @@ async function main() {
   if (parseBooleanEnv('SCANNER_NO_SANDBOX', false)) {
     chromiumArgs.push('--no-sandbox');
   }
+  const resolverRules = String(process.env.SCANNER_HOST_RESOLVER_RULES || '').trim();
+  if (resolverRules) {
+    chromiumArgs.push(`--host-resolver-rules=${resolverRules}`);
+  }
 
   const browser = await chromium.launch({
     headless: true,
@@ -338,6 +343,7 @@ async function main() {
       const context = await browser.newContext({
         userAgent: scannerUserAgent(),
         viewport,
+        serviceWorkers: 'block',
       });
       const page = await context.newPage();
       await page.emulateMedia({ reducedMotion: 'reduce' });

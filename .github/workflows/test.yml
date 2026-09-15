@@ -1,0 +1,42 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wcag
+          POSTGRES_PASSWORD: wcag
+          POSTGRES_DB: wcag
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install
+        run: |
+          npm ci
+          npm ci --prefix web
+          npx playwright install --with-deps chromium
+      - name: Build web app
+        run: npm run build --prefix web
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Postgres-backed unit tests
+        env:
+          DATABASE_URL: postgres://wcag:wcag@localhost:5432/wcag
+        run: node --test tests/postgres.test.js

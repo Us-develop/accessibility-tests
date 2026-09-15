@@ -13,6 +13,7 @@ export const prerender = false;
         <h1>Cookies</h1>
         <p class="muted">Version {LEGAL_PRIVACY_VERSION}. We set only the cookies below. They are strictly necessary to run the service.</p>
         <div class="prose-width">
+        <div class="table-wrap">
           <table class="account-table">
             <thead>
               <tr>
@@ -55,6 +56,7 @@ export const prerender = false;
               </tr>
             </tbody>
           </table>
+        </div>
           <p>
             The signed-in UI also stores <code>sessionStorage.wcagStaff</code> (<code>1</code> when a staff session is active)
             so a tab can keep the staff chrome after a client-side navigation. That value is not a cookie and is cleared when the tab’s session storage is cleared.

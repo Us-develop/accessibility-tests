@@ -40,7 +40,7 @@ export function isJiraOAuthEnvelope(value) {
 export function encryptJiraOAuth(data) {
   const key = deriveJiraOAuthKey();
   const iv = randomBytes(12);
-  const cipher = createCipheriv(ALG, key, iv);
+  const cipher = createCipheriv(ALG, key, iv, { authTagLength: 16 });
   const plaintext = Buffer.from(JSON.stringify(data), 'utf8');
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   const tag = cipher.getAuthTag();
@@ -58,7 +58,7 @@ export function decryptJiraOAuth(envelope) {
   const iv = Buffer.from(envelope.iv, 'base64');
   const tag = Buffer.from(envelope.tag, 'base64');
   const data = Buffer.from(envelope.data, 'base64');
-  const decipher = createDecipheriv(ALG, key, iv);
+  const decipher = createDecipheriv(ALG, key, iv, { authTagLength: 16 });
   decipher.setAuthTag(tag);
   const plaintext = Buffer.concat([decipher.update(data), decipher.final()]);
   return JSON.parse(plaintext.toString('utf8'));

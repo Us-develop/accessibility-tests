@@ -46,8 +46,7 @@ const company = companyIdentity();
 
           <h2>Price, VAT, and invoicing</h2>
           <p>
-            Prices shown to consumers are VAT-inclusive as the primary figure, with the ex-VAT catalog amount alongside.
-            Businesses with a valid EU VAT number are charged without VAT under the reverse-charge rule; the exact amount is calculated at checkout by Stripe Tax.
+            Businesses outside Belgium with a valid EU VAT number are charged without VAT under the reverse-charge rule. Belgian businesses pay 21 % VAT. Prices shown include Belgian VAT; consumers in other EU countries see their local rate at checkout.
             Pack purchases receive a Stripe invoice. Subscription invoices use the template configured in the Stripe Dashboard.
           </p>
           <!-- COUNSEL: confirm tax_behavior of Stripe Prices (exclusive) plus Automatic Tax for Belgian 21% and EU reverse charge. -->

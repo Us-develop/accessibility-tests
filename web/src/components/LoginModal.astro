@@ -187,10 +187,25 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     return document.getElementById('wcag-session-bar');
   }
 
+  function getOverlay() {
+    return qs('wcag-login-modal');
+  }
+
+  /** Inert every body sibling of the open dialog (skip link, shell, footer), not only <main>. */
+  function setOverlaySiblingsInert(on) {
+    const overlay = getOverlay();
+    if (!overlay) return;
+    for (const el of document.body.children) {
+      if (!(el instanceof HTMLElement) || el === overlay) continue;
+      if (on) el.setAttribute('inert', '');
+      else el.removeAttribute('inert');
+    }
+  }
+
   let lastLoginTrigger = null;
 
   function guestOk() {
-    const overlay = qs('wcag-login-modal');
+    const overlay = getOverlay();
     return overlay?.getAttribute('data-start-locked') === 'false';
   }
 
@@ -208,9 +223,9 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     const bar = getBar();
     if (main) {
       if (!guestOk()) main.hidden = true;
-      main.setAttribute('inert', '');
     }
     if (bar && !guestOk()) bar.hidden = true;
+    setOverlaySiblingsInert(true);
   }
 
   /** @param {boolean} showLogout - show session bar only when auth is on and user has a session */
@@ -219,8 +234,8 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     const bar = getBar();
     if (main) {
       main.hidden = false;
-      main.removeAttribute('inert');
     }
+    setOverlaySiblingsInert(false);
     if (bar) bar.hidden = !showLogout;
   }
 

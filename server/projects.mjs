@@ -189,11 +189,7 @@ export async function canAccessRun(access, domain, runId, { memoryRun } = {}) {
   if (access.role !== 'customer' || !access.userId) return false;
   if (!isValidDomain(domain) || !isValidRunId(runId)) return false;
 
-  if (memoryRun) {
-    if (memoryRun.userId) return memoryRun.userId === access.userId;
-    if (memoryRun.guestToken || memoryRun.tier === 'guest' || memoryRun.tier === 'staff') return false;
-    if (Object.prototype.hasOwnProperty.call(memoryRun, 'userId') && !memoryRun.userId) return false;
-  }
+  if (memoryRun?.userId) return memoryRun.userId === access.userId;
 
   if (useDb()) {
     const row = await dbGetRun(domain, runId);

@@ -23,6 +23,8 @@ const { readJsonStore, writeJsonStore } = await import('../server/json-store.mjs
 const { canAccessDomain } = await import('../server/projects.mjs');
 const { persistGuestToken } = await import('../server/guest.mjs');
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
+const { setUrlGuardLookup } = await import('../server/url-guard.mjs');
+const { dbPool } = await import('../server/db.js');
 const { grantTokenPack } = await import('../server/tokens.mjs');
 const { writeJob, deleteJob } = await import('../server/queue.mjs');
 const { filterRunsForViewer } = await import('../server/audit-list.js');
@@ -30,6 +32,7 @@ const { filterRunsForViewer } = await import('../server/audit-list.js');
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 after(() => {
+  setUrlGuardLookup(null);
   rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -155,7 +158,9 @@ describe('account HTTP', () => {
   let origin;
 
   it('starts the app', async () => {
-    const app = createAccessibilityApp(repoRoot);
+    const app = createAccessibilityApp(repoRoot, {
+      lookup: async () => [{ address: '1.1.1.1', family: 4 }],
+    });
     const started = await listen(app);
     server = started.server;
     origin = started.origin;
@@ -293,7 +298,7 @@ describe('account HTTP', () => {
     const data = await res.json();
     assert.equal(res.status, 200);
     assert.equal(data.ok, true);
-    assert.equal(data.db, 'disabled');
+    assert.ok(data.db === 'disabled' || data.db === 'up');
   });
 
   it('assigns no paid plan and lets the customer edit details', async () => {
@@ -362,6 +367,28 @@ describe('account HTTP', () => {
       body: JSON.stringify({ username: 'attached@example.com', password: 'newevenlonger1' }),
     });
     assert.equal(relogin.status, 200);
+  });
+
+  it('rejects account deletion with a wrong password and a message', async () => {
+    const jar = new CookieJar();
+    const login = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'attached@example.com', password: 'newevenlonger1' }),
+    });
+    jar.store(login.headers);
+    const res = await fetch(`${origin}/api/account/delete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: jar.header(),
+        'X-CSRF-Token': jar.get('wcag_csrf'),
+      },
+      body: JSON.stringify({ password: 'wrong-password-1' }),
+    });
+    const data = await res.json();
+    assert.equal(res.status, 400);
+    assert.match(String(data.error || ''), /password/i);
   });
 
   it('exports scan history as csv', async () => {
@@ -537,6 +564,7 @@ describe('account HTTP', () => {
   });
 
   it('authenticates a user that exists only in the JSON store', async () => {
+    if (dbPool) return;
     const passwordHash = await hashPassword('jsononlypass1');
     const data = readJsonStore('users.json', { users: [] });
     const users = Array.isArray(data.users) ? data.users : [];

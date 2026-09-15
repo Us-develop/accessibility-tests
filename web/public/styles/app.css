@@ -431,7 +431,7 @@ html, body {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--fg-3);
+  color: var(--stat-label);
   font-weight: 600;
 }
 .stat-value {
@@ -783,7 +783,7 @@ button.linklike {
   display: grid;
   gap: 12px;
 }
-.account-form label {
+.account-form label:not(.legal-check) {
   display: grid;
   gap: 6px;
   font-weight: 600;

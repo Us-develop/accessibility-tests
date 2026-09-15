@@ -12,12 +12,14 @@ import { createAccessibilityApp } from '../server/create-app.mjs';
 import { installProcessGuards } from '../server/http-utils.mjs';
 import { startRetentionJob } from '../server/retention.mjs';
 import { setStaticAssetHeaders } from '../server/static-cache.mjs';
+import { assertProductionDatabaseUrl } from '../server/config.mjs';
 
 installProcessGuards();
 
 const webRoot = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(webRoot, '..');
 loadAllAppEnv(repoRoot);
+assertProductionDatabaseUrl();
 const PORT = Number(process.env.PORT) || 3456;
 
 /**
@@ -43,6 +45,9 @@ try {
   process.exit(1);
 }
 const app = express();
+app.disable('x-powered-by');
+const trustHops = Number(process.env.TRUST_PROXY_HOPS || 1);
+app.set('trust proxy', Number.isFinite(trustHops) && trustHops >= 0 ? trustHops : 1);
 app.use(apiApp);
 app.use(
   express.static(join(webRoot, 'dist/client'), {

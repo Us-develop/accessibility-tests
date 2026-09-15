@@ -2,7 +2,7 @@
  * In-memory rate limiter. Prunes expired keys on each call. No extra dependency.
  * @param {{ windowMs: number, max: number, keyFn: (req: import('express').Request) => string }} opts
  */
-export function rateLimit({ windowMs, max, keyFn }) {
+export function rateLimit({ windowMs, max, keyFn, countFailures = false }) {
   /** @type {Map<string, { count: number, resetAt: number }>} */
   const hits = new Map();
 
@@ -17,6 +17,19 @@ export function rateLimit({ windowMs, max, keyFn }) {
     if (!entry || entry.resetAt <= now) {
       entry = { count: 0, resetAt: now + windowMs };
       hits.set(key, entry);
+    }
+    if (countFailures) {
+      if (entry.count >= max) {
+        const retry = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
+        res.setHeader('Retry-After', String(retry));
+        return res.status(429).json({ error: 'Too many requests.' });
+      }
+      const prev = req.recordRateLimitFailure;
+      req.recordRateLimitFailure = () => {
+        if (typeof prev === 'function') prev();
+        entry.count += 1;
+      };
+      return next();
     }
     entry.count += 1;
     if (entry.count > max) {

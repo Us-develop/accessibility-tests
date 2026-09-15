@@ -8,6 +8,7 @@ import { join } from 'path';
 import { REPORTS_BASE } from './paths.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 import { commercialCtas } from './plan-catalog.mjs';
+import { pruneLeadPrivacyConsents } from './consents.mjs';
 
 export { assertPublicHttpUrl } from './url-guard.mjs';
 
@@ -57,7 +58,12 @@ export function guestFreebieUsed(req) {
 }
 
 function guestIpKey(ip) {
-  return createHash('sha256').update(String(ip || 'unknown')).digest('hex').slice(0, 16);
+  const hashed = hashGuestIp(ip);
+  if (hashed) return hashed.slice(0, 16);
+  return createHash('sha256')
+    .update(`guest-freebie:${guestIpHashSalt()}:unknown`)
+    .digest('hex')
+    .slice(0, 16);
 }
 
 function guestFreebieError() {
@@ -386,6 +392,7 @@ export function deleteLeadsByEmail(email) {
   const kept = rows.filter((row) => String(row?.email || '').trim().toLowerCase() !== needle);
   const deleted = rows.length - kept.length;
   if (deleted) rewriteLeadFile(kept);
+  void pruneLeadPrivacyConsents({ email: needle });
   return deleted;
 }
 
@@ -393,9 +400,12 @@ export function deleteLeadFileById(id) {
   const needle = String(id || '').trim();
   if (!needle) return false;
   const rows = allLeadFileRows();
+  const removed = rows.find((row) => String(row?.id ?? '') === needle);
   const kept = rows.filter((row) => String(row?.id ?? '') !== needle);
   if (kept.length === rows.length) return false;
   rewriteLeadFile(kept);
+  const email = String(removed?.email || '').trim().toLowerCase();
+  if (email) void pruneLeadPrivacyConsents({ email });
   return true;
 }
 
@@ -410,6 +420,7 @@ export function pruneLeadFileRows(now = new Date(), maxAgeMs = TWELVE_MONTHS_MS)
     else pruned += 1;
   }
   if (pruned) rewriteLeadFile(kept);
+  if (pruned) void pruneLeadPrivacyConsents({ olderThan: new Date(cutoff) });
   return { scanned: rows.length, pruned };
 }
 

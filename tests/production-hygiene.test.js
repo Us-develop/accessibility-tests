@@ -21,6 +21,7 @@ const { loadAllAppEnv } = await import('../server/load-env.mjs');
 const { buildDbPoolConfig, migrateJsonStoresToPostgres } = await import('../server/db.js');
 const { writeJsonStore, saasFile } = await import('../server/json-store.mjs');
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
+const { assertProductionDatabaseUrl } = await import('../server/config.mjs');
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -164,5 +165,32 @@ describe('production startup mail', () => {
         );
       }
     );
+  });
+});
+
+describe('production database', () => {
+  it('throws when NODE_ENV=production and DATABASE_URL is unset', () => {
+    withEnv({ NODE_ENV: 'production', DATABASE_URL: undefined }, () => {
+      assert.throws(() => assertProductionDatabaseUrl(), /DATABASE_URL is required in production/);
+    });
+  });
+
+  it('does not throw when DATABASE_URL is set', () => {
+    withEnv(
+      { NODE_ENV: 'production', DATABASE_URL: 'postgres://wcag:wcag@127.0.0.1/wcag' },
+      () => {
+        assert.doesNotThrow(() => assertProductionDatabaseUrl());
+      }
+    );
+  });
+
+  it('is called from both production entrypoints', () => {
+    const runServer = readFileSync(join(repoRoot, 'web/run-server.mjs'), 'utf8');
+    const serverJs = readFileSync(join(repoRoot, 'server.js'), 'utf8');
+    assert.match(runServer, /assertProductionDatabaseUrl\(\)/);
+    assert.match(serverJs, /assertProductionDatabaseUrl\(\)/);
+    const deploy = readFileSync(join(repoRoot, 'deploy/README.md'), 'utf8');
+    assert.match(deploy, /DATABASE_URL/);
+    assert.match(deploy, /exits at startup/);
   });
 });

@@ -183,7 +183,7 @@ describe('self-hosted fonts', () => {
 
   it('fails if the built web/dist still references font CDNs', () => {
     const dist = join(repoRoot, 'web/dist');
-    if (!existsSync(dist)) return;
+    assert.equal(existsSync(dist), true, 'web/dist is missing — run npm run build --prefix web');
     const hits = [];
     for (const file of walkFiles(dist)) {
       if (!TEXT_EXTS.has(extname(file).toLowerCase())) continue;

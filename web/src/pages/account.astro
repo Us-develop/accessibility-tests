@@ -85,6 +85,15 @@ const pack100Label = formatVatInclusivePrice(8000);
           </form>
         </section>
 
+        <section id="email-card" class="card stack-form account-section" hidden>
+          <h2>Change email</h2>
+          <form id="email-form" class="account-form" method="post" action="/api/account/email" data-astro-reload>
+            <label>New email <input id="account-new-email" name="email" type="email" autocomplete="email" required /></label>
+            <label>Current password <input id="email-password" name="password" type="password" autocomplete="current-password" required /></label>
+            <button type="submit" class="btn btn-ghost">Send confirmation</button>
+          </form>
+        </section>
+
         <div id="account-projects" class="card stack-form account-section" hidden></div>
 
         <section id="scans-card" class="card stack-form account-section" hidden>
@@ -123,11 +132,19 @@ const pack100Label = formatVatInclusivePrice(8000);
           </div>
         </section>
 
+        <section id="delete-card" class="card stack-form account-section" hidden>
+          <h2>Delete account</h2>
+          <form id="delete-form" class="account-form" method="post" action="/api/account/delete" data-astro-reload>
+            <p class="muted">This cannot be undone. Enter your current password to confirm.</p>
+            <label>Current password <input id="delete-password" name="password" type="password" autocomplete="current-password" required /></label>
+            <button type="submit" class="btn btn-ghost" id="delete-btn">Delete account</button>
+          </form>
+        </section>
+
         <div class="account-actions">
           <a class="btn btn-primary" href="/">New scan</a>
           <a class="btn btn-ghost" href="/api/account/export">Export JSON</a>
           <a class="btn btn-ghost" href="/api/account/export?format=csv">Export CSV</a>
-          <button type="button" class="btn btn-ghost" id="delete-btn">Delete account</button>
         </div>
         <p id="account-msg" class="muted" role="status"></p>
       </article>
@@ -202,11 +219,15 @@ const pack100Label = formatVatInclusivePrice(8000);
       const tokensCard = document.getElementById('tokens-card');
       const contactCard = document.getElementById('contact-card');
       const passwordCard = document.getElementById('password-card');
+      const emailCard = document.getElementById('email-card');
+      const deleteCard = document.getElementById('delete-card');
       if (data.role === 'customer') {
         if (usageCard) usageCard.hidden = false;
         if (tokensCard) tokensCard.hidden = false;
         if (contactCard) contactCard.hidden = false;
         if (passwordCard) passwordCard.hidden = false;
+        if (emailCard) emailCard.hidden = false;
+        if (deleteCard) deleteCard.hidden = false;
         fillForm(document.getElementById('contact-form'), data.user);
         const planName = document.getElementById('plan-name');
         const planStatus = document.getElementById('plan-status');
@@ -379,10 +400,54 @@ const pack100Label = formatVatInclusivePrice(8000);
     if (res.ok) form.reset();
   });
 
-  document.getElementById('delete-btn')?.addEventListener('click', async () => {
-    if (!confirm('Delete your account and project links? This cannot be undone.')) return;
-    const res = await fetch(api('/api/account/delete'), { method: 'POST', credentials: creds, headers: headers() });
-    if (res.ok) window.location.href = '/';
+  document.getElementById('email-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const body = Object.fromEntries(new FormData(form).entries());
+    const res = await fetch(api('/api/account/email'), {
+      method: 'PUT',
+      credentials: creds,
+      headers: headers(),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    setMsg(res.ok ? 'Confirmation sent to the new address.' : data.error || 'Could not change email.', !res.ok);
+    const emailField = document.getElementById('account-new-email');
+    const passwordField = document.getElementById('email-password');
+    for (const field of [emailField, passwordField]) {
+      if (!field) continue;
+      if (res.ok) {
+        field.removeAttribute('aria-invalid');
+        field.removeAttribute('aria-describedby');
+      } else {
+        field.setAttribute('aria-invalid', 'true');
+        field.setAttribute('aria-describedby', 'account-msg');
+      }
+    }
+    if (res.ok) form.reset();
+  });
+
+  document.getElementById('delete-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const body = Object.fromEntries(new FormData(form).entries());
+    const res = await fetch(api('/api/account/delete'), {
+      method: 'POST',
+      credentials: creds,
+      headers: headers(),
+      body: JSON.stringify({ password: body.password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      window.location.href = '/';
+      return;
+    }
+    setMsg(data.error || 'Could not delete account.', true);
+    const field = document.getElementById('delete-password');
+    if (field) {
+      field.setAttribute('aria-invalid', 'true');
+      field.setAttribute('aria-describedby', 'account-msg');
+    }
   });
 
   document.getElementById('manage-billing-btn')?.addEventListener('click', async () => {

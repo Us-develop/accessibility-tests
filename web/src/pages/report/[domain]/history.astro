@@ -51,7 +51,7 @@ function formatRunId(runId: string): string {
     <AppHeader domain={domain} runId={null} active="history" />
     <main id="main" class="app-main" tabindex="-1">
       <div data-screen-label="Domain history" style="background: var(--us-cream); min-height: calc(100dvh - 65px); min-height: calc(100vh - 65px); position: relative; overflow: hidden;">
-        <div aria-hidden="true" style="position: absolute; top: -140px; right: -100px; width: 480px; height: 480px; border-radius: 50%; background: var(--us-grad-iridescent); opacity: 0.4; filter: blur(50px); animation: drift 22s ease-in-out infinite; pointer-events: none;"></div>
+        <div aria-hidden="true" class="motion-drift" style="position: absolute; top: -140px; right: -100px; width: 480px; height: 480px; border-radius: 50%; background: var(--us-grad-iridescent); opacity: 0.4; filter: blur(50px); animation: drift 22s ease-in-out infinite; pointer-events: none;"></div>
 
         <div class="container" style="padding: clamp(32px, 5vw, 56px) 0 clamp(56px, 8vw, 96px); position: relative;">
           <div class="history-head">

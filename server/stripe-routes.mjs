@@ -37,7 +37,14 @@ export function registerStripeWebhook(app) {
       return res.json({ received: true });
     } catch (err) {
       if (err?.status === 503) return fail(res, err);
-      return res.status(400).json({ error: 'Invalid Stripe signature.' });
+      const message = String(err?.message || '');
+      const signatureError =
+        err?.type === 'StripeSignatureVerificationError' || /signature/i.test(message);
+      if (signatureError) {
+        return res.status(400).json({ error: 'Invalid Stripe signature.' });
+      }
+      console.error('[stripe webhook]', err?.message || err);
+      return res.status(500).json({ error: 'Webhook handler failed.' });
     }
   }));
 }
@@ -77,7 +84,13 @@ export function registerStripeRoutes(app) {
       const kind = String(req.body?.kind || (packId ? 'pack' : 'pro')).trim().toLowerCase();
       const checkoutKind = packId || kind === 'pack' ? 'pack' : 'pro';
       const interval = String(req.body?.interval || 'monthly').trim().toLowerCase();
-      const consent = await recordConsent({
+      const session = await createCheckoutSession({
+        user,
+        kind: checkoutKind,
+        packId: packId || (planId.startsWith('pack_') ? planId : ''),
+        interval,
+      });
+      await recordConsent({
         userId: user.id,
         email: user.email,
         kind: 'withdrawal_waiver',
@@ -89,14 +102,8 @@ export function registerStripeRoutes(app) {
           planId: checkoutKind === 'pro' ? 'pro' : '',
           interval: checkoutKind === 'pro' ? interval : '',
           customerType: user.customerType || 'consumer',
+          checkoutSessionId: session.id,
         },
-      });
-      const session = await createCheckoutSession({
-        user,
-        kind: checkoutKind,
-        packId: packId || (planId.startsWith('pack_') ? planId : ''),
-        interval,
-        consentId: consent.id,
       });
       return res.json({ url: session.url, id: session.id });
     } catch (err) {

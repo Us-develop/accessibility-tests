@@ -19,6 +19,7 @@ import {
   dbUpsertSubscription,
   dbUpdatePaymentInvoiceUrl,
   withUserLedgerLock,
+  withDbTransaction,
 } from './db.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 import {
@@ -361,13 +362,15 @@ async function restoreScanEntitlement(userId, entitlement) {
 export async function refundScanEntitlement(runId) {
   if (!runId) return null;
   if (useDb()) {
-    const claimed = await dbClaimRunRefund(runId);
-    if (!claimed) return null;
-    const entitlement = claimed.entitlement || entitlementsByRunId.get(runId);
-    if (entitlement) await restoreScanEntitlement(claimed.userId || entitlement.userId, entitlement);
-    const mem = entitlementsByRunId.get(runId);
-    if (mem) mem.refundedAt = claimed.refundedAt || new Date().toISOString();
-    return claimed;
+    return withDbTransaction(async () => {
+      const claimed = await dbClaimRunRefund(runId);
+      if (!claimed) return null;
+      const entitlement = claimed.entitlement || entitlementsByRunId.get(runId);
+      if (entitlement) await restoreScanEntitlement(claimed.userId || entitlement.userId, entitlement);
+      const mem = entitlementsByRunId.get(runId);
+      if (mem) mem.refundedAt = claimed.refundedAt || new Date().toISOString();
+      return claimed;
+    });
   }
   const rec = entitlementsByRunId.get(runId);
   if (!rec || rec.refundedAt) return null;
