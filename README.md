@@ -53,7 +53,15 @@ Staff sign in with `APP_USERNAME` / `APP_PASSWORD` (cookie session only — no H
 | `GUEST_RUN_RETENTION_DAYS` | no (default `30`) | Retention job deletes guest-owned runs, token files, and FTP copies older than this. |
 | `WCAG_DISABLE_RATE_LIMIT` | no | Set `1` only in automated tests. Do not set in production. |
 | `SCANNER_NO_SANDBOX` | no (default off) | Set `true` only if Chromium cannot start because the host forbids the process sandbox (user namespaces / seccomp). Leave unset on the VPS. |
-| `MAIL_FROM` | yes | Envelope From for SMTP. Server exits in production if unset or if it ends with `@localhost`. |
+| `MAIL_FROM` | yes | Envelope From for SMTP, and optional Brevo `sender` override when set. Server exits in production if unset or if it ends with `@localhost`. |
+| `BREVO_API_KEY` | no | Optional. When set with a template id, transactional mail is sent through Brevo. SMTP is the fallback. |
+| `BREVO_TEMPLATE_VERIFY` | no | Optional positive integer. Brevo template for signup verification. |
+| `BREVO_TEMPLATE_RESET` | no | Optional positive integer. Brevo template for password reset. |
+| `BREVO_TEMPLATE_EMAIL_CHANGE` | no | Optional positive integer. Brevo template sent to the new address. |
+| `BREVO_TEMPLATE_EMAIL_CHANGE_NOTICE` | no | Optional positive integer. Brevo template sent to the old address. |
+| `BREVO_TEMPLATE_RUN_DONE` | no | Optional positive integer. Brevo template for run-finished notifications. |
+| `BREVO_TEMPLATE_LEAD` | no | Optional positive integer. Brevo template for WCAG-services leads. |
+| `BREVO_TEMPLATE_ACCESS_REQUEST` | no | Optional positive integer. Brevo template for access requests. |
 | `PUBLIC_BASE_URL` | yes | Public origin, e.g. `https://wcag.about-us.be`. Server exits in production if unset or if it contains `localhost`. |
 | `DATABASE_CA` | no | Path to a PEM CA bundle when `DATABASE_SSL=true` and the server cert is not in the system trust store. |
 | `COMPANY_LEGAL_NAME` | yes | Legal name shown in the footer, privacy, terms, and Stripe pack invoice footer. Server exits in production if empty. |
@@ -64,6 +72,8 @@ Staff sign in with `APP_USERNAME` / `APP_PASSWORD` (cookie session only — no H
 | `VAT_RATE_DISPLAY` | no (default `0.21`) | Belgian VAT rate used only to show VAT-inclusive catalog prices. Stripe Tax calculates the live amount. |
 
 The public homepage stays the free 1-page **Gratis snapshot** (one per person, guest or signed-in — not both) unless someone is actually signed in with remaining tokens or Pro. Complimentary token is spent first, then **Pro** (300 pages/month), then prepaid **tokens** (1 token = 1 URL, 12-month expiry). Customer `/api/run` validates URLs first, then consumes tokens inside a per-user lock (one queued/running scan per account). A second scan while one is queued or running returns 409. Empty Pro pages and tokens return 429 with buy / subscribe / Us-diensten CTAs. A customer scan that ends in `error` (or is dropped after `SCAN_JOB_TTL_MS`, default 24h) refunds that entitlement once. Pricing is at `/pricing` (VAT-inclusive primary figures). Legal pages: `/terms`, `/privacy`, `/cookies`, `/legal/subprocessors`, `/accessibility`. Those eight URLs (home, pricing, limitations, and the legal set) are the indexable set; `/signup`, `/forgot`, `/reset`, `/loading`, `/teaser/*`, and signed-in surfaces send `noindex`. `GET /robots.txt` allows `/` and disallows `/api/`, `/report/`, `/audits`, `/admin/`, `/account`, and `/teaser/`, and points at `/sitemap.xml`. Fonts are self-hosted woff2 under `web/public/fonts/` (Public Sans, Archivo; optional Adobe Owners files in `web/public/fonts/owners/`). Caddy already gzip/zstd-encodes responses.
+
+Transactional mail uses Brevo templates when `BREVO_API_KEY` and the matching `BREVO_TEMPLATE_*` id are set; otherwise SMTP (`SMTP_HOST`). The app never enables open or click tracking. Each Brevo template must have **open and click tracking disabled** in template settings, because verification and reset links must not be rewritten and transactional mail is not tracked. Template param names are in [docs/EMAIL-TEMPLATES.md](docs/EMAIL-TEMPLATES.md).
 
 ### How scans work (and limitations)
 
