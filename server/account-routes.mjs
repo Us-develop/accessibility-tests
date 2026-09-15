@@ -11,7 +11,6 @@ import {
   consumePendingEmailChange,
   updateContactDetails,
   verifyUserEmail,
-  GENERIC_CREDENTIALS_ERROR,
   normalizeCustomerType,
 } from './users.mjs';
 import { attachRunToUser, listProjectsForUser } from './projects.mjs';
@@ -168,7 +167,7 @@ export function registerAccountRoutes(app, ctx) {
       if (!isTruthyFlag(req.body?.acceptTerms)) {
         throw Object.assign(
           new Error('Accept the Terms of Service and Privacy Notice to create an account.'),
-          { status: 400 }
+          { status: 400, field: 'acceptTerms' }
         );
       }
       const buyingForBusiness =
@@ -240,9 +239,11 @@ export function registerAccountRoutes(app, ctx) {
       if (status === 409 && typeof req.recordRateLimitHit === 'function') {
         req.recordRateLimitHit();
       }
-      return formOrJson(req, res, '/signup?error=1', status, {
-        error: err.status === 409 ? GENERIC_CREDENTIALS_ERROR : err.message || 'Could not create account.',
-      });
+      const payload = {
+        error: err.message || 'Could not create account.',
+      };
+      if (err.field) payload.field = err.field;
+      return formOrJson(req, res, '/signup?error=1', status, payload);
     }
   }));
 

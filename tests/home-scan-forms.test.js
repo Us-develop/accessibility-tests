@@ -76,6 +76,18 @@ describe('own product accessibility markup', () => {
     assert.match(accountAstro, /setAttribute\('role', isError \? 'alert' : 'status'\)/);
   });
 
+  it('shows signup errors next to the field that must change', () => {
+    assert.match(signupAstro, /id="email-error"/);
+    assert.match(signupAstro, /id="password-error"/);
+    assert.match(signupAstro, /id="company-error"/);
+    assert.match(signupAstro, /id="vatNumber-error"/);
+    assert.match(signupAstro, /id="acceptTerms-error"/);
+    assert.match(signupAstro, /function showSignupFieldError/);
+    assert.match(signupAstro, /data\.field/);
+    assert.match(appCss, /\.field-error \{/);
+    assert.doesNotMatch(signupAstro, /for \(const field of \[email, password\]\)/);
+  });
+
   it('does not hide custom checkboxes with display:none', () => {
     assert.match(appCss, /\.check input \{[\s\S]*clip: rect\(0, 0, 0, 0\)/);
     assert.doesNotMatch(appCss, /\.check input \{ display: none; \}/);

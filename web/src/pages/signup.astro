@@ -25,10 +25,12 @@ const signupError = Astro.url.searchParams.get('error') === '1';
           <div class="field">
             <label class="field-label" for="email">Email</label>
             <input class="input" id="email" name="email" type="email" autocomplete="email" required />
+            <p id="email-error" class="field-error" hidden></p>
           </div>
           <div class="field">
             <label class="field-label" for="password">Password (min. 10 characters)</label>
             <input class="input" id="password" name="password" type="password" autocomplete="new-password" required minlength="10" />
+            <p id="password-error" class="field-error" hidden></p>
           </div>
           <label class="legal-check">
             <input type="checkbox" id="buying-for-business" name="buyingForBusiness" value="true" />
@@ -38,21 +40,26 @@ const signupError = Astro.url.searchParams.get('error') === '1';
             <div class="field">
               <label class="field-label" for="company">Company</label>
               <input class="input" id="company" name="company" autocomplete="organization" />
+              <p id="company-error" class="field-error" hidden></p>
             </div>
             <div class="field">
               <label class="field-label" for="vatNumber">VAT number (optional)</label>
               <input class="input" id="vatNumber" name="vatNumber" autocomplete="off" />
+              <p id="vatNumber-error" class="field-error" hidden></p>
             </div>
           </div>
-          <label class="legal-check">
-            <input type="checkbox" id="accept-terms" name="acceptTerms" value="true" required />
-            <span>
-              I accept the
-              <a class="link" href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
-              and have read the
-              <a class="link" href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Notice</a>
-            </span>
-          </label>
+          <div class="field">
+            <label class="legal-check">
+              <input type="checkbox" id="accept-terms" name="acceptTerms" value="true" required />
+              <span>
+                I accept the
+                <a class="link" href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+                and have read the
+                <a class="link" href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Notice</a>
+              </span>
+            </label>
+            <p id="acceptTerms-error" class="field-error" hidden></p>
+          </div>
           <button type="submit" class="btn btn-primary" id="signup-btn">Create account</button>
           <p id="signup-msg" class="muted" role={signupError ? 'alert' : 'status'}>
             {checkEmail
@@ -72,6 +79,46 @@ const signupError = Astro.url.searchParams.get('error') === '1';
 <script>
   if (!globalThis.__wcagSignupDelegated) {
     globalThis.__wcagSignupDelegated = true;
+    const SIGNUP_FIELD_IDS = {
+      email: 'email',
+      password: 'password',
+      company: 'company',
+      vatNumber: 'vatNumber',
+      acceptTerms: 'accept-terms',
+    };
+    function clearSignupFieldErrors() {
+      for (const [field, inputId] of Object.entries(SIGNUP_FIELD_IDS)) {
+        const input = document.getElementById(inputId);
+        const hint = document.getElementById(`${field}-error`);
+        if (input) {
+          input.removeAttribute('aria-invalid');
+          input.removeAttribute('aria-describedby');
+        }
+        if (hint) {
+          hint.textContent = '';
+          hint.hidden = true;
+        }
+      }
+    }
+    function showSignupFieldError(field, message) {
+      const inputId = SIGNUP_FIELD_IDS[field];
+      if (!inputId) return;
+      if (field === 'company' || field === 'vatNumber') {
+        const fields = document.getElementById('business-fields');
+        if (fields) fields.hidden = false;
+      }
+      const input = document.getElementById(inputId);
+      const hint = document.getElementById(`${field}-error`);
+      if (hint) {
+        hint.textContent = message;
+        hint.hidden = false;
+      }
+      if (input) {
+        input.setAttribute('aria-invalid', 'true');
+        if (hint) input.setAttribute('aria-describedby', hint.id);
+        input.focus();
+      }
+    }
     document.addEventListener('click', (event) => {
       const target = event.target;
       if (!(target instanceof Element) || !target.closest('#signup-open-login')) return;
@@ -89,6 +136,11 @@ const signupError = Astro.url.searchParams.get('error') === '1';
       event.preventDefault();
       event.stopPropagation();
       const msg = document.getElementById('signup-msg');
+      clearSignupFieldErrors();
+      if (msg) {
+        msg.textContent = '';
+        msg.setAttribute('role', 'status');
+      }
       const fd = new FormData(form);
       const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
       const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
@@ -110,17 +162,12 @@ const signupError = Astro.url.searchParams.get('error') === '1';
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        const error = data.error || 'Could not create account.';
         if (msg) {
-          msg.textContent = data.error || 'Could not create account.';
+          msg.textContent = error;
           msg.setAttribute('role', 'alert');
         }
-        const email = document.getElementById('email');
-        const password = document.getElementById('password');
-        for (const field of [email, password]) {
-          if (!field) continue;
-          field.setAttribute('aria-invalid', 'true');
-          field.setAttribute('aria-describedby', 'signup-msg');
-        }
+        showSignupFieldError(data.field, error);
         return;
       }
       if (data.needsVerification) {
