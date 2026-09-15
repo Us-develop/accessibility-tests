@@ -251,7 +251,7 @@ describe('account HTTP', () => {
         acceptTerms: true,
         buyingForBusiness: true,
         company: 'Us NV',
-        vatNumber: 'not-a-vat',
+        vatNumber: '12345',
       }),
     });
     const vatBody = await vat.json();
