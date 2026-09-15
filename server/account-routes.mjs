@@ -148,7 +148,13 @@ async function accountBundle(user, req) {
  */
 export function registerAccountRoutes(app, ctx) {
   const { readGuestTokenRecord, patchMemoryRunOwner } = ctx;
-  const signupIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyFn: clientKey });
+  const signupIpLimit = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 10,
+    keyFn: clientKey,
+    countFailures: true,
+    message: 'Too many sign-up attempts. Try again in an hour.',
+  });
   const forgotIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyFn: clientKey });
   const forgotEmailLimit = rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -227,9 +233,14 @@ export function registerAccountRoutes(app, ctx) {
         setSessionCookies(res, { userId: user.id, role: user.role, email: user.email, ver: 1 }, sameSiteFromEnv());
       }
       const next = verifyToken ? '/signup?check-email=1' : '/account';
+      if (typeof req.recordRateLimitHit === 'function') req.recordRateLimitHit();
       return formOrJson(req, res, next, 200, { ok: true, needsVerification: Boolean(verifyToken), user });
     } catch (err) {
-      return formOrJson(req, res, '/signup?error=1', Number(err.status) || 400, {
+      const status = Number(err.status) || 400;
+      if (status === 409 && typeof req.recordRateLimitHit === 'function') {
+        req.recordRateLimitHit();
+      }
+      return formOrJson(req, res, '/signup?error=1', status, {
         error: err.status === 409 ? GENERIC_CREDENTIALS_ERROR : err.message || 'Could not create account.',
       });
     }
