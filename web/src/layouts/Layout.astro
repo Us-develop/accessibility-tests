@@ -147,6 +147,16 @@ function ownerWeight(filename: string): string {
           if (token) headers['X-CSRF-Token'] = token;
           return headers;
         };
+        function fillCsrfFields() {
+          var token = globalThis.wcagCsrfToken();
+          if (!token) return;
+          document.querySelectorAll('input.wcag-csrf-field').forEach(function (el) {
+            el.value = token;
+          });
+        }
+        globalThis.wcagFillCsrfFields = fillCsrfFields;
+        document.addEventListener('DOMContentLoaded', fillCsrfFields);
+        document.addEventListener('astro:page-load', fillCsrfFields);
       })();
     </script>
   </head>

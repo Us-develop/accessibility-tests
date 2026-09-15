@@ -128,10 +128,13 @@ describe('own product accessibility markup', () => {
   it('prompts for the current password on the account deletion form', () => {
     assert.match(accountAstro, /id="delete-form"/);
     assert.match(accountAstro, /id="delete-password"[^>]*name="password"[^>]*type="password"/);
+    assert.match(accountAstro, /name="csrfToken"/);
+    assert.match(accountAstro, /__wcagAccountDelegated/);
     assert.match(accountAstro, /api\('\/api\/account\/delete'\)/);
     assert.doesNotMatch(accountAstro, /\bprompt\s*\(/);
     assert.match(accountAstro, /id="email-form"/);
     assert.match(accountAstro, /api\('\/api\/account\/email'\)/);
+    assert.match(layoutAstro, /wcagFillCsrfFields/);
   });
 
   it('uses the reverse-charge VAT copy on pricing and terms', () => {
