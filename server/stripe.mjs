@@ -635,9 +635,11 @@ export async function createCheckoutSession({ user, kind, packId, interval, cons
       interval: billingInterval,
       ...consentMeta,
     },
+    // Checkout Session subscription_data does not accept payment_settings
+    // (that field belongs on Subscriptions create). Checkout already saves the
+    // payment method onto the subscription.
     subscription_data: {
       metadata: { userId: user.id, planId: PRO_PLAN_ID, interval: billingInterval },
-      payment_settings: { save_default_payment_method: 'on_subscription' },
     },
     integration_identifier: integrationIdentifier('wcag-pro'),
     allow_promotion_codes: true,
