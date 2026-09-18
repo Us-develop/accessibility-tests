@@ -245,7 +245,7 @@ describe('legal consent and VAT', () => {
     delete process.env.STRIPE_SECRET_KEY;
   });
 
-  it('starts a Pro monthly session with a billing address and a reusable payment method', async () => {
+  it('starts a Pro monthly Checkout session with billing address and no payment_settings', async () => {
     process.env.STRIPE_SECRET_KEY = 'sk_test_legal_stub';
     const created = [];
     const customerCreates = [];
@@ -278,9 +278,45 @@ describe('legal consent and VAT', () => {
     assert.equal(created[0].line_items[0].price, 'price_pro_month_test');
     assert.equal(created[0].billing_address_collection, 'required');
     assert.equal(created[0].customer_update.address, 'auto');
-    assert.equal(created[0].subscription_data.payment_settings.save_default_payment_method, 'on_subscription');
+    assert.equal(created[0].subscription_data.metadata.planId, 'pro');
+    assert.equal(created[0].subscription_data.metadata.interval, 'monthly');
+    assert.equal(created[0].subscription_data.payment_settings, undefined);
     assert.equal(customerCreates.length, 1);
     assert.equal(customerCreates[0].address, undefined);
+    setStripeClientForTests(null);
+    delete process.env.STRIPE_SECRET_KEY;
+  });
+
+  it('starts a Pro yearly session without Checkout-invalid subscription_data.payment_settings', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_legal_stub';
+    const created = [];
+    stubCheckoutClient(created);
+    const jar = new CookieJar();
+    const signup = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'checkout-pro-year@example.com',
+        password: 'longenough1',
+        acceptTerms: true,
+      }),
+    });
+    jar.store(signup.headers);
+    const checkout = await fetch(`${origin}/api/billing/checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: jar.header(),
+        'X-CSRF-Token': jar.get('wcag_csrf'),
+      },
+      body: JSON.stringify({ kind: 'pro', interval: 'yearly', withdrawalWaiver: true }),
+    });
+    const body = await checkout.json();
+    assert.equal(checkout.status, 200, body.error || '');
+    assert.equal(created[0].mode, 'subscription');
+    assert.equal(created[0].line_items[0].price, 'price_pro_year_test');
+    assert.equal(created[0].subscription_data.metadata.interval, 'yearly');
+    assert.equal(created[0].subscription_data.payment_settings, undefined);
     setStripeClientForTests(null);
     delete process.env.STRIPE_SECRET_KEY;
   });
