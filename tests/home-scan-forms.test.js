@@ -162,9 +162,30 @@ describe('own product accessibility markup', () => {
 
   it('inerts every sibling of an open dialog, not only main', () => {
     assert.match(loginModal, /setOverlaySiblingsInert/);
+    assert.match(loginModal, /function closeModal\(/);
+    assert.match(
+      loginModal,
+      /unlockAppShell\(document\.documentElement\.classList\.contains\('wcag-staff'\)\)/
+    );
     assert.match(dashboard, /document\.body\.children/);
     assert.match(runServer, /app\.disable\('x-powered-by'\)/);
     assert.match(runServer, /app\.set\('trust proxy'/);
+  });
+
+  it('starts Stripe checkout from delegated Buy and Subscribe clicks', () => {
+    assert.match(pricingAstro, /__wcagBillingCheckoutBound/);
+    assert.match(pricingAstro, /addEventListener\(\s*'click'/);
+    assert.match(pricingAstro, /\.pricing-checkout, \.token-buy/);
+    assert.match(pricingAstro, /true\s*\)/);
+    assert.match(pricingAstro, /finally \{/);
+    assert.doesNotMatch(pricingAstro, /querySelectorAll\('\.pricing-checkout'\)/);
+    assert.match(accountAstro, /__wcagBillingCheckoutBound/);
+    assert.match(accountAstro, /class="btn btn-primary pricing-checkout"/);
+    assert.match(accountAstro, /data-interval="monthly"/);
+    assert.match(accountAstro, /data-interval="yearly"/);
+    assert.match(accountAstro, /id="account-billing-msg"/);
+    assert.match(accountAstro, /\.pricing-checkout, \.token-buy/);
+    assert.doesNotMatch(accountAstro, /href="\/pricing#pro"/);
   });
 
   it('treats wrapping labels as programmatically associated', () => {

@@ -24,7 +24,8 @@ const pack100Label = formatVatInclusivePrice(8000);
           <div class="usage-bar" aria-hidden="true"><span id="usage-fill"></span></div>
           <p id="usage-label" class="muted"></p>
           <div id="billing-actions" class="guest-cta-row">
-            <a class="btn btn-primary" href="/pricing#pro">Subscribe to Pro</a>
+            <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">Subscribe monthly</button>
+            <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">Subscribe yearly</button>
             <button type="button" class="btn btn-ghost" id="manage-billing-btn">Manage billing</button>
           </div>
           <p class="muted" style="font-size: 13px;">Cancel at the end of the billing period through Manage billing. You keep Pro until that date.</p>
@@ -33,11 +34,12 @@ const pack100Label = formatVatInclusivePrice(8000);
         <section id="tokens-card" class="card stack-form account-section" hidden>
           <h2>Tokens</h2>
           <p id="token-balance" class="muted"></p>
-          <p class="muted" style="font-size: 13px;">Buy extra tokens for occasional scans or to continue after this month’s Pro pages. Packs expire after 12 months.</p>
+          <p class="muted" style="font-size: 13px;">Buy extra tokens for occasional scans or to continue after this month’s Pro pages. Packs expire after 12 months. Tick the immediate-delivery box first — it also covers Subscribe on this page.</p>
           <label class="legal-check">
             <input type="checkbox" id="withdrawal-waiver" name="withdrawalWaiver" value="true" />
             <span>{WITHDRAWAL_WAIVER_TEXT}</span>
           </label>
+          <p id="account-billing-msg" class="muted" role="status" aria-live="polite"></p>
           <div class="guest-cta-row">
             <button type="button" class="btn btn-primary token-buy" data-pack="pack_10">Buy 10 · {pack10Label}</button>
             <button type="button" class="btn btn-primary token-buy" data-pack="pack_50">Buy 50 · {pack50Label}</button>
@@ -160,10 +162,15 @@ const pack100Label = formatVatInclusivePrice(8000);
     typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' };
 
   function setMsg(text, isError = false) {
-    const msg = document.getElementById('account-msg');
+    const billing = document.getElementById('account-billing-msg');
+    const msg = billing || document.getElementById('account-msg');
     if (!msg) return;
     msg.textContent = text || '';
     msg.setAttribute('role', isError ? 'alert' : 'status');
+    if (billing && billing !== document.getElementById('account-msg')) {
+      const fallback = document.getElementById('account-msg');
+      if (fallback && fallback !== billing) fallback.textContent = '';
+    }
   }
 
   function fillForm(form, user) {
@@ -459,7 +466,8 @@ const pack100Label = formatVatInclusivePrice(8000);
     document.addEventListener('click', async (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      if (target.closest('#manage-billing-btn')) {
+      if (!target.closest('#manage-billing-btn')) return;
+      try {
         const res = await fetch(api('/api/billing/portal'), { method: 'POST', credentials: creds, headers: headers() });
         const data = await res.json().catch(() => ({}));
         if (data.url) {
@@ -467,31 +475,98 @@ const pack100Label = formatVatInclusivePrice(8000);
           return;
         }
         setMsg(data.error || 'Could not open the billing portal.', true);
+      } catch {
+        setMsg('Could not open the billing portal. Check your connection and try again.', true);
+      }
+    });
+    document.addEventListener('astro:page-load', bootAccount);
+  }
+  bootAccount();
+
+  function checkoutMessageEl() {
+    return (
+      document.getElementById('account-billing-msg') ||
+      document.getElementById('pricing-msg') ||
+      document.getElementById('account-msg')
+    );
+  }
+
+  function showCheckoutMessage(text, isError = false) {
+    const msg = checkoutMessageEl();
+    if (!msg) return;
+    msg.textContent = text || '';
+    msg.setAttribute('role', isError ? 'alert' : 'status');
+    if (msg.id === 'account-billing-msg') {
+      const fallback = document.getElementById('account-msg');
+      if (fallback && fallback !== msg) fallback.textContent = '';
+    }
+  }
+
+  function checkoutBodyFromButton(btn) {
+    const kind = btn.getAttribute('data-kind');
+    if (kind === 'pro') {
+      return { kind: 'pro', interval: btn.getAttribute('data-interval') || 'monthly', withdrawalWaiver: true };
+    }
+    const packId = btn.getAttribute('data-pack');
+    if (kind === 'pack' || packId) {
+      return { kind: 'pack', packId, withdrawalWaiver: true };
+    }
+    return null;
+  }
+
+  async function startCheckout(btn) {
+    const waiver = document.getElementById('withdrawal-waiver');
+    if (!(waiver instanceof HTMLInputElement) || !waiver.checked) {
+      showCheckoutMessage('Tick the immediate-delivery box before checkout.', true);
+      waiver?.focus?.();
+      return;
+    }
+    const body = checkoutBodyFromButton(btn);
+    if (!body) {
+      showCheckoutMessage('Could not start checkout.', true);
+      return;
+    }
+    btn.disabled = true;
+    showCheckoutMessage('Starting checkout…');
+    try {
+      const auth = await fetch(api('/api/auth/status'), { credentials: creds }).then((r) => r.json()).catch(() => ({}));
+      if (auth.authenticated !== true || auth.role !== 'customer') {
+        const next = document.getElementById('pricing-msg') ? '/pricing' : '/account';
+        window.location.href = `/signup?next=${next}`;
         return;
       }
-      const buy = target.closest('.token-buy');
-      if (!(buy instanceof HTMLButtonElement)) return;
-      const waiver = document.getElementById('withdrawal-waiver');
-      if (!(waiver instanceof HTMLInputElement) || !waiver.checked) {
-        setMsg('Tick the immediate-delivery box before checkout.', true);
-        return;
-      }
-      buy.disabled = true;
       const res = await fetch(api('/api/billing/checkout'), {
         method: 'POST',
         credentials: creds,
         headers: headers(),
-        body: JSON.stringify({ kind: 'pack', packId: buy.getAttribute('data-pack'), withdrawalWaiver: true }),
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (data.url) {
         window.location.href = data.url;
         return;
       }
-      setMsg(data.error || 'Could not start checkout.', true);
-      buy.disabled = false;
-    });
-    document.addEventListener('astro:page-load', bootAccount);
+      showCheckoutMessage(data.error || 'Could not start checkout.', true);
+    } catch {
+      showCheckoutMessage('Could not start checkout. Check your connection and try again.', true);
+    } finally {
+      if (btn.isConnected) btn.disabled = false;
+    }
   }
-  bootAccount();
+
+  // Same flag as pricing.astro so ClientRouter cannot leave Buy/Subscribe unbound.
+  if (!globalThis.__wcagBillingCheckoutBound) {
+    globalThis.__wcagBillingCheckoutBound = true;
+    document.addEventListener(
+      'click',
+      (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        const btn = target?.closest?.('.pricing-checkout, .token-buy');
+        if (!(btn instanceof HTMLButtonElement)) return;
+        event.preventDefault();
+        startCheckout(btn);
+      },
+      true
+    );
+  }
 </script>
