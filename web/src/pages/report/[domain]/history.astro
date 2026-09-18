@@ -3,7 +3,7 @@ import Layout from '../../../layouts/Layout.astro';
 import AppHeader from '../../../components/AppHeader.astro';
 import ScoreDonut from '../../../components/ScoreDonut.svelte';
 import TrendChart from '../../../components/TrendChart.svelte';
-import { listVisibleRunsForDomain } from '../../../../../server/audit-viewer.mjs';
+import { listVisibleRunsForDomain, viewerFromAstro } from '../../../../../server/audit-viewer.mjs';
 import { dbPool } from '../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../server/paths.js';
 import { isValidReportId } from '../../../../../server/fs-utils.js';
@@ -17,9 +17,7 @@ if (!isValidReportId(domain)) {
   return new Response('Invalid domain', { status: 400, headers: { 'Content-Type': 'text/plain' } });
 }
 
-const runs = await listVisibleRunsForDomain(dbPool, REPORTS_BASE, domain, {
-  access: Astro.locals?.access,
-});
+const runs = await listVisibleRunsForDomain(dbPool, REPORTS_BASE, domain, viewerFromAstro(Astro));
 
 const sortedNewestFirst = runs;
 const sortedOldestFirst = [...runs].reverse();

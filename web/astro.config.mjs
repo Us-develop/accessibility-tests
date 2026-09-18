@@ -17,7 +17,9 @@ const site = /^https?:\/\//i.test(publicBaseRaw) ? publicBaseRaw : `https://${pu
 export default defineConfig({
   site,
   output: 'server',
-  adapter: node({ mode: 'standalone' }),
+  // middleware mode: Express can pass req.access as Astro.locals. standalone
+  // mode's handler is (req, res) only and drops that 4th-argument locals object.
+  adapter: node({ mode: 'middleware' }),
   integrations: [svelte()],
   vite: {
     server: {

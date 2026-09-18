@@ -23,10 +23,9 @@ assertProductionDatabaseUrl();
 const PORT = Number(process.env.PORT) || 3456;
 
 /**
- * Importing dist/server/entry.mjs runs @astrojs/node `start()` in standalone mode,
- * which binds another HTTP server to localhost:PORT (see process.env.PORT above).
- * Our Express app already listens on PORT for *:PORT — IPv4 clients hit Express, but
- * many browsers resolve "localhost" to ::1 and hit Astro-only, yielding 403 on POST /api/*.
+ * middleware mode does not autostart. Keep this if a standalone build is ever
+ * imported: `start()` would bind another server on localhost:PORT (IPv6) while
+ * Express already listens on *:PORT — browsers hitting ::1 then miss the API.
  */
 process.env.ASTRO_NODE_AUTOSTART ??= 'disabled';
 
@@ -56,6 +55,7 @@ app.use(
     setHeaders: setStaticAssetHeaders,
   })
 );
+// 4th arg becomes Astro.locals in middleware mode (ignored by standalone).
 app.use((req, res, next) => handler(req, res, next, { access: req.access || null }));
 
 await initDb();
