@@ -33,11 +33,13 @@ const {
   automaticTaxEnabled,
   fulfillCheckoutSession,
   handleStripeEvent,
+  isCompleteTaxAddress,
   packIdFromPrice,
   priceIdForPack,
   priceIdForPro,
   proIntervalFromPrice,
   recordStripeInvoice,
+  stripeAddressFromUser,
   stripeConfigured,
 } = await import('../server/stripe.mjs');
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
@@ -137,6 +139,25 @@ describe('stripe catalog mapping', () => {
     assert.equal(proIntervalFromPrice('price_pro_year_test'), 'yearly');
     assert.equal(automaticTaxEnabled(), true);
     assert.equal(stripeConfigured(), false);
+  });
+
+  it('rejects country-only addresses that break subscription tax', () => {
+    assert.equal(isCompleteTaxAddress({ country: 'BE' }), false);
+    assert.equal(isCompleteTaxAddress({ country: 'BE', line1: null, city: null, postal_code: null }), false);
+    assert.equal(
+      isCompleteTaxAddress({ country: 'BE', line1: 'Veldkant 33A', city: 'Kontich', postal_code: '2550' }),
+      true
+    );
+    assert.equal(stripeAddressFromUser({ country: 'BE' }), undefined);
+    assert.deepEqual(
+      stripeAddressFromUser({
+        country: 'BE',
+        addressLine1: 'Veldkant 33A',
+        city: 'Kontich',
+        postalCode: '2550',
+      }),
+      { line1: 'Veldkant 33A', line2: undefined, city: 'Kontich', postal_code: '2550', country: 'BE' }
+    );
   });
 });
 
@@ -432,6 +453,10 @@ describe('stripe HTTP', () => {
     assert.match(pricing, /Subscribe monthly/);
     assert.match(pricing, /Us-diensten/);
     assert.match(pricing, /\/api\/billing\/checkout/);
+    assert.doesNotMatch(pricing, /centsWithVat/);
+    const catalog = readFileSync(join(repoRoot, 'scripts/stripe-catalog.mjs'), 'utf8');
+    assert.match(catalog, /tax_behavior: TAX_BEHAVIOR/);
+    assert.match(catalog, /inclusive/);
     const account = readFileSync(join(repoRoot, 'web/src/pages/account.astro'), 'utf8');
     assert.match(account, /id="manage-billing-btn"/);
     assert.match(account, /token-buy/);

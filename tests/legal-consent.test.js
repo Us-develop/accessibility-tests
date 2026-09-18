@@ -31,6 +31,7 @@ const { LEGAL_PRIVACY_VERSION, LEGAL_TERMS_VERSION, WITHDRAWAL_WAIVER_TEXT } =
   await import('../server/legal-versions.mjs');
 const { setStripeClientForTests } = await import('../server/stripe.mjs');
 const { getUserByEmail } = await import('../server/users.mjs');
+const { ensureCustomerSubscription, upsertSubscription } = await import('../server/billing.mjs');
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -77,14 +78,22 @@ function listen(app) {
   });
 }
 
-function stubCheckoutClient(created) {
+function stubCheckoutClient(created, { customer, customerCreates, customerUpdates } = {}) {
   const client = {
     customers: {
       retrieve: async () => {
-        const err = new Error('No such customer');
+        if (customer) return customer;
+        const err = Object.assign(new Error('No such customer'), { code: 'resource_missing' });
         throw err;
       },
-      create: async () => ({ id: 'cus_stub' }),
+      create: async (payload) => {
+        customerCreates?.push(payload);
+        return { id: 'cus_stub' };
+      },
+      update: async (_id, payload) => {
+        customerUpdates?.push(payload);
+        return { id: customer?.id || 'cus_stub', ...payload };
+      },
       createTaxId: async () => ({ id: 'txi_stub' }),
     },
     checkout: {
@@ -227,10 +236,147 @@ describe('legal consent and VAT', () => {
     assert.equal(created[0].consent_collection.terms_of_service, 'required');
     assert.equal(created[0].custom_text.terms_of_service_acceptance.message, WITHDRAWAL_WAIVER_TEXT);
     assert.equal(created[0].invoice_creation.enabled, true);
+    assert.equal(created[0].billing_address_collection, 'required');
     const waivers = await listConsents({ userId: bundle.user.id, kind: 'withdrawal_waiver' });
     assert.equal(waivers.length, 1);
     assert.equal(waivers[0].context.packId, 'pack_10');
     assert.equal(waivers[0].context.customerType, 'consumer');
+    setStripeClientForTests(null);
+    delete process.env.STRIPE_SECRET_KEY;
+  });
+
+  it('starts a Pro monthly session with a billing address and a reusable payment method', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_legal_stub';
+    const created = [];
+    const customerCreates = [];
+    stubCheckoutClient(created, { customerCreates });
+    const jar = new CookieJar();
+    const signup = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'checkout-pro-month@example.com',
+        password: 'longenough1',
+        acceptTerms: true,
+        country: 'BE',
+      }),
+    });
+    jar.store(signup.headers);
+    const checkout = await fetch(`${origin}/api/billing/checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: jar.header(),
+        'X-CSRF-Token': jar.get('wcag_csrf'),
+      },
+      body: JSON.stringify({ kind: 'pro', interval: 'monthly', withdrawalWaiver: true }),
+    });
+    const body = await checkout.json();
+    assert.equal(checkout.status, 200, body.error || '');
+    assert.equal(created.length, 1);
+    assert.equal(created[0].mode, 'subscription');
+    assert.equal(created[0].line_items[0].price, 'price_pro_month_test');
+    assert.equal(created[0].billing_address_collection, 'required');
+    assert.equal(created[0].customer_update.address, 'auto');
+    assert.equal(created[0].subscription_data.payment_settings.save_default_payment_method, 'on_subscription');
+    assert.equal(customerCreates.length, 1);
+    assert.equal(customerCreates[0].address, undefined);
+    setStripeClientForTests(null);
+    delete process.env.STRIPE_SECRET_KEY;
+  });
+
+  it('clears a country-only Stripe customer address before Pro checkout', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_legal_stub';
+    const created = [];
+    const customerUpdates = [];
+    const jar = new CookieJar();
+    const signup = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'incomplete-address@example.com',
+        password: 'longenough1',
+        acceptTerms: true,
+      }),
+    });
+    jar.store(signup.headers);
+    const signed = await signup.json();
+    assert.equal(signup.status, 200, signed.error || '');
+    const sub = await ensureCustomerSubscription(signed.user.id);
+    await upsertSubscription({ ...sub, stripeCustomerId: 'cus_incomplete' });
+    stubCheckoutClient(created, {
+      customer: {
+        id: 'cus_incomplete',
+        deleted: false,
+        address: { city: null, country: 'BE', line1: null, line2: null, postal_code: null, state: null },
+      },
+      customerUpdates,
+    });
+    const checkout = await fetch(`${origin}/api/billing/checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: jar.header(),
+        'X-CSRF-Token': jar.get('wcag_csrf'),
+      },
+      body: JSON.stringify({ kind: 'pro', interval: 'monthly', withdrawalWaiver: true }),
+    });
+    const body = await checkout.json();
+    assert.equal(checkout.status, 200, body.error || '');
+    assert.equal(customerUpdates.length, 1);
+    assert.equal(customerUpdates[0].address.country, '');
+    assert.equal(created[0].mode, 'subscription');
+    assert.equal(created[0].billing_address_collection, 'required');
+    setStripeClientForTests(null);
+    delete process.env.STRIPE_SECRET_KEY;
+  });
+
+  it('returns the Stripe tax-location error instead of a generic checkout failure', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_legal_stub';
+    const stripeErr = Object.assign(new Error("The customer's location could not be determined from the provided address."), {
+      type: 'StripeInvalidRequestError',
+      code: 'customer_tax_location_invalid',
+      statusCode: 400,
+      raw: {
+        type: 'invalid_request_error',
+        code: 'customer_tax_location_invalid',
+        message: "The customer's location could not be determined from the provided address.",
+      },
+    });
+    setStripeClientForTests({
+      customers: {
+        retrieve: async () => {
+          throw stripeErr;
+        },
+        create: async () => {
+          throw stripeErr;
+        },
+      },
+      checkout: { sessions: { create: async () => { throw stripeErr; } } },
+    });
+    const jar = new CookieJar();
+    const signup = await fetch(`${origin}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'tax-location@example.com',
+        password: 'longenough1',
+        acceptTerms: true,
+      }),
+    });
+    jar.store(signup.headers);
+    const checkout = await fetch(`${origin}/api/billing/checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: jar.header(),
+        'X-CSRF-Token': jar.get('wcag_csrf'),
+      },
+      body: JSON.stringify({ kind: 'pro', interval: 'monthly', withdrawalWaiver: true }),
+    });
+    const body = await checkout.json();
+    assert.equal(checkout.status, 400);
+    assert.match(String(body.error), /location could not be determined/);
     setStripeClientForTests(null);
     delete process.env.STRIPE_SECRET_KEY;
   });

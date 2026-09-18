@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * Create sandbox Stripe Products/Prices for the commercial catalog.
+ * Amounts are VAT-inclusive (tax_behavior inclusive) so Belgian 21% totals stay round.
  * Never logs secret keys. Prints price IDs for VPS env.
  *
  * Usage (sandbox key in the environment, not git):
@@ -10,6 +11,7 @@ import Stripe from 'stripe';
 
 const TAX_CODE = String(process.env.STRIPE_TAX_CODE || 'txcd_10103001').trim();
 const KEY = String(process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY || '').trim();
+const TAX_BEHAVIOR = 'inclusive';
 
 const ITEMS = [
   {
@@ -49,10 +51,17 @@ async function findProduct(stripe, key) {
   return listed.data.find((product) => product.metadata?.catalog_key === key) || null;
 }
 
+function lookupKeyFor(envName) {
+  return `wcag_${String(envName || '')
+    .replace(/^STRIPE_PRICE_/, '')
+    .toLowerCase()}`;
+}
+
 async function ensurePrice(stripe, productId, spec) {
   const listed = await stripe.prices.list({ product: productId, limit: 100, active: true });
   const match = listed.data.find((price) => {
     if (price.currency !== spec.currency || price.unit_amount !== spec.unit_amount) return false;
+    if (price.tax_behavior !== TAX_BEHAVIOR) return false;
     if (spec.recurring) {
       return price.recurring?.interval === spec.recurring.interval && price.type === 'recurring';
     }
@@ -63,8 +72,10 @@ async function ensurePrice(stripe, productId, spec) {
     product: productId,
     currency: spec.currency,
     unit_amount: spec.unit_amount,
-    tax_behavior: 'exclusive',
+    tax_behavior: TAX_BEHAVIOR,
     recurring: spec.recurring,
+    lookup_key: lookupKeyFor(spec.env),
+    transfer_lookup_key: true,
     metadata: { catalog_env: spec.env },
   });
 }
@@ -101,6 +112,7 @@ async function main() {
   console.log('Sandbox catalog ready. Put these in the VPS env (not git):\n');
   for (const line of lines) console.log(line);
   console.log('\nTax code placeholder:', TAX_CODE, '(confirm with your advisor before live).');
+  console.log('Prices are VAT-inclusive. Leave old exclusive Prices active until VPS env uses the IDs above.');
   console.log('Leave STRIPE_AUTOMATIC_TAX=false until Tax Settings have a head office and Collecting registrations.');
 }
 
