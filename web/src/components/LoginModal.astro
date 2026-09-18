@@ -280,6 +280,11 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     if (!overlay) return;
     overlay.hidden = true;
     overlay.setAttribute('aria-hidden', 'true');
+    // html.wcag-staff hides the overlay with CSS. If siblings stay inert, Buy/Subscribe
+    // clicks look dead even though the page appears interactive.
+    if (guestOk() || document.documentElement.classList.contains('wcag-staff')) {
+      unlockAppShell(document.documentElement.classList.contains('wcag-staff'));
+    }
     const trigger = lastLoginTrigger;
     lastLoginTrigger = null;
     if (trigger && typeof trigger.focus === 'function') {
@@ -601,7 +606,6 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       }
       if (target.closest('#wcag-login-close')) {
         closeModal();
-        if (guestOk()) unlockAppShell(false);
         return;
       }
       if (target.closest('#wcag-logout-btn')) {

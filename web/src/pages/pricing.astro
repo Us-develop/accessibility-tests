@@ -75,7 +75,7 @@ const jsonLd = {
           Scan one public page for free. Buy tokens for occasional full reports, subscribe to Pro for monthly page-scans,
           or ask Us for manual testing and remediation.
         </p>
-        <p id="pricing-msg" class="muted" role="status">{canceled ? 'Checkout was cancelled. No charge was made.' : ''}</p>
+        <p id="pricing-msg" class="muted" role="status" aria-live="polite">{canceled ? 'Checkout was cancelled. No charge was made.' : ''}</p>
         <label class="legal-check" style="max-width: 640px; margin: 0 0 20px;">
           <input type="checkbox" id="withdrawal-waiver" name="withdrawalWaiver" value="true" />
           <span>{WITHDRAWAL_WAIVER_TEXT}</span>
@@ -140,40 +140,87 @@ const jsonLd = {
   const headers = () =>
     typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' };
 
-  async function startCheckout(btn) {
-    const msg = document.getElementById('pricing-msg');
-    const waiver = document.getElementById('withdrawal-waiver');
-    if (!(waiver instanceof HTMLInputElement) || !waiver.checked) {
-      if (msg) msg.textContent = 'Tick the immediate-delivery box before checkout.';
-      return;
-    }
-    const kind = btn.getAttribute('data-kind');
-    const body =
-      kind === 'pack'
-        ? { kind: 'pack', packId: btn.getAttribute('data-pack'), withdrawalWaiver: true }
-        : { kind: 'pro', interval: btn.getAttribute('data-interval') || 'monthly', withdrawalWaiver: true };
-    btn.disabled = true;
-    const auth = await fetch(api('/api/auth/status'), { credentials: creds }).then((r) => r.json()).catch(() => ({}));
-    if (auth.authenticated !== true || auth.role !== 'customer') {
-      window.location.href = '/signup?next=/pricing';
-      return;
-    }
-    const res = await fetch(api('/api/billing/checkout'), {
-      method: 'POST',
-      credentials: creds,
-      headers: headers(),
-      body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (data.url) {
-      window.location.href = data.url;
-      return;
-    }
-    if (msg) msg.textContent = data.error || 'Could not start checkout.';
-    btn.disabled = false;
+  function checkoutMessageEl() {
+    return (
+      document.getElementById('pricing-msg') ||
+      document.getElementById('account-billing-msg') ||
+      document.getElementById('account-msg')
+    );
   }
 
-  document.querySelectorAll('.pricing-checkout').forEach((btn) => {
-    btn.addEventListener('click', () => startCheckout(btn));
-  });
+  function showCheckoutMessage(text, isError = false) {
+    const msg = checkoutMessageEl();
+    if (!msg) return;
+    msg.textContent = text || '';
+    msg.setAttribute('role', isError ? 'alert' : 'status');
+  }
+
+  function checkoutBodyFromButton(btn) {
+    const kind = btn.getAttribute('data-kind');
+    if (kind === 'pro') {
+      return { kind: 'pro', interval: btn.getAttribute('data-interval') || 'monthly', withdrawalWaiver: true };
+    }
+    const packId = btn.getAttribute('data-pack');
+    if (kind === 'pack' || packId) {
+      return { kind: 'pack', packId, withdrawalWaiver: true };
+    }
+    return null;
+  }
+
+  async function startCheckout(btn) {
+    const waiver = document.getElementById('withdrawal-waiver');
+    if (!(waiver instanceof HTMLInputElement) || !waiver.checked) {
+      showCheckoutMessage('Tick the immediate-delivery box before checkout.', true);
+      waiver?.focus?.();
+      return;
+    }
+    const body = checkoutBodyFromButton(btn);
+    if (!body) {
+      showCheckoutMessage('Could not start checkout.', true);
+      return;
+    }
+    btn.disabled = true;
+    showCheckoutMessage('Starting checkout…');
+    try {
+      const auth = await fetch(api('/api/auth/status'), { credentials: creds }).then((r) => r.json()).catch(() => ({}));
+      if (auth.authenticated !== true || auth.role !== 'customer') {
+        const next = document.getElementById('pricing-msg') ? '/pricing' : '/account';
+        window.location.href = `/signup?next=${next}`;
+        return;
+      }
+      const res = await fetch(api('/api/billing/checkout'), {
+        method: 'POST',
+        credentials: creds,
+        headers: headers(),
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      showCheckoutMessage(data.error || 'Could not start checkout.', true);
+    } catch {
+      showCheckoutMessage('Could not start checkout. Check your connection and try again.', true);
+    } finally {
+      if (btn.isConnected) btn.disabled = false;
+    }
+  }
+
+  // Capture-phase document delegation survives Astro ClientRouter swaps;
+  // querySelectorAll(...).forEach(addEventListener) dies after the first visit.
+  if (!globalThis.__wcagBillingCheckoutBound) {
+    globalThis.__wcagBillingCheckoutBound = true;
+    document.addEventListener(
+      'click',
+      (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        const btn = target?.closest?.('.pricing-checkout, .token-buy');
+        if (!(btn instanceof HTMLButtonElement)) return;
+        event.preventDefault();
+        startCheckout(btn);
+      },
+      true
+    );
+  }
 </script>

@@ -435,8 +435,14 @@ describe('stripe HTTP', () => {
     const account = readFileSync(join(repoRoot, 'web/src/pages/account.astro'), 'utf8');
     assert.match(account, /id="manage-billing-btn"/);
     assert.match(account, /token-buy/);
+    assert.match(account, /pricing-checkout/);
+    assert.match(account, /Subscribe monthly/);
+    assert.match(account, /id="account-billing-msg"/);
     assert.match(account, /Cancel at the end of the billing period/);
     assert.doesNotMatch(account, /pause/i);
+    assert.doesNotMatch(account, /href="\/pricing#pro"/);
+    assert.match(pricing, /__wcagBillingCheckoutBound/);
+    assert.doesNotMatch(pricing, /querySelectorAll\('\.pricing-checkout'\)/);
     const home = readFileSync(join(repoRoot, 'web/src/pages/index.astro'), 'utf8');
     assert.match(home, /href="\/pricing"/);
     assert.match(home, /fd\.set\('urls', urls\)/);
