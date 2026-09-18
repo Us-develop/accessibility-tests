@@ -18,6 +18,9 @@ process.env.DEFER_ROOT_LOGIN_TO_SHELL = 'true';
 
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
 const { attachRunToUser, upsertProject, canAccessRun, parseTenantPath } = await import('../server/projects.mjs');
+const { listVisibleRunsForDomain, viewerFromAstro } = await import('../server/audit-viewer.mjs');
+const { SESSION_COOKIE } = await import('../server/session.mjs');
+const { onRequest: astroOnRequest } = await import('../web/src/middleware.js');
 const { newRunId, isValidRunId, runDir } = await import('../server/run-ids.js');
 const { persistGuestToken, readGuestTokenRecord, pruneExpiredGuestTokens } = await import('../server/guest.mjs');
 const { findRunningRun } = await import('../server/queue.mjs');
@@ -338,6 +341,61 @@ describe('tenant isolation HTTP', () => {
     const aBody = await auditsA.json();
     const aRow = (aBody.audits || []).find((item) => item.domain === domain);
     assert.equal(aRow?.latestRunId, runIdA);
+
+    const historyA = await fetch(`${origin}/api/audits/${domain}/runs`, { headers: headers(jarA) });
+    const historyABody = await historyA.json();
+    assert.equal(historyA.status, 200);
+    assert.equal((historyABody.runs || []).some((row) => row.runId === runIdA), true);
+  });
+
+  it('domain history lists the customer own runs from the session cookie, not Astro.locals alone', async () => {
+    assert.ok(runIdA, 'expected customer A run from the previous test');
+    const anonymous = await listVisibleRunsForDomain(null, process.env.REPORTS_BASE, domain, {});
+    assert.equal(
+      anonymous.some((row) => row.runId === runIdA),
+      false,
+      'missing viewer must not leak another tenant, and must not look like an empty project to the owner'
+    );
+
+    const sessionToken = jarA.get('wcag_sid');
+    assert.ok(sessionToken);
+    const fromCookie = await listVisibleRunsForDomain(null, process.env.REPORTS_BASE, domain, {
+      sessionToken,
+    });
+    assert.equal(fromCookie.some((row) => row.runId === runIdA), true);
+
+    const astro = {
+      locals: {},
+      cookies: {
+        get: (name) => (name === SESSION_COOKIE ? { value: sessionToken } : undefined),
+      },
+    };
+    const fromAstroCookie = await listVisibleRunsForDomain(
+      null,
+      process.env.REPORTS_BASE,
+      domain,
+      viewerFromAstro(astro)
+    );
+    assert.equal(fromAstroCookie.some((row) => row.runId === runIdA), true);
+
+    const locals = {};
+    await astroOnRequest(
+      {
+        locals,
+        request: {
+          headers: {
+            get: (name) => (String(name).toLowerCase() === 'cookie' ? jarA.header() : null),
+          },
+        },
+      },
+      async () => new Response('ok')
+    );
+    assert.equal(locals.access?.role, 'customer');
+    assert.ok(locals.access?.userId);
+    const fromMiddleware = await listVisibleRunsForDomain(null, process.env.REPORTS_BASE, domain, {
+      access: locals.access,
+    });
+    assert.equal(fromMiddleware.some((row) => row.runId === runIdA), true);
   });
 
   it('lets a customer open an attached guest run while the memory record still exists', async () => {
@@ -387,6 +445,11 @@ describe('tenant isolation HTTP', () => {
       redirect: 'manual',
     });
     assert.equal(report.status, 200);
+
+    const attached = await listVisibleRunsForDomain(null, process.env.REPORTS_BASE, guestDomain, {
+      sessionToken: jar.get('wcag_sid'),
+    });
+    assert.equal(attached.some((row) => row.runId === guestRunId), true);
     deleteJob(`${guestDomain}:${guestRunId}`);
   });
 

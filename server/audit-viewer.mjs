@@ -1,6 +1,17 @@
-import { decodeSession } from './session.mjs';
+import { decodeSession, SESSION_COOKIE } from './session.mjs';
 import { findProjectByDomain } from './projects.mjs';
 import { filterRunsForViewer, listRunsForDomain } from './audit-list.js';
+
+/**
+ * Viewer identity for domain history. Prefer Express/Astro `access` (already
+ * validated). Fall back to the signed `wcag_sid` cookie — standalone Astro
+ * drops the 4th-arg locals object, so pages must not rely on Astro.locals alone.
+ */
+export function viewerFromAstro(astro) {
+  const access = astro?.locals?.access || null;
+  const sessionToken = astro?.cookies?.get?.(SESSION_COOKIE)?.value || '';
+  return { access, sessionToken };
+}
 
 /**
  * Domain history for the current browser session: staff see every run,

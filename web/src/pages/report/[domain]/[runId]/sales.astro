@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { buildAstroMainReportPayload } from '../../../../../../report-astro-payload.js';
 import { isValidReportId } from '../../../../../../server/fs-utils.js';
 import { runDir, isValidRunId } from '../../../../../../server/run-ids.js';
-import { listVisibleRunsForDomain } from '../../../../../../server/audit-viewer.mjs';
+import { listVisibleRunsForDomain, viewerFromAstro } from '../../../../../../server/audit-viewer.mjs';
 import { dbPool } from '../../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../../server/paths.js';
 import { combinedScoreWithManual } from '../../../../../../report-buckets.js';
@@ -56,9 +56,7 @@ try {
 const principles = payload.principles || [];
 const plainEnglish = payload.plainEnglish || { headline: '', cards: [] };
 
-const allRuns = await listVisibleRunsForDomain(dbPool, REPORTS_BASE, domain, {
-  access: Astro.locals?.access,
-});
+const allRuns = await listVisibleRunsForDomain(dbPool, REPORTS_BASE, domain, viewerFromAstro(Astro));
 const trend = allRuns
   .slice()
   .reverse()
