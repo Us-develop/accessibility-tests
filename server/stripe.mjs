@@ -149,6 +149,50 @@ function isoCountry(value) {
   return '';
 }
 
+const EMPTY_TAX_ADDRESS = {
+  line1: '',
+  line2: '',
+  city: '',
+  postal_code: '',
+  state: '',
+  country: '',
+};
+
+/** Stripe Tax rejects country-only addresses when creating a subscription invoice. */
+export function isCompleteTaxAddress(address) {
+  if (!address || typeof address !== 'object') return false;
+  const country = isoCountry(address.country);
+  const line1 = String(address.line1 || '').trim();
+  const city = String(address.city || '').trim();
+  const postal = String(address.postal_code || address.postalCode || '').trim();
+  return Boolean(country && line1 && city && postal);
+}
+
+export function stripeAddressFromUser(user) {
+  const address = {
+    line1: String(user?.addressLine1 || '').trim(),
+    line2: String(user?.addressLine2 || '').trim(),
+    city: String(user?.city || '').trim(),
+    postal_code: String(user?.postalCode || '').trim(),
+    country: isoCountry(user?.country),
+  };
+  if (!isCompleteTaxAddress(address)) return undefined;
+  return {
+    line1: address.line1,
+    line2: address.line2 || undefined,
+    city: address.city,
+    postal_code: address.postal_code,
+    country: address.country,
+  };
+}
+
+async function syncStripeCustomerAddress(stripe, customer, user) {
+  if (!customer?.id || typeof stripe.customers?.update !== 'function') return;
+  if (isCompleteTaxAddress(customer.address)) return;
+  const fromUser = stripeAddressFromUser(user);
+  await stripe.customers.update(customer.id, { address: fromUser || EMPTY_TAX_ADDRESS });
+}
+
 function unixToIso(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
@@ -482,6 +526,7 @@ export async function ensureStripeCustomer(user) {
     try {
       const customer = await stripe.customers.retrieve(existing.stripeCustomerId);
       if (customer && !customer.deleted) {
+        await syncStripeCustomerAddress(stripe, customer, user);
         await attachEuVatIfPresent(stripe, customer.id, user);
         return customer.id;
       }
@@ -490,20 +535,11 @@ export async function ensureStripeCustomer(user) {
       if (code !== 'resource_missing') throw err;
     }
   }
-  const country = isoCountry(user.country);
   const customer = await stripe.customers.create({
     email: user.email,
     name: user.name || undefined,
     metadata: { userId: user.id },
-    address: country
-      ? {
-          line1: user.addressLine1 || undefined,
-          line2: user.addressLine2 || undefined,
-          city: user.city || undefined,
-          postal_code: user.postalCode || undefined,
-          country,
-        }
-      : undefined,
+    address: stripeAddressFromUser(user),
   });
   const sub = existing || (await ensureCustomerSubscription(user.id));
   await upsertSubscription({
@@ -517,6 +553,7 @@ export async function ensureStripeCustomer(user) {
 function checkoutTaxFields() {
   const tax = automaticTaxEnabled();
   return {
+    billing_address_collection: 'required',
     customer_update: { address: 'auto', name: 'auto' },
     tax_id_collection: { enabled: true },
     automatic_tax: { enabled: tax },
@@ -600,6 +637,7 @@ export async function createCheckoutSession({ user, kind, packId, interval, cons
     },
     subscription_data: {
       metadata: { userId: user.id, planId: PRO_PLAN_ID, interval: billingInterval },
+      payment_settings: { save_default_payment_method: 'on_subscription' },
     },
     integration_identifier: integrationIdentifier('wcag-pro'),
     allow_promotion_codes: true,

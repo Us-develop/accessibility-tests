@@ -111,7 +111,9 @@ If `DATABASE_URL` is not set, accounts fall back to those JSON files (fine for l
 
 ### Stripe billing
 
-Sellable Stripe items are **one Product each**: token pack 10, pack 50, pack 100, and **one** Pro product with monthly + yearly Prices. Do not put pack prices on the Pro product. Token packs use Checkout `mode: 'payment'`; Pro uses `mode: 'subscription'`. Fulfilment is from **webhooks**, not the success page. Prefer a [restricted API key](https://docs.stripe.com/keys.md#manage-your-api-keys) (`rk_`) over `sk_`. Never commit secrets.
+Sellable Stripe items are **one Product each**: token pack 10, pack 50, pack 100, and **one** Pro product with monthly + yearly Prices. Do not put pack prices on the Pro product. Catalog amounts (€10 / €45 / €80 packs, €49 / €490 Pro) are **VAT-inclusive**; Prices use `tax_behavior: inclusive` so the incl-VAT total stays a round euro. Token packs use Checkout `mode: 'payment'`; Pro uses `mode: 'subscription'`. Fulfilment is from **webhooks**, not the success page. Prefer a [restricted API key](https://docs.stripe.com/keys.md#manage-your-api-keys) (`rk_`) over `sk_`. Never commit secrets.
+
+Belgian Pro checkout needs **SEPA Direct Debit** enabled in the Dashboard payment methods (Bancontact is one-off; Stripe uses it to set up SEPA for subscriptions). Checkout always collects a billing address so Stripe Tax can locate subscription invoices.
 
 On the VPS, put these in `/etc/accessibility.env` (see **[deploy/README.md](deploy/README.md)**) and restart `accessibility.service`:
 
@@ -126,7 +128,7 @@ On the VPS, put these in `/etc/accessibility.env` (see **[deploy/README.md](depl
 | `PUBLIC_BASE_URL` | Public origin (`https://wcag.about-us.be`). Required in production. |
 | `SCAN_JOB_TTL_MS` | Optional. Default `86400000` (24h). Queued jobs older than this are dropped and consumed customer tokens are refunded. Not required in production. |
 
-Create sandbox Products with `node scripts/stripe-catalog.mjs` (uses placeholder tax code `txcd_10103001` SaaS – Business Use until the advisor confirms). Point a webhook at `https://wcag.about-us.be/api/stripe/webhook` for `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.*`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.refund.updated`, `charge.dispute.created`. Duplicate deliveries of the same event id return 200 without granting again. Out-of-order `customer.subscription.deleted` events for an old subscription id are ignored when a newer id is already stored.
+Create sandbox Products with `node scripts/stripe-catalog.mjs` (inclusive Prices, placeholder tax code `txcd_10103001` SaaS – Business Use until the advisor confirms). Re-run after this catalog change and put the printed Price IDs in `/etc/accessibility.env` — existing exclusive Prices cannot be converted. Point a webhook at `https://wcag.about-us.be/api/stripe/webhook` for `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.*`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.refund.updated`, `charge.dispute.created`. Duplicate deliveries of the same event id return 200 without granting again. Out-of-order `customer.subscription.deleted` events for an old subscription id are ignored when a newer id is already stored.
 
 Pack Checkout sessions enable `invoice_creation` and print `COMPANY_LEGAL_NAME` / `COMPANY_VAT` on the invoice footer. **Set the subscription invoice template once in the Stripe Dashboard** (Settings → Billing → Invoices); the API does not attach that footer to `mode: 'subscription'` sessions.
 

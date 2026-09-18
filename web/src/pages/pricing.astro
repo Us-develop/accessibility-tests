@@ -2,7 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 import { TOKEN_PACKS } from '../../../server/plan-catalog.mjs';
-import { centsWithVat, formatVatInclusivePrice } from '../../../server/vat-display.mjs';
+import { formatVatInclusivePrice } from '../../../server/vat-display.mjs';
 import { WITHDRAWAL_WAIVER_TEXT } from '../../../server/legal-versions.mjs';
 
 export const prerender = false;
@@ -35,21 +35,21 @@ const jsonLd = {
     ...TOKEN_PACKS.map((pack) => ({
       '@type': 'Offer',
       name: pack.name,
-      price: (centsWithVat(pack.priceCents) / 100).toFixed(2),
+      price: ((pack.priceCents || 0) / 100).toFixed(2),
       priceCurrency: 'EUR',
       url: `${siteOrigin}/pricing#tokens`,
     })),
     {
       '@type': 'Offer',
       name: 'Pro monthly',
-      price: (centsWithVat(4900) / 100).toFixed(2),
+      price: (4900 / 100).toFixed(2),
       priceCurrency: 'EUR',
       url: `${siteOrigin}/pricing#pro`,
     },
     {
       '@type': 'Offer',
       name: 'Pro yearly',
-      price: (centsWithVat(49000) / 100).toFixed(2),
+      price: (49000 / 100).toFixed(2),
       priceCurrency: 'EUR',
       url: `${siteOrigin}/pricing#pro`,
     },

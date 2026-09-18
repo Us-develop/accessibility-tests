@@ -1,4 +1,7 @@
-/** Commercial catalog: guest snapshot, prepaid token packs, Pro, Us-diensten. */
+/**
+ * Commercial catalog: guest snapshot, prepaid token packs, Pro, Us-diensten.
+ * `priceCents` / Pro amounts are VAT-inclusive Belgian shelf prices.
+ */
 
 export const NONE_PLAN_ID = 'none';
 export const PRO_PLAN_ID = 'pro';

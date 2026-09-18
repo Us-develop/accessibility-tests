@@ -23,9 +23,21 @@ function requireCustomer(req, res) {
 }
 
 function fail(res, err) {
-  const status = Number(err?.status) || 500;
+  const stripeStatus = Number(err?.statusCode);
+  const status = Number(err?.status) || (stripeStatus >= 400 && stripeStatus < 500 ? stripeStatus : 0) || 500;
   if (err?.message) console.error('[stripe]', err.message);
-  return res.status(status).json({ error: 'Stripe request failed.' });
+  const typed = String(err?.type || err?.raw?.type || '');
+  const code = String(err?.code || err?.raw?.code || '');
+  const stripeMessage = String(err?.raw?.message || err?.message || '').trim();
+  const isStripeClientError =
+    typed === 'StripeInvalidRequestError' ||
+    typed === 'invalid_request_error' ||
+    code === 'customer_tax_location_invalid';
+  let error = 'Stripe request failed.';
+  if (err?.status && stripeMessage && status < 500) error = stripeMessage;
+  else if (status === 503 && stripeMessage) error = stripeMessage;
+  else if (isStripeClientError && stripeMessage) error = stripeMessage;
+  return res.status(status >= 400 ? status : 500).json({ error });
 }
 
 export function registerStripeWebhook(app) {
@@ -82,7 +94,8 @@ export function registerStripeRoutes(app) {
       const packId = String(req.body?.packId || '').trim();
       const planId = String(req.body?.planId || '').trim().toLowerCase();
       const kind = String(req.body?.kind || (packId ? 'pack' : 'pro')).trim().toLowerCase();
-      const checkoutKind = packId || kind === 'pack' ? 'pack' : 'pro';
+      const isPack = Boolean(packId) || kind === 'pack';
+      const checkoutKind = isPack ? 'pack' : 'pro';
       const interval = String(req.body?.interval || 'monthly').trim().toLowerCase();
       const session = await createCheckoutSession({
         user,
