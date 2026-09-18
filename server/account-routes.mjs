@@ -3,6 +3,7 @@ import {
   deleteAccount,
   exportUserData,
   getPublicUserById,
+  getUserByEmail,
   getUserById,
   setPassword,
   startPasswordReset,
@@ -19,7 +20,7 @@ import {
 import { attachRunToUser, listProjectsForUser } from './projects.mjs';
 import { clearSessionCookies, isHtmlFormPost, parseCookies, setSessionCookies } from './session.mjs';
 import { isValidGuestToken, guestFreebieClaimed, clientIp, deleteGuestTokenFile } from './guest.mjs';
-import { sendAccountEmail } from '../server-email.js';
+import { logMailFailure, sendAccountEmail } from '../server-email.js';
 import { asyncHandler } from './http-utils.mjs';
 import { clientKey, rateLimit } from './rate-limit.mjs';
 import {
@@ -41,6 +42,17 @@ import { publicBaseUrl } from './config.mjs';
 
 function publicBase() {
   return publicBaseUrl();
+}
+
+function verifyMailParams(user, token) {
+  const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(token)}`;
+  return {
+    name: String(user?.name || ''),
+    email: String(user?.email || ''),
+    link,
+    expiresIn: '48 hours',
+    customerType: String(user?.customerType || ''),
+  };
 }
 
 function formOrJson(req, res, htmlPath, jsonStatus, jsonBody) {
@@ -224,17 +236,22 @@ export function registerAccountRoutes(app, ctx) {
         }
       }
       const guestUsed = attached || guestFreebieClaimed(req);
+      let mailSent = false;
       if (verifyToken) {
         if (guestUsed) {
           await ensureFreebieLot(user.id, { guestFreebieUsed: true });
         }
-        const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(verifyToken)}`;
-        await sendAccountEmail({
-          kind: 'verify',
-          to: user.email,
-          subject: 'Verify your Us accessibility account',
-        text: `Confirm your email:\n${link}\nOpen the link, then click Confirm email. This link expires in 48 hours.\n`,
-        });
+        try {
+          const sent = await sendAccountEmail({
+            kind: 'verify',
+            to: user.email,
+            toName: user.name,
+            params: verifyMailParams(user, verifyToken),
+          });
+          mailSent = sent.emailed === true;
+        } catch (err) {
+          logMailFailure('verify', user.email, err);
+        }
       } else {
         await ensureFreebieLot(user.id, {
           guestFreebieUsed: guestUsed,
@@ -243,7 +260,12 @@ export function registerAccountRoutes(app, ctx) {
       }
       const next = verifyToken ? '/signup?check-email=1' : '/account';
       if (typeof req.recordRateLimitHit === 'function') req.recordRateLimitHit();
-      return formOrJson(req, res, next, 200, { ok: true, needsVerification: Boolean(verifyToken), user });
+      return formOrJson(req, res, next, 200, {
+        ok: true,
+        needsVerification: Boolean(verifyToken),
+        mailSent,
+        user,
+      });
     } catch (err) {
       const status = Number(err.status) || 400;
       if (status === 409 && typeof req.recordRateLimitHit === 'function') {
@@ -290,27 +312,56 @@ export function registerAccountRoutes(app, ctx) {
   app.post('/api/auth/verify/resend', resendIpLimit, resendEmailLimit, asyncHandler(async (req, res) => {
     const started = await restartEmailVerification(req.body?.email);
     if (started) {
-      const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(started.token)}`;
-      await sendAccountEmail({
-        kind: 'verify',
-        to: started.user.email,
-        subject: 'Verify your Us accessibility account',
-        text: `Confirm your email:\n${link}\nThis link expires in 48 hours.\n`,
-      });
+      try {
+        await sendAccountEmail({
+          kind: 'verify',
+          to: started.user.email,
+          toName: started.user.name,
+          params: verifyMailParams(started.user, started.token),
+        });
+      } catch (err) {
+        logMailFailure('verify', started.user.email, err);
+      }
     }
     return formOrJson(req, res, '/verify?sent=1', 200, { ok: true });
+  }));
+
+  app.post('/api/auth/resend-verification', resendEmailLimit, asyncHandler(async (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const user = email ? await getUserByEmail(email) : null;
+    if (user && !user.emailVerified && user.verifyToken) {
+      try {
+        await sendAccountEmail({
+          kind: 'verify',
+          to: user.email,
+          toName: user.name,
+          params: verifyMailParams(user, user.verifyToken),
+        });
+      } catch (err) {
+        logMailFailure('verify', user.email, err);
+      }
+    }
+    return formOrJson(req, res, '/signup?check-email=1', 200, { ok: true });
   }));
 
   app.post('/api/auth/forgot', forgotIpLimit, forgotEmailLimit, asyncHandler(async (req, res) => {
     const started = await startPasswordReset(req.body?.email);
     if (started) {
       const link = `${publicBase()}/reset?token=${encodeURIComponent(started.token)}`;
-      await sendAccountEmail({
-        kind: 'reset',
-        to: started.user.email,
-        subject: 'Reset your Us accessibility password',
-        text: `Reset your password:\n${link}\nThis link expires in 2 hours.\n`,
-      });
+      try {
+        await sendAccountEmail({
+          kind: 'reset',
+          to: started.user.email,
+          toName: started.user.name,
+          params: {
+            name: String(started.user.name || ''),
+            link,
+            expiresIn: '2 hours',
+          },
+        });
+      } catch (err) {
+        logMailFailure('reset', started.user.email, err);
+      }
     }
     return formOrJson(req, res, '/forgot?sent=1', 200, { ok: true });
   }));
@@ -456,18 +507,35 @@ export function registerAccountRoutes(app, ctx) {
       const started = await startEmailChange(userId, nextEmail, password);
       if (!started) return res.status(401).json({ error: 'Sign in first.' });
       const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(started.token)}`;
-      await sendAccountEmail({
-        kind: 'email-change',
-        to: started.pendingEmail,
-        subject: 'Confirm your new Us accessibility email',
-        text: `Confirm your new email address:\n${link}\nThis link expires in 48 hours.\n`,
-      });
-      await sendAccountEmail({
-        kind: 'email-change-notice',
-        to: started.previousEmail,
-        subject: 'Your Us accessibility email is changing',
-        text: 'Someone requested a change to the email on this account. If that was not you, reset your password. The current address stays active until the new one is confirmed.\n',
-      });
+      const name = String(started.user?.name || '');
+      try {
+        await sendAccountEmail({
+          kind: 'email-change',
+          to: started.pendingEmail,
+          toName: name,
+          params: {
+            name,
+            newEmail: started.pendingEmail,
+            link,
+            expiresIn: '48 hours',
+          },
+        });
+      } catch (err) {
+        logMailFailure('email-change', started.pendingEmail, err);
+      }
+      try {
+        await sendAccountEmail({
+          kind: 'email-change-notice',
+          to: started.previousEmail,
+          toName: name,
+          params: {
+            name,
+            newEmail: started.pendingEmail,
+          },
+        });
+      } catch (err) {
+        logMailFailure('email-change-notice', started.previousEmail, err);
+      }
       return res.json({ ok: true, pendingEmail: started.pendingEmail });
     } catch (err) {
       return res.status(Number(err.status) || 400).json({ error: err.message });

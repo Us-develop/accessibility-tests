@@ -62,15 +62,26 @@ const signupError = Astro.url.searchParams.get('error') === '1';
           </div>
           <button type="submit" class="btn btn-primary" id="signup-btn">Create account</button>
           <p id="signup-msg" class="muted" role={signupError ? 'alert' : 'status'}>
-            {checkEmail
-              ? 'Check your email, open the link, then click Confirm email. Mail previews do not finish this for you.'
-              : signupError
-                ? 'Could not create account. Try a different email, or log in if you already have one.'
-                : ''}
+            {checkEmail ? (
+              <>
+                Check your email, open the link, then click Confirm email. Mail previews do not finish this for you. If the mail does not arrive within a few minutes, use <em>Resend verification</em>.
+              </>
+            ) : signupError ? (
+              'Could not create account. Try a different email, or log in if you already have one.'
+            ) : (
+              ''
+            )}
           </p>
           <p class="muted" style="font-size: 13px; margin: 0;">
             Already have an account? Use <button type="button" class="linklike" id="signup-open-login">Log in</button>.
           </p>
+        </form>
+        <form id="resend-verification-form" class="card stack-form" method="post" action="/api/auth/resend-verification" data-astro-reload hidden={!checkEmail}>
+          <div class="field">
+            <label class="field-label" for="resend-email">Email</label>
+            <input class="input" id="resend-email" name="email" type="email" autocomplete="email" required />
+          </div>
+          <button type="submit" class="btn btn-ghost">Resend verification</button>
         </form>
       </article>
     </main>
@@ -132,7 +143,27 @@ const signupError = Astro.url.searchParams.get('error') === '1';
     });
     document.addEventListener('submit', async (event) => {
       const form = event.target;
-      if (!(form instanceof HTMLFormElement) || form.id !== 'signup-form') return;
+      if (!(form instanceof HTMLFormElement)) return;
+      const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
+      const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
+      if (form.id === 'resend-verification-form') {
+        event.preventDefault();
+        event.stopPropagation();
+        const email = new FormData(form).get('email');
+        await fetch(api('/api/auth/resend-verification'), {
+          method: 'POST',
+          credentials: creds,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        const msg = document.getElementById('signup-msg');
+        if (msg) {
+          msg.textContent = 'If the mail does not arrive within a few minutes, use Resend verification.';
+          msg.setAttribute('role', 'status');
+        }
+        return;
+      }
+      if (form.id !== 'signup-form') return;
       event.preventDefault();
       event.stopPropagation();
       const msg = document.getElementById('signup-msg');
@@ -142,8 +173,6 @@ const signupError = Astro.url.searchParams.get('error') === '1';
         msg.setAttribute('role', 'status');
       }
       const fd = new FormData(form);
-      const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
-      const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
       const guest = String(fd.get('guestToken') || new URLSearchParams(window.location.search).get('guest') || '');
       const res = await fetch(api('/api/auth/signup'), {
         method: 'POST',
@@ -171,7 +200,13 @@ const signupError = Astro.url.searchParams.get('error') === '1';
         return;
       }
       if (data.needsVerification) {
-        if (msg) msg.textContent = 'Check your email to verify the account, then sign in.';
+        if (msg) {
+          msg.textContent = 'Check your email, open the link, then click Confirm email. Mail previews do not finish this for you. If the mail does not arrive within a few minutes, use Resend verification.';
+        }
+        const resend = document.getElementById('resend-verification-form');
+        if (resend) resend.hidden = false;
+        const resendEmail = document.getElementById('resend-email');
+        if (resendEmail instanceof HTMLInputElement) resendEmail.value = String(fd.get('email') || '');
         return;
       }
       window.location.href = '/account';
