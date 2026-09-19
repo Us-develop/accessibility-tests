@@ -24,8 +24,6 @@ const pack100Label = formatVatInclusivePrice(8000);
           <div class="usage-bar" aria-hidden="true"><span id="usage-fill"></span></div>
           <p id="usage-label" class="muted"></p>
           <div id="billing-actions" class="guest-cta-row">
-            <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">Subscribe monthly</button>
-            <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">Subscribe yearly</button>
             <button type="button" class="btn btn-ghost" id="manage-billing-btn">Manage billing</button>
           </div>
           <p class="muted" style="font-size: 13px;">Cancel at the end of the billing period through Manage billing. You keep Pro until that date.</p>
@@ -40,6 +38,10 @@ const pack100Label = formatVatInclusivePrice(8000);
             <span>{WITHDRAWAL_WAIVER_TEXT}</span>
           </label>
           <p id="account-billing-msg" class="muted" role="status" aria-live="polite"></p>
+          <div id="subscribe-actions" class="guest-cta-row">
+            <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">Subscribe monthly</button>
+            <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">Subscribe yearly</button>
+          </div>
           <div class="guest-cta-row">
             <button type="button" class="btn btn-primary token-buy" data-pack="pack_10">Buy 10 · {pack10Label}</button>
             <button type="button" class="btn btn-primary token-buy" data-pack="pack_50">Buy 50 · {pack50Label}</button>
@@ -146,7 +148,7 @@ const pack100Label = formatVatInclusivePrice(8000);
         </section>
 
         <div class="account-actions">
-          <a class="btn btn-primary" href="/">New scan</a>
+          <a class="btn btn-primary" href="/">Scan a page</a>
           <a class="btn btn-ghost" href="/api/account/export">Export JSON</a>
           <a class="btn btn-ghost" href="/api/account/export?format=csv">Export CSV</a>
         </div>
@@ -273,6 +275,8 @@ const pack100Label = formatVatInclusivePrice(8000);
           ? ` Next lot expires ${new Date(data.tokens.nextExpiresAt).toLocaleDateString()}.`
           : '';
         if (tokenBalance) tokenBalance.textContent = `${tokensLeft} token${tokensLeft === 1 ? '' : 's'} left.${expires}`;
+        const subscribeActions = document.getElementById('subscribe-actions');
+        if (subscribeActions) subscribeActions.hidden = isPro;
       }
 
     const projects = Array.isArray(data.projects) ? data.projects : [];

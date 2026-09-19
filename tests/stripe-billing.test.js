@@ -471,7 +471,9 @@ describe('stripe HTTP', () => {
     const home = readFileSync(join(repoRoot, 'web/src/pages/index.astro'), 'utf8');
     assert.match(home, /href="\/pricing"/);
     assert.match(home, /fd\.set\('urls', urls\)/);
-    assert.match(home, /Request Us-diensten/);
+    assert.match(home, /Talk to a WCAG expert/);
+    assert.match(home, /wcag:open-login/);
+    assert.doesNotMatch(home, /Request Us-diensten/);
     const terms = readFileSync(join(repoRoot, 'web/src/pages/terms.astro'), 'utf8');
     assert.match(terms, /Consumers/);
     assert.match(terms, /Business customers/);

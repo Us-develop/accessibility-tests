@@ -72,6 +72,7 @@
    *   scoreAvailable?: boolean,
    *   totalAxeIncomplete?: number,
    *   locked?: boolean,
+   *   guestToken?: string,
    * }}
    */
   let {
@@ -110,6 +111,7 @@
     scoreAvailable = true,
     totalAxeIncomplete = 0,
     locked = false,
+    guestToken = '',
   } = $props();
 
   let tab = $state('overview');
@@ -152,6 +154,7 @@
   ];
   const showDensitySwitcher = $derived(tab === 'overview' || tab === 'issues');
   const contentLocked = $derived(locked && tab !== 'overview');
+  const signupHref = $derived(guestToken ? `/signup?guest=${encodeURIComponent(guestToken)}` : '/signup');
 
   const totalChecks = $derived(severityCounts.errors + severityCounts.warnings + severityCounts.passed + severityCounts.notice);
   const pctPassed = $derived(totalChecks > 0 ? Math.round((severityCounts.passed / totalChecks) * 100) : 0);
@@ -347,17 +350,19 @@
           </div>
           <div class="hero-score-label">Without manual checks</div>
         </div>
+        {#if !locked}
         <div class="hero-score-block">
           <ScoreDonut score={combinedScore} size={130} stroke={12} {threshold} label="" />
           <div class="hero-score-label">With manual checks · {manualChecked}/{manualTotal}</div>
         </div>
+        {/if}
       </div>
       <div>
         <span class="eyebrow" style="color: rgba(255,255,255,0.6);">
           <span class="dot" style="background: {passing ? '#8DFFB7' : '#FFB985'};"></span>
           {automatedLabel} &middot; scanned {auditedDate}
         </span>
-        <h1 class="hero-title">{primaryHost} &middot; {scoreAvailable ? `${scoreClamp} / ${combinedScore}` : 'n/a'}</h1>
+        <h1 class="hero-title">{primaryHost} &middot; {scoreAvailable ? `${scoreClamp}/100` : 'n/a'}</h1>
         <div class="hero-meta">
           <span><strong style="color: #FFB985;">{severityCounts.errors}</strong> errors</span>
           <span><strong style="color: #F3AAFF;">{severityCounts.warnings}</strong> warnings</span>
@@ -399,7 +404,12 @@
     {#if locked}
       <p class="locked-banner">
         Free 1-page snapshot — Overview is open. Other tabs are a blurred preview.
-        <a class="link" href="#lead-form">Talk to a WCAG expert</a> to get the full readable report.
+        <a class="link" href={signupHref}>Create an account</a>
+        or
+        <a class="link" href="/pricing">buy tokens</a>
+        for the full readable report.
+        <a class="link" href="#lead-form">Talk to a WCAG expert</a>
+        is optional.
       </p>
     {/if}
     <!-- Tabs + density switcher (only on Overview/Issues) -->
@@ -766,9 +776,13 @@
         <div class="tab-panel-veil-card">
           <p style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">This tab is a preview</p>
           <p class="muted" style="font-size: 14px; margin-bottom: 18px;">
-            Unlock the full issue list, fix guidance, and per-page breakdown.
+            Unlock the full issue list, fix guidance, and per-page breakdown with an account or tokens.
           </p>
-          <a class="btn btn-grad" href="#lead-form">Talk to a WCAG expert</a>
+          <div class="guest-cta-row">
+            <a class="btn btn-primary" href={signupHref}>Create an account</a>
+            <a class="btn btn-ghost" href="/pricing">Buy tokens</a>
+            <a class="btn btn-secondary" href="#lead-form">Talk to a WCAG expert</a>
+          </div>
         </div>
       </div>
     {/if}

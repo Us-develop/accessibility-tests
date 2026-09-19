@@ -245,7 +245,13 @@
   </div>
 
   <div class="loading-footer">
-    Audit ID: {domain} / {runId} &middot; You can safely close this tab.
+    {#if guestToken}
+      Free check in progress · Keep this tab until the snapshot link appears — closing it loses the URL.
+    {:else if domain && runId}
+      Audit ID: {domain} / {runId} &middot; You can safely close this tab.
+    {:else}
+      Free check in progress · Keep this tab until the snapshot link appears.
+    {/if}
   </div>
 </div>
 

@@ -40,7 +40,7 @@ export const prerender = false;
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
   </Fragment>
   <div class="app-shell">
-    <AppHeader />
+    <AppHeader crumb={ssrStaff ? 'New scan' : ssrCustomer ? 'Your scan' : 'Free check'} />
     <main id="main" class="app-main" tabindex="-1">
       <div class="container-narrow run-audit-page" style="position: relative; overflow: hidden; padding-block: clamp(32px, 5vw, 56px) clamp(48px, 8vw, 96px);">
         <div
@@ -113,7 +113,7 @@ export const prerender = false;
           <span class="eyebrow"><span class="dot"></span>Your account · Pro pages or tokens</span>
           <h1 class="run-hero-title">Scan pages into your account</h1>
             <p class="p-large muted" style="max-width: 620px;">
-            Signed-in scans use your complimentary token first (if unused), then Pro’s monthly page budget, then paid tokens. Each URL is one page-scan. Up to 50 URLs per run.
+            Signed-in scans use your one freebie scan first (if unused), then Pro’s monthly page budget, then paid tokens. Each URL is one page-scan. Up to 50 URLs per run.
           </p>
           <p id="customer-usage" class="muted" style="max-width: 620px; margin-top: 8px;"></p>
           <p class="muted" style="font-size: 13px; margin-top: 8px;">
@@ -169,9 +169,11 @@ export const prerender = false;
           ·
           <a href="/pricing" class="link">Pricing</a>
           ·
-          <a href="/audits" class="link">Your projects</a>
+          <a href="/account" class="link">Your projects</a>
         </p>
 
+        {ssrStaff ? (
+          <>
         <div class="fade-up staff-only" hidden={!ssrStaff} style="text-align: left; margin-bottom: 40px;">
           <span class="eyebrow"><span class="dot"></span>Automated WCAG 2.2 AA checks · EN 301 549 informed</span>
           <h1 class="run-hero-title">
@@ -308,6 +310,8 @@ export const prerender = false;
             </button>
           </div>
         </form>
+          </>
+        ) : null}
 
         <p id="form-err" class="muted" role="alert" hidden style="font-size: 14px; margin-top: 14px; color: var(--status-error);"></p>
 
@@ -315,11 +319,13 @@ export const prerender = false;
           <a href="/limitations" class="link">What this scan can and cannot test</a>
         </p>
 
+        {ssrStaff ? (
         <p class="muted staff-only" hidden={!ssrStaff} style="font-size: 12px; margin-top: 14px; text-align: center;">
           <a href="/audits" class="link">All domain audits</a>
           ·
           <a href="/admin/leads" class="link">Leads</a>
         </p>
+        ) : null}
       </div>
     </main>
   </div>
@@ -396,15 +402,25 @@ export const prerender = false;
     if (!errEl) return;
     errEl.replaceChildren();
     errEl.append(document.createTextNode(message || 'Request failed'));
-    if (ctas && (ctas.tokens || ctas.pro || ctas.services)) {
+    if (ctas && (ctas.tokens || ctas.pro || ctas.services || ctas.signin)) {
       errEl.append(document.createTextNode(' '));
       const links = [
+        ctas.signin ? ['Sign in', 'signin'] : null,
         ctas.tokens ? ['Buy tokens', ctas.tokens] : null,
         ctas.pro ? ['Subscribe to Pro', ctas.pro] : null,
-        ctas.services ? ['Request Us-diensten', ctas.services] : null,
+        ctas.services ? ['Talk to a WCAG expert', ctas.services] : null,
       ].filter(Boolean);
       links.forEach((pair, index) => {
         if (index) errEl.append(document.createTextNode(' · '));
+        if (pair[1] === 'signin') {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'linklike';
+          btn.textContent = pair[0];
+          btn.addEventListener('click', () => document.dispatchEvent(new CustomEvent('wcag:open-login')));
+          errEl.append(btn);
+          return;
+        }
         const a = document.createElement('a');
         a.className = 'link';
         a.href = pair[1];
@@ -617,6 +633,10 @@ export const prerender = false;
   }
 
   async function submitGuestForm(form) {
+    if (form.dataset.freebieUsed === '1') {
+      window.location.href = '/pricing';
+      return;
+    }
     clearFormError();
     const url = String(new FormData(form).get('url') || '').trim();
     const fd = new FormData();
@@ -638,7 +658,12 @@ export const prerender = false;
       });
       const data = await parseJsonResponse(res);
       if (!res.ok) {
-        showFormError(data.error || res.statusText || 'Request failed', data.ctas, 'guest-url');
+        const ctas = { ...(data.ctas || {}), signin: true };
+        showFormError(data.error || res.statusText || 'Request failed', ctas, 'guest-url');
+        if (res.status === 429) {
+          if (btn) btn.textContent = 'See pricing';
+          form.dataset.freebieUsed = '1';
+        }
         if (window.turnstile && turnstileWidgetId != null) window.turnstile.reset(turnstileWidgetId);
         return;
       }
