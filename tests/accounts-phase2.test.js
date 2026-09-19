@@ -82,6 +82,12 @@ describe('passwords', () => {
     assert.equal(isStrongPassword('longenough1'), true);
   });
 
+  it('rejects a password that equals the email', () => {
+    assert.equal(isStrongPassword('user@example.com', 'user@example.com'), false);
+    assert.equal(isStrongPassword('User@Example.com', 'user@example.com'), false);
+    assert.equal(isStrongPassword('longenough1', 'user@example.com'), true);
+  });
+
   it('hashes and verifies', async () => {
     const stored = await hashPassword('longenough1');
     assert.equal(await verifyPassword('longenough1', stored), true);

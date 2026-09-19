@@ -20,14 +20,29 @@ function parseBooleanEnv(name, defaultValue = false, env = process.env) {
   return defaultValue;
 }
 
+function databaseHostIsLocal(connectionString) {
+  try {
+    const normalized = String(connectionString).replace(/^postgres(ql)?:/i, 'http:');
+    const host = new URL(normalized).hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Pool options for `pg`. Returns null when DATABASE_URL is unset.
+ * Non-localhost hosts default to SSL unless DATABASE_SSL=false.
  * @param {NodeJS.ProcessEnv} [env]
  */
 export function buildDbPoolConfig(env = process.env) {
   const connectionString = String(env.DATABASE_URL || '').trim();
   if (!connectionString) return null;
-  const sslOn = parseBooleanEnv('DATABASE_SSL', false, env);
+  const sslExplicit = env.DATABASE_SSL;
+  const sslOn =
+    sslExplicit == null || String(sslExplicit).trim() === ''
+      ? !databaseHostIsLocal(connectionString)
+      : parseBooleanEnv('DATABASE_SSL', false, env);
   const caPath = String(env.DATABASE_CA || '').trim();
   return {
     connectionString,

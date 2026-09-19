@@ -130,6 +130,15 @@ describe('db pool options', () => {
     assert.equal(plain.statement_timeout, 30000);
     assert.equal(plain.ssl, undefined);
 
+    const remoteDefault = buildDbPoolConfig({ DATABASE_URL: 'postgres://wcag@db.example.com/wcag' });
+    assert.equal(remoteDefault.ssl.rejectUnauthorized, true);
+
+    const remoteOff = buildDbPoolConfig({
+      DATABASE_URL: 'postgres://wcag@db.example.com/wcag',
+      DATABASE_SSL: 'false',
+    });
+    assert.equal(remoteOff.ssl, undefined);
+
     const caFile = join(tmp, 'db-ca.pem');
     writeFileSync(caFile, '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n');
     const ssl = buildDbPoolConfig({

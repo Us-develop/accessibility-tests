@@ -520,6 +520,11 @@ export function createAccessibilityApp(repoRoot, options = {}) {
   assertProductionPublicBaseUrl();
   assertProductionFtpSecure();
   warnStripeTaxCodeIfUnset();
+  if (process.env.NODE_ENV === 'production' && String(process.env.WCAG_DISABLE_RATE_LIMIT || '').trim() === '1') {
+    console.warn(
+      '[rate-limit] WCAG_DISABLE_RATE_LIMIT is set in production; in-process limits are off and reset on restart.'
+    );
+  }
   const sameSiteRaw = String(process.env.AUTH_COOKIE_SAMESITE || 'Lax').trim();
   AUTH_COOKIE_SAMESITE = ['Lax', 'Strict', 'None'].includes(sameSiteRaw) ? sameSiteRaw : 'Lax';
   const loadingPath = '/loading';
@@ -545,7 +550,7 @@ export function createAccessibilityApp(repoRoot, options = {}) {
     keyFn: (req) => String(req.body?.username || req.body?.email || '').trim().toLowerCase() || 'anon',
     countFailures: true,
   });
-  const leadIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyFn: clientKey });
+  const leadIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyFn: clientKey });
 
   function launchScanProcess(job) {
     const {
