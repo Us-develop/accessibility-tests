@@ -17,7 +17,7 @@ import {
   normalizeCustomerType,
 } from './users.mjs';
 import { attachRunToUser, listProjectsForUser } from './projects.mjs';
-import { clearSessionCookies, isHtmlFormPost, parseCookies, setSessionCookies } from './session.mjs';
+import { clearSessionCookies, cookieFlags, isHtmlFormPost, parseCookies, setSessionCookies } from './session.mjs';
 import { isValidGuestToken, guestFreebieClaimed, clientIp, deleteGuestTokenFile } from './guest.mjs';
 import { sendAccountEmail } from '../server-email.js';
 import { asyncHandler } from './http-utils.mjs';
@@ -65,7 +65,10 @@ function sameSiteFromEnv() {
 }
 
 function guestCookie(res, guestToken) {
-  res.append('Set-Cookie', `wcag_guest=${guestToken}; Path=/; Max-Age=1209600; SameSite=Lax`);
+  res.append(
+    'Set-Cookie',
+    `wcag_guest=${guestToken}${cookieFlags({ httpOnly: true, maxAge: 1209600, sameSite: sameSiteFromEnv() })}`
+  );
 }
 
 function cookieOpts() {

@@ -343,12 +343,9 @@ describe('account HTTP', () => {
     assert.equal(freebie.amountCents, 0);
   });
 
-  it('exposes db health without a session', async () => {
+  it('hides db health from guests', async () => {
     const res = await fetch(`${origin}/api/health/db`);
-    const data = await res.json();
-    assert.equal(res.status, 200);
-    assert.equal(data.ok, true);
-    assert.ok(data.db === 'disabled' || data.db === 'up');
+    assert.equal(res.status, 401);
   });
 
   it('assigns no paid plan and lets the customer edit details', async () => {

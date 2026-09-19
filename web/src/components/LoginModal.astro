@@ -382,7 +382,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     if (document.documentElement.classList.contains('wcag-staff')) {
       closeModal();
       unlockAppShell(true);
-      const customer = typeof document.cookie === 'string' && /(^|; )wcag_ui=c(;|$)/.test(document.cookie);
+      const customer = document.body.classList.contains('is-customer');
       document.body.classList.toggle('is-staff', !customer);
       document.body.classList.toggle('is-customer', customer);
     } else if (!guestOk()) {

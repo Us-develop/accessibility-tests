@@ -9,6 +9,7 @@ import { REPORTS_BASE } from './paths.js';
 import { readJsonStore, writeJsonStore } from './json-store.mjs';
 import { commercialCtas } from './plan-catalog.mjs';
 import { pruneLeadPrivacyConsents } from './consents.mjs';
+import { cookieFlags } from './session.mjs';
 
 export { assertPublicHttpUrl } from './url-guard.mjs';
 
@@ -100,7 +101,12 @@ export function markGuestFreeScan(req, res) {
   used[key] = new Date().toISOString();
   writeJsonStore('guest-freebies.json', { used });
   if (res && typeof res.append === 'function') {
-    res.append('Set-Cookie', 'wcag_freebie=1; Path=/; Max-Age=31536000; SameSite=Lax');
+    const sameSiteRaw = String(process.env.AUTH_COOKIE_SAMESITE || 'Lax').trim();
+    const sameSite = ['Lax', 'Strict', 'None'].includes(sameSiteRaw) ? sameSiteRaw : 'Lax';
+    res.append(
+      'Set-Cookie',
+      `wcag_freebie=1${cookieFlags({ httpOnly: true, maxAge: 31536000, sameSite })}`
+    );
   }
 }
 
@@ -436,7 +442,15 @@ export function turnstileSendIp() {
  */
 export async function verifyTurnstileIfConfigured(token, ip) {
   const secret = String(process.env.TURNSTILE_SECRET_KEY || '').trim();
-  if (!secret) return;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      const err = new Error('Guest scans are temporarily unavailable.');
+      err.status = 503;
+      err.code = 'captcha_unavailable';
+      throw err;
+    }
+    return;
+  }
   const response = String(token || '').trim();
   if (!response) {
     const err = new Error('Complete the captcha and try again.');

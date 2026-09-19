@@ -79,6 +79,21 @@ class CookieJar {
   }
 }
 
+async function guestCsrfHeaders(origin, extra = {}) {
+  const jar = new CookieJar();
+  const probe = await fetch(`${origin}/api/config`);
+  jar.store(probe.headers);
+  return {
+    jar,
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: jar.header(),
+      'X-CSRF-Token': jar.get('wcag_csrf'),
+      ...extra,
+    },
+  };
+}
+
 function listen(app) {
   return new Promise((resolve) => {
     const server = http.createServer(app);
@@ -488,9 +503,10 @@ describe('stripe HTTP', () => {
     });
     await grantTokenPack({ userId: user.id, packId: 'pack_10', tokens: 10 });
     const before = (await getTokenBalance(user.id)).tokens;
+    const { headers } = await guestCsrfHeaders(origin, { 'X-Forwarded-For': '203.0.113.10' });
     const run = await fetch(`${origin}/api/run`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '203.0.113.10' },
+      headers,
       body: JSON.stringify({ url: 'https://example.com' }),
     });
     const body = await run.json();
@@ -500,7 +516,7 @@ describe('stripe HTTP', () => {
 
     const second = await fetch(`${origin}/api/run`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '203.0.113.10' },
+      headers,
       body: JSON.stringify({ url: 'https://example.com' }),
     });
     const secondBody = await second.json();

@@ -57,6 +57,7 @@ import { buildTeaserPayload } from './teaser-payload.mjs';
 import {
   clearSessionCookies,
   csrfOk,
+  ensureCsrfCookie,
   isHtmlFormPost,
   readAccessFromCookies,
   sessionSecret,
@@ -212,7 +213,6 @@ const PUBLIC_GET_PATHS = new Set([
   '/teaser',
   '/api/config',
   '/api/billing/config',
-  '/api/health/db',
   '/robots.txt',
   '/sitemap.xml',
   '/favicon.ico',
@@ -508,6 +508,9 @@ export function createAccessibilityApp(repoRoot, options = {}) {
   AUTH_ENABLED = parseBooleanEnv('AUTH_ENABLED', true);
   APP_USERNAME = String(process.env.APP_USERNAME || '').trim();
   APP_PASSWORD = String(process.env.APP_PASSWORD || '').trim();
+  if (process.env.NODE_ENV === 'production' && !AUTH_ENABLED) {
+    throw new Error('AUTH_ENABLED must be true in production');
+  }
   if (AUTH_ENABLED && (!APP_PASSWORD || APP_PASSWORD.length < 12)) {
     throw new Error('APP_PASSWORD (>=12 chars) is required when AUTH_ENABLED=true');
   }
@@ -528,6 +531,12 @@ export function createAccessibilityApp(repoRoot, options = {}) {
   patchAppAsyncHandlers(app);
   app.use(requestIdMiddleware);
   app.use(securityHeadersMiddleware);
+  app.use((req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      ensureCsrfCookie(req, res, AUTH_COOKIE_SAMESITE);
+    }
+    next();
+  });
 
   const loginIpLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyFn: clientKey, countFailures: true });
   const loginUserLimit = rateLimit({
@@ -1328,6 +1337,9 @@ app.use(async (req, res, next) => {
 
   if (isGuestOpenPath(req)) {
     req.access = { role: 'guest' };
+    if (!csrfOk(req) && req.path.startsWith('/api/')) {
+      return res.status(403).json({ error: 'Missing or invalid CSRF token.' });
+    }
     return next();
   }
 
@@ -1882,15 +1894,15 @@ app.get('/api/admin/leads', async (req, res) => {
   }
 });
 
-app.get('/api/health/db', async (req, res) => {
+app.get('/api/health/db', requireStaff, async (req, res) => {
   if (!dbPool) {
-    return res.json({ ok: true, db: 'disabled', message: 'DATABASE_URL not configured' });
+    return res.json({ ok: true, db: 'disabled' });
   }
   try {
     await dbPool.query('SELECT 1');
     return res.json({ ok: true, db: 'up' });
-  } catch (err) {
-    return res.status(503).json({ ok: false, db: 'down', error: err.message });
+  } catch {
+    return res.status(503).json({ ok: false, db: 'down' });
   }
 });
 

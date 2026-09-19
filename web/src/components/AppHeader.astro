@@ -40,8 +40,8 @@ function stepHref(stepKey: Step['key']): string | null {
 }
 
 const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
-const uiHint = Astro.cookies.get('wcag_ui')?.value;
-const sessionHint = uiHint === '1' || uiHint === 'c';
+const access = Astro.locals?.access;
+const sessionHint = access?.role === 'staff' || access?.role === 'customer';
 ---
 
 <header class="app-header" data-screen-label="App header">

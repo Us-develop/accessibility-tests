@@ -38,7 +38,7 @@ export const prerender = false;
               </tr>
               <tr>
                 <td><code>wcag_ui</code></td>
-                <td>Non-HttpOnly hint so the layout can skip the login overlay (<code>1</code> staff, <code>c</code> customer).</td>
+                <td>Non-HttpOnly hint for signed-in chrome. Authorization uses the signed <code>wcag_sid</code> session, not this cookie.</td>
                 <td>12 hours</td>
                 <td>Path=/; SameSite as the session; Secure in production; not HttpOnly</td>
               </tr>
@@ -48,15 +48,17 @@ export const prerender = false;
                 <td>48 hours</td>
                 <td>HttpOnly; Path=/; SameSite as the session; Secure in production</td>
               </tr>
+              <tr>
+                <td><code>wcag_guest</code></td>
                 <td>Guest snapshot token so a later signup can attach that scan.</td>
                 <td>14 days</td>
-                <td>Path=/; SameSite=Lax; not HttpOnly</td>
+                <td>HttpOnly; Path=/; SameSite as the session; Secure in production</td>
               </tr>
               <tr>
                 <td><code>wcag_freebie</code></td>
                 <td>Marks that this browser already used the one free snapshot.</td>
                 <td>1 year</td>
-                <td>Path=/; SameSite=Lax; not HttpOnly</td>
+                <td>HttpOnly; Path=/; SameSite as the session; Secure in production</td>
               </tr>
             </tbody>
           </table>

@@ -175,6 +175,14 @@ const pack100Label = formatVatInclusivePrice(8000);
     }
   }
 
+  function escapeHtml(s) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   function fillForm(form, user) {
     if (!form || !user) return;
     for (const el of form.elements) {
@@ -288,7 +296,7 @@ const pack100Label = formatVatInclusivePrice(8000);
         list.innerHTML = `<h2>Projects</h2>${projects
           .map((p) => {
             const href = `/report/${encodeURIComponent(p.domain)}/history`;
-            return `<p><a class="link" href="${href}">${p.domain}</a> · ${p.runIds?.length || 0} run(s)</p>`;
+            return `<p><a class="link" href="${href}">${escapeHtml(p.domain)}</a> · ${escapeHtml(String(p.runIds?.length || 0))} run(s)</p>`;
           })
           .join('')}`;
       }
@@ -310,11 +318,11 @@ const pack100Label = formatVatInclusivePrice(8000);
             const date = row.scan_date ? new Date(row.scan_date).toLocaleString() : '—';
             const score = row.score == null ? '—' : String(row.score);
             return `<tr>
-              <td><a class="link" href="${href}">${row.project_domain}</a></td>
-              <td>${date}</td>
-              <td>${row.pages_scanned ?? '—'}</td>
-              <td>${score}</td>
-              <td>${row.status || '—'}</td>
+              <td><a class="link" href="${href}">${escapeHtml(row.project_domain)}</a></td>
+              <td>${escapeHtml(date)}</td>
+              <td>${escapeHtml(row.pages_scanned ?? '—')}</td>
+              <td>${escapeHtml(score)}</td>
+              <td>${escapeHtml(row.status || '—')}</td>
             </tr>`;
           })
           .join('');
@@ -340,10 +348,10 @@ const pack100Label = formatVatInclusivePrice(8000);
               const date = row.createdAt ? new Date(row.createdAt).toLocaleDateString() : '—';
               const freebie = row.status === 'freebie';
               return `<tr>
-                <td>${date}</td>
-                <td>${row.description || '—'}</td>
-                <td>${freebie ? 'Free' : formatMoney(row.amountCents, row.currency)}</td>
-                <td>${freebie ? 'Freebie' : row.status || '—'}</td>
+                <td>${escapeHtml(date)}</td>
+                <td>${escapeHtml(row.description || '—')}</td>
+                <td>${escapeHtml(freebie ? 'Free' : formatMoney(row.amountCents, row.currency))}</td>
+                <td>${escapeHtml(freebie ? 'Freebie' : row.status || '—')}</td>
               </tr>`;
             })
             .join('');
