@@ -1077,7 +1077,14 @@ async function loadResultJson(domain, runId) {
 app.get('/login', (req, res) => {
   if (!AUTH_ENABLED) return res.redirect('/');
   const nextPath = customerLoginNext(typeof req.query.next === 'string' ? req.query.next : '');
-  return res.status(200).send(loginPageHtml(nextPath, '', 'customer'));
+  const reason = String(req.query.signin || '');
+  const error =
+    reason === 'unverified'
+      ? UNVERIFIED_EMAIL_ERROR
+      : reason === 'failed'
+        ? GENERIC_CREDENTIALS_ERROR
+        : '';
+  return res.status(200).send(loginPageHtml(nextPath, error, 'customer'));
 });
 
 app.get('/auth/staff', (req, res) => {

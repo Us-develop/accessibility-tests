@@ -98,6 +98,13 @@ describe('customer login HTTP', () => {
     assert.match(loopHtml, /name="next" value="\/account"/);
   });
 
+  it('renders the unverified message when signin=unverified', async () => {
+    const res = await fetch(`${origin}/login?signin=unverified`);
+    const html = await res.text();
+    assert.match(html, /Verify your email before signing in/);
+    assert.match(html, /href="\/verify"/);
+  });
+
   it('keeps a staff-only page at /auth/staff', async () => {
     const res = await fetch(`${origin}/auth/staff`);
     assert.equal(res.status, 200);
