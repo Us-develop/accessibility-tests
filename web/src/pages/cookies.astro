@@ -43,7 +43,11 @@ export const prerender = false;
                 <td>Path=/; SameSite as the session; Secure in production; not HttpOnly</td>
               </tr>
               <tr>
-                <td><code>wcag_guest</code></td>
+                <td><code>wcag_next</code></td>
+                <td>Remembers where to send you after email verification (for example back to pricing).</td>
+                <td>48 hours</td>
+                <td>HttpOnly; Path=/; SameSite as the session; Secure in production</td>
+              </tr>
                 <td>Guest snapshot token so a later signup can attach that scan.</td>
                 <td>14 days</td>
                 <td>Path=/; SameSite=Lax; not HttpOnly</td>
