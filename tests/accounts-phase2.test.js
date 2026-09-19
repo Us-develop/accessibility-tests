@@ -674,7 +674,7 @@ describe('account HTTP', () => {
     });
     assert.equal(res.status, 303);
     const loc = res.headers.get('location') || '';
-    assert.equal(loc, '/?signin=failed');
+    assert.equal(loc, '/login?signin=failed');
     assert.doesNotMatch(loc, /password/i);
     assert.doesNotMatch(loc, /username=/i);
   });

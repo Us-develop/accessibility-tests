@@ -81,7 +81,7 @@
         if (res.status === 401) {
           errorMsg = 'Session expired — sign in again.';
           const next = typeof window !== 'undefined' ? window.location.href : '';
-          window.location.href = wcUrl('/auth/login') + '?next=' + encodeURIComponent(next || '/loading');
+          window.location.href = wcUrl('/login') + '?next=' + encodeURIComponent(next || '/loading');
         }
         return;
       }

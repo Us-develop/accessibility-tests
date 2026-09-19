@@ -84,7 +84,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
             Close
           </button>
           <h2 id="wcag-login-title" class="wcag-login-title">Sign in</h2>
-          <p class="wcag-login-lead">Customers use email. Us staff use the agency username.</p>
+          <p class="wcag-login-lead">Sign in with the email you used to create your account.</p>
           <p id="wcag-login-err" class="wcag-login-err" role="alert" hidden></p>
           <form
             id="wcag-login-form"
@@ -94,13 +94,14 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
             autocomplete="on"
             data-astro-reload
           >
-            <label class="wcag-login-label" for="wcag-login-user">Email or staff username</label>
+            <input type="hidden" name="next" id="wcag-login-next" value="" />
+            <label class="wcag-login-label" for="wcag-login-user">Email</label>
             <input
               class="wcag-login-input"
               id="wcag-login-user"
               name="username"
-              type="text"
-              autocomplete="username"
+              type="email"
+              autocomplete="email"
               required
             />
             <label class="wcag-login-label" for="wcag-login-pass">Password</label>
@@ -115,9 +116,14 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
             <button type="submit" class="wcag-login-submit">Continue</button>
           </form>
           <p class="wcag-login-footer-request">
+            <a class="wcag-login-linklike" href="/">Home</a>
+            ·
             <a class="wcag-login-linklike" href="/signup">Create an account</a>
             ·
             <a class="wcag-login-linklike" href="/forgot">Forgot password</a>
+          </p>
+          <p class="wcag-login-footer-request">
+            <a class="wcag-login-linklike" href="/auth/staff">Us staff</a>
           </p>
           <p class="wcag-login-footer-request">
             <button type="button" class="wcag-login-linklike" id="wcag-flip-to-request">
@@ -384,6 +390,31 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     }
   }
 
+  function fillLoginNextField() {
+    const input = qs('wcag-login-next');
+    if (!input) return;
+    try {
+      const next = new URLSearchParams(window.location.search).get('next') || '';
+      if (next.startsWith('/') && !next.startsWith('//') && next !== '/login') {
+        input.value = next;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function showUnverifiedLoginError(errEl) {
+    if (!errEl) return;
+    errEl.replaceChildren();
+    errEl.appendChild(document.createTextNode('Verify your email before signing in. '));
+    const link = document.createElement('a');
+    link.href = '/verify';
+    link.className = 'wcag-login-linklike';
+    link.textContent = 'Open the verification page';
+    errEl.appendChild(link);
+    errEl.hidden = false;
+  }
+
   function showSigninQueryError() {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -391,11 +422,12 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       if (!reason) return;
       const errEl = qs('wcag-login-err');
       if (errEl) {
-        errEl.textContent =
-          reason === 'unverified'
-            ? 'Verify your email before signing in.'
-            : 'Invalid email or password.';
-        errEl.hidden = false;
+        if (reason === 'unverified') {
+          showUnverifiedLoginError(errEl);
+        } else {
+          errEl.textContent = 'Invalid email or password.';
+          errEl.hidden = false;
+        }
       }
       openModal();
       params.delete('signin');
@@ -408,6 +440,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
 
   function onPageReady() {
     applyStaffShellHint();
+    fillLoginNextField();
     showSigninQueryError();
     if (globalThis.__wcagAuthGateTimer) clearTimeout(globalThis.__wcagAuthGateTimer);
     globalThis.__wcagAuthGateTimer = setTimeout(() => {
@@ -442,14 +475,22 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          username,
+          password,
+          next: String(fd.get('next') || ''),
+        }),
         credentials: creds,
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (errEl) {
-          errEl.textContent = data.error || 'Sign-in failed.';
-          errEl.hidden = false;
+          if (data.code === 'unverified' || (res.status === 403 && /verify your email/i.test(String(data.error || '')))) {
+            showUnverifiedLoginError(errEl);
+          } else {
+            errEl.textContent = data.error || 'Sign-in failed.';
+            errEl.hidden = false;
+          }
         }
         return;
       }
@@ -461,6 +502,11 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       document.documentElement.classList.add('wcag-staff');
       try { sessionStorage.setItem('wcagStaff', '1'); } catch {}
       document.dispatchEvent(new CustomEvent('wcag:logged-in', { detail: { role } }));
+      const nextRaw = String(data.next || fd.get('next') || '').trim();
+      if (nextRaw.startsWith('/') && !nextRaw.startsWith('//') && nextRaw !== '/login') {
+        window.location.assign(nextRaw);
+        return;
+      }
       if (guestOk()) {
         window.location.reload();
       }

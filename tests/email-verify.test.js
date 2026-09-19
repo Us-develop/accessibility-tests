@@ -17,7 +17,9 @@ process.env.AUTH_EMAIL_VERIFY = 'required';
 process.env.DEFER_ROOT_LOGIN_TO_SHELL = 'true';
 
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
-const { getUserByEmail } = await import('../server/users.mjs');
+const { getUserByEmail, GENERIC_CREDENTIALS_ERROR, UNVERIFIED_EMAIL_CODE, UNVERIFIED_EMAIL_ERROR } = await import(
+  '../server/users.mjs'
+);
 const { setUrlGuardLookup } = await import('../server/url-guard.mjs');
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -185,6 +187,10 @@ describe('email verification', () => {
       body: JSON.stringify({ username: 'unverified-login@example.com', password: 'longenough1' }),
     });
     assert.equal(login.status, 403);
+    const loginBody = await login.json();
+    assert.equal(loginBody.code, UNVERIFIED_EMAIL_CODE);
+    assert.equal(loginBody.error, UNVERIFIED_EMAIL_ERROR);
+    assert.notEqual(loginBody.error, GENERIC_CREDENTIALS_ERROR);
   });
 
   it('closes the test server', async () => {
