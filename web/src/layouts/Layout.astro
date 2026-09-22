@@ -159,6 +159,9 @@ function ownerWeight(filename: string): string {
   </head>
   <body data-wcag-auth={authMode} class={signedRole === 'staff' ? 'is-staff' : signedRole === 'customer' ? 'is-customer' : undefined}>
     <a class="skip-link" href="#main">Skip to main content</a>
+    <div id="wcag-staff-banner" class="wcag-staff-banner" role="status">
+      You are logged in as staff
+    </div>
     <div
       id="wcag-main"
       class="wcag-main-shell"
@@ -244,6 +247,7 @@ function ownerWeight(filename: string): string {
       @media print {
         .app-header,
         .wcag-session-bar,
+        .wcag-staff-banner,
         .wcag-login-overlay {
           display: none !important;
         }
