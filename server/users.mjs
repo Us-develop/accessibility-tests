@@ -29,6 +29,8 @@ import { deleteProjectsForUser, deleteRunDirectory, listRunRefsForUser } from '.
 import { ensureFreebieLot } from './tokens.mjs';
 
 export const GENERIC_CREDENTIALS_ERROR = 'Invalid username or password.';
+export const UNVERIFIED_EMAIL_ERROR = 'Verify your email before signing in.';
+export const UNVERIFIED_EMAIL_CODE = 'unverified';
 export const SIGNUP_EMAIL_TAKEN_ERROR =
   'An account with this email already exists. Log in, or use a different email.';
 

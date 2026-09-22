@@ -63,7 +63,14 @@ import {
   setSessionCookies,
   staffSessionVersion,
 } from './session.mjs';
-import { authenticateUser, getUserById, GENERIC_CREDENTIALS_ERROR } from './users.mjs';
+import {
+  authenticateUser,
+  getUserById,
+  GENERIC_CREDENTIALS_ERROR,
+  UNVERIFIED_EMAIL_CODE,
+  UNVERIFIED_EMAIL_ERROR,
+} from './users.mjs';
+import { customerLoginNext, safeNextAfterLogin } from './login-redirect.mjs';
 import { attachRunToUser, canAccessDomain, canAccessRun, findProjectByDomain, listProjectsForUser, parseTenantPath } from './projects.mjs';
 import { registerAccountRoutes } from './account-routes.mjs';
 import { registerStripeRoutes, registerStripeWebhook } from './stripe-routes.mjs';
@@ -198,6 +205,7 @@ const PUBLIC_GET_PATHS = new Set([
   '/legal/subprocessors',
   '/accessibility',
   '/signup',
+  '/login',
   '/verify',
   '/forgot',
   '/reset',
@@ -834,24 +842,6 @@ registerStripeWebhook(app);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-/** Safe post-login redirect: relative path, or absolute URL matching ALLOWED_ORIGIN. */
-function safeNextAfterLogin(raw) {
-  if (typeof raw !== 'string') return '/';
-  const t = raw.trim();
-  if (!t) return '/';
-  if (t.startsWith('/') && !t.startsWith('//')) return t.slice(0, 2048);
-  const uiOrigin = String(process.env.ALLOWED_ORIGIN || '').trim();
-  if (!uiOrigin || uiOrigin === '*') return '/';
-  try {
-    const allowed = new URL(uiOrigin).origin;
-    const u = new URL(t);
-    if (u.origin === allowed) return t.slice(0, 2048);
-  } catch {
-    /* ignore */
-  }
-  return '/';
-}
-
 function digest(value) {
   return createHash('sha256').update(String(value ?? '')).digest();
 }
@@ -870,8 +860,9 @@ function clearAuthCookie(res) {
   clearSessionCookies(res, AUTH_COOKIE_SAMESITE);
 }
 
-function loginPageHtml(nextPath = '', errorMessage = '') {
-  const safeNext = String(nextPath || '/')
+function loginPageHtml(nextPath = '', errorMessage = '', variant = 'staff') {
+  const isCustomer = variant === 'customer';
+  const safeNext = String(nextPath || (isCustomer ? '/account' : '/'))
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;');
   const esc =
@@ -881,14 +872,29 @@ function loginPageHtml(nextPath = '', errorMessage = '') {
           .replace(/</g, '&lt;')
           .replace(/"/g, '&quot;')
       : '';
-  const safeError = esc ? `<p class="login-error" role="alert">${esc}</p>` : '';
+  const verifyHint =
+    isCustomer && errorMessage === UNVERIFIED_EMAIL_ERROR
+      ? ' <a href="/verify">Open the verification page</a>.'
+      : '';
+  const safeError = esc ? `<p class="login-error" role="alert">${esc}${verifyHint}</p>` : '';
+  const action = isCustomer ? '/api/auth/login' : '/auth/staff';
+  const pageTitle = isCustomer ? 'Sign in · Us' : 'Sign in · Accessibility reports';
+  const lead = isCustomer
+    ? 'Sign in with the email you used to create your account.'
+    : 'Enter your username and password to access reports and APIs.';
+  const userLabel = isCustomer ? 'Email' : 'Username';
+  const userType = isCustomer ? 'email' : 'text';
+  const extra = isCustomer
+    ? `<p class="login-links"><a href="/">Home</a> · <a href="/signup">Create an account</a> · <a href="/forgot">Forgot password</a></p>
+      <p class="login-links"><a href="/auth/staff">Us staff</a></p>`
+    : `<p class="login-links"><a href="/login">Customer sign-in</a></p>`;
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
-  <title>Sign in · Accessibility reports</title>
+  <title>${pageTitle}</title>
   <link rel="stylesheet" href="/styles/tokens.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; }
@@ -961,6 +967,16 @@ function loginPageHtml(nextPath = '', errorMessage = '') {
       color: #872012;
       font-size: 0.9rem;
     }
+    .login-error a { color: inherit; }
+    .login-links {
+      margin: 16px 0 0;
+      text-align: center;
+      font-size: 0.9rem;
+    }
+    .login-links a {
+      color: #6257E8;
+      text-underline-offset: 3px;
+    }
     label {
       display: block;
       margin: 14px 0 6px;
@@ -986,7 +1002,7 @@ function loginPageHtml(nextPath = '', errorMessage = '') {
       outline-offset: 2px;
       border-color: transparent;
     }
-    button {
+    button[type="submit"] {
       margin-top: 22px;
       width: 100%;
       padding: 12px 16px;
@@ -1000,7 +1016,7 @@ function loginPageHtml(nextPath = '', errorMessage = '') {
       background: linear-gradient(135deg, #19191B 0%, #423A75 100%);
       box-shadow: 0 4px 16px rgba(25,25,27,0.2);
     }
-    button:hover {
+    button[type="submit"]:hover {
       filter: brightness(1.06);
     }
   </style>
@@ -1008,20 +1024,40 @@ function loginPageHtml(nextPath = '', errorMessage = '') {
 <body>
   <div class="login-scene">
     <div class="login-backdrop" aria-hidden="true"></div>
-    <form class="glass-panel" method="post" action="/auth/login" aria-labelledby="login-title">
+    <form class="glass-panel" method="post" action="${action}" aria-labelledby="login-title">
       <h1 id="login-title">Sign in</h1>
-      <p class="lead">Enter your username and password to access reports and APIs.</p>
+      <p class="lead">${lead}</p>
       ${safeError}
       <input type="hidden" name="next" value="${safeNext}" />
-      <label for="username">Username</label>
-      <input id="username" name="username" type="text" autocomplete="username" required autofocus />
+      <label for="username">${userLabel}</label>
+      <input id="username" name="username" type="${userType}" autocomplete="${isCustomer ? 'email' : 'username'}" required autofocus />
       <label for="password">Password</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required />
       <button type="submit">Continue</button>
+      ${extra}
     </form>
   </div>
 </body>
 </html>`;
+}
+
+function staffLoginFailureHtml(nextPath, user) {
+  if (user && !user.emailVerified) {
+    return loginPageHtml(nextPath, UNVERIFIED_EMAIL_ERROR, 'staff');
+  }
+  return loginPageHtml(nextPath, GENERIC_CREDENTIALS_ERROR, 'staff');
+}
+
+function loginFailureRedirect(user, nextPath) {
+  const reason = user && !user.emailVerified ? 'unverified' : 'failed';
+  const safe = customerLoginNext(nextPath);
+  const nextQs = safe && safe !== '/account' ? `&next=${encodeURIComponent(safe)}` : '';
+  return `/login?signin=${reason}${nextQs}`;
+}
+
+function loginSuccessPath(req, fallback) {
+  const requested = typeof req.body?.next === 'string' ? req.body.next : '';
+  return safeNextAfterLogin(requested, fallback);
 }
 
 registerSeoRoutes(app);
@@ -1038,15 +1074,35 @@ async function loadResultJson(domain, runId) {
   return readJsonIfExists(join(runDirOf(domain, runId), 'accessibility-results.json'));
 }
 
-app.get('/auth/login', (req, res) => {
+app.get('/login', (req, res) => {
   if (!AUTH_ENABLED) return res.redirect('/');
-  const nextPath = safeNextAfterLogin(typeof req.query.next === 'string' ? req.query.next : '/');
-  return res.status(200).send(loginPageHtml(nextPath));
+  const nextPath = customerLoginNext(typeof req.query.next === 'string' ? req.query.next : '');
+  const reason = String(req.query.signin || '');
+  const error =
+    reason === 'unverified'
+      ? UNVERIFIED_EMAIL_ERROR
+      : reason === 'failed'
+        ? GENERIC_CREDENTIALS_ERROR
+        : '';
+  return res.status(200).send(loginPageHtml(nextPath, error, 'customer'));
 });
 
-app.post('/auth/login', loginIpLimit, loginUserLimit, async (req, res) => {
+app.get('/auth/staff', (req, res) => {
   if (!AUTH_ENABLED) return res.redirect('/');
-  const nextPath = safeNextAfterLogin(typeof req.body?.next === 'string' ? req.body.next : '/');
+  const nextPath = safeNextAfterLogin(typeof req.query.next === 'string' ? req.query.next : '/', '/');
+  return res.status(200).send(loginPageHtml(nextPath, '', 'staff'));
+});
+
+app.get('/auth/login', (req, res) => {
+  if (!AUTH_ENABLED) return res.redirect('/');
+  const nextPath = safeNextAfterLogin(typeof req.query.next === 'string' ? req.query.next : '/', '/');
+  const qs = nextPath && nextPath !== '/' ? `?next=${encodeURIComponent(nextPath)}` : '';
+  return res.redirect(302, `/auth/staff${qs}`);
+});
+
+async function handleStaffLoginPost(req, res) {
+  if (!AUTH_ENABLED) return res.redirect('/');
+  const nextPath = safeNextAfterLogin(typeof req.body?.next === 'string' ? req.body.next : '/', '/');
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '');
   if (credentialsValid(username, password)) {
@@ -1056,7 +1112,7 @@ app.post('/auth/login', loginIpLimit, loginUserLimit, async (req, res) => {
   const user = await authenticateUser(username, password);
   if (!user || !user.emailVerified) {
     if (typeof req.recordRateLimitFailure === 'function') req.recordRateLimitFailure();
-    return res.status(401).send(loginPageHtml(nextPath, GENERIC_CREDENTIALS_ERROR));
+    return res.status(user && !user.emailVerified ? 403 : 401).send(staffLoginFailureHtml(nextPath, user));
   }
   setAuthCookie(res, {
     userId: user.id,
@@ -1064,8 +1120,11 @@ app.post('/auth/login', loginIpLimit, loginUserLimit, async (req, res) => {
     email: user.email,
     ver: user.sessionVersion || 1,
   });
-  return res.redirect(nextPath);
-});
+  return res.redirect(loginSuccessPath(req, user.role === 'staff' ? '/' : '/account'));
+}
+
+app.post('/auth/staff', loginIpLimit, loginUserLimit, handleStaffLoginPost);
+app.post('/auth/login', loginIpLimit, loginUserLimit, handleStaffLoginPost);
 
 app.get('/auth/logout', (_req, res) => {
   res.setHeader('Allow', 'POST');
@@ -1075,7 +1134,7 @@ app.get('/auth/logout', (_req, res) => {
 app.post('/auth/logout', (req, res) => {
   if (!AUTH_ENABLED) return res.redirect('/');
   clearAuthCookie(res);
-  const nextPath = typeof req.body?.next === 'string' ? safeNextAfterLogin(req.body.next) : '/auth/login';
+  const nextPath = typeof req.body?.next === 'string' ? safeNextAfterLogin(req.body.next, '/login') : '/login';
   return res.redirect(302, nextPath);
 });
 
@@ -1176,15 +1235,19 @@ app.post('/api/auth/login', loginIpLimit, loginUserLimit, async (req, res) => {
   const password = String(req.body?.password ?? '');
   if (credentialsValid(username, password)) {
     setAuthCookie(res, { userId: 'staff', role: 'staff', email: username, ver: staffSessionVersion() });
-    return loginFormRedirect(req, res, '/', 200, { ok: true, role: 'staff' });
+    const next = loginSuccessPath(req, '/');
+    return loginFormRedirect(req, res, next, 200, { ok: true, role: 'staff', next });
   }
   const user = await authenticateUser(username, password);
   if (!user || !user.emailVerified) {
     if (typeof req.recordRateLimitFailure === 'function') req.recordRateLimitFailure();
     const status = user && !user.emailVerified ? 403 : 401;
-    return loginFormRedirect(req, res, '/?signin=failed', status, {
-      error: GENERIC_CREDENTIALS_ERROR,
-    });
+    const error = user && !user.emailVerified ? UNVERIFIED_EMAIL_ERROR : GENERIC_CREDENTIALS_ERROR;
+    const jsonBody =
+      user && !user.emailVerified
+        ? { error, code: UNVERIFIED_EMAIL_CODE }
+        : { error };
+    return loginFormRedirect(req, res, loginFailureRedirect(user, req.body?.next), status, jsonBody);
   }
   setAuthCookie(res, {
     userId: user.id,
@@ -1192,8 +1255,9 @@ app.post('/api/auth/login', loginIpLimit, loginUserLimit, async (req, res) => {
     email: user.email,
     ver: user.sessionVersion || 1,
   });
-  const next = user.role === 'staff' ? '/' : '/account';
-  return loginFormRedirect(req, res, next, 200, { ok: true, role: user.role });
+  const fallback = user.role === 'staff' ? '/' : '/account';
+  const next = loginSuccessPath(req, fallback);
+  return loginFormRedirect(req, res, next, 200, { ok: true, role: user.role, next });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -1228,7 +1292,14 @@ app.use(async (req, res, next) => {
     return next();
   }
   if (req.path === '/robots.txt' || req.path === '/sitemap.xml') return next();
-  if (req.path === '/auth/login' || req.path === '/auth/logout') return next();
+  if (
+    req.path === '/auth/login' ||
+    req.path === '/auth/logout' ||
+    req.path === '/auth/staff' ||
+    req.path === '/login'
+  ) {
+    return next();
+  }
   if (req.path === '/auth/jira/callback') return next();
   if (req.path === '/api/config') return next();
   if (
@@ -1266,14 +1337,18 @@ app.use(async (req, res, next) => {
       req.access = { role: 'guest' };
       return next();
     }
-    return res.status(200).send(loginPageHtml('/'));
+    return res.status(200).send(loginPageHtml('/', '', 'customer'));
   }
 
   if (req.path.startsWith('/api/')) {
     return res.status(401).json({ error: 'Authentication required' });
   }
-  const nextPath = safeNextAfterLogin(req.originalUrl || '/');
-  return res.redirect(`/auth/login?next=${encodeURIComponent(nextPath)}`);
+  const publicPath = canonicalPublicPath(req);
+  if (publicPath === '/admin/leads' || publicPath.startsWith('/admin/')) {
+    return res.status(404).type('txt').send('Not Found');
+  }
+  const nextPath = safeNextAfterLogin(req.originalUrl || '/', '/account');
+  return res.redirect(`/login?next=${encodeURIComponent(nextPath)}`);
 });
 
 registerAccountRoutes(app, {

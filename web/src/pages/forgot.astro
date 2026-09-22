@@ -17,7 +17,7 @@ const sent = Astro.url.searchParams.get('sent') === '1';
           </div>
           <button class="btn btn-primary" type="submit">Send reset link</button>
           <p id="forgot-msg" class="muted" role="status">
-            {sent ? 'If that account exists, we sent a reset link (or logged it when SMTP is off).' : ''}
+            {sent ? 'If that account exists, we sent a reset link.' : ''}
           </p>
         </form>
       </article>
@@ -42,7 +42,7 @@ const sent = Astro.url.searchParams.get('sent') === '1';
       const msg = document.getElementById('forgot-msg');
       const emailField = document.getElementById('email');
       if (msg) {
-        msg.textContent = 'If that account exists, we sent a reset link (or logged it when SMTP is off).';
+        msg.textContent = 'If that account exists, we sent a reset link.';
         msg.setAttribute('role', 'status');
       }
       if (emailField) {
