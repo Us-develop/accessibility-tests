@@ -106,6 +106,7 @@ if (!isValidGuestToken(token)) {
             autoApplicable: payload.scoreBreakdown?.applicable ?? 0,
             coveredScCount: payload.coveredScCount ?? 0,
             locked: true,
+            guestToken: token,
           };
         } catch {
           loadError = 'Failed to read this snapshot.';
@@ -148,7 +149,6 @@ if (notFound) {
               <div class="guest-cta-row">
                 <a class="btn btn-primary" href={`/signup?guest=${token}`}>Create an account</a>
                 <a class="btn btn-ghost" href="/pricing">Buy tokens or subscribe</a>
-                <a class="btn btn-secondary" href="https://about-us.be/contact/">Talk to a WCAG expert</a>
               </div>
             </div>
             <GuestLeadForm client:visible token={token} />
