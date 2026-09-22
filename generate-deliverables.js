@@ -8,7 +8,13 @@
 import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { getRemediation, wcagScUrl } from './remediation-data.js';
-import { groupFixesByPrinciple } from './report-buckets.js';
+import {
+  groupFixesByPrinciple,
+  attemptedUrlsFromReport,
+  primaryHostFromReport,
+  pageLoadFailures,
+  reportLoadedPages,
+} from './report-buckets.js';
 import {
   buildExecutiveSummaryHtml,
   buildChartSectionStyles,
@@ -926,17 +932,63 @@ export function generateClientPresentation(data, outputDir) {
 }
 
 function deriveSiteUrls(reportData) {
-  const urls = reportData.urls || [];
+  const urls = attemptedUrlsFromReport(reportData);
   const first = urls[0];
+  const host = primaryHostFromReport(reportData) || 'this scan';
   if (!first) {
-    return { display: 'https://example.com/', host: 'example.com' };
+    return { display: host, host };
   }
   try {
     const u = new URL(first);
-    return { display: `${u.origin}/`, host: u.hostname };
+    return { display: `${u.origin}/`, host: u.hostname.replace(/^www\./i, '') || host };
   } catch {
-    return { display: first, host: first.replace(/^https?:\/\//i, '').split('/')[0] || 'this site' };
+    return { display: first, host };
   }
+}
+
+function writeFailedLoadDeliverables(data, outputDir) {
+  const reportData = data?.reportData || {};
+  const host = primaryHostFromReport(reportData) || data?.domain || 'this scan';
+  const failures = pageLoadFailures(reportData);
+  const items = failures
+    .map(
+      (row) =>
+        `<li><code>${escapeHtml(row.url || '')}</code>: ${escapeHtml(row.message || 'Page failed to load')}</li>`
+    )
+    .join('');
+  const list = items ? `<ul>${items}</ul>` : '<p>No pages could be loaded.</p>';
+
+  const html = (title) => `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>${escapeHtml(title)} · ${escapeHtml(host)}</title>
+  ${REPORT_BRAND_HEAD}
+  <style>
+${REPORT_DELIVERABLE_CSS}
+    .container { max-width: 720px; margin: 0 auto; padding: 32px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>${escapeHtml(title)} is not ready</h1>
+    <p>The scan of <strong>${escapeHtml(host)}</strong> did not load any pages, so this file is not a client deliverable.</p>
+    ${list}
+    <p>Re-run the scan after the host resolves (DNS, timeout, or bot protection).</p>
+  </div>
+</body>
+</html>`;
+
+  const paths = {
+    developers: join(outputDir, 'accessibility-developers.html'),
+    client: join(outputDir, 'accessibility-client.html'),
+    statement: join(outputDir, 'accessibility-statement.html'),
+  };
+  writeFileSync(paths.developers, html('Developer guide'), 'utf8');
+  writeFileSync(paths.client, html('Sales report'), 'utf8');
+  writeFileSync(paths.statement, html('Accessibility statement'), 'utf8');
+  return paths;
 }
 
 function dedupeFindingsByRule(items) {
@@ -1160,6 +1212,9 @@ export function generateAccessibilityStatement(data, outputDir) {
 }
 
 export function generateAllDeliverables(data, outputDir) {
+  if (!reportLoadedPages(data?.reportData)) {
+    return writeFailedLoadDeliverables(data, outputDir);
+  }
   const paths = {
     developers: generateDeveloperAdvice(data, outputDir),
     client: generateClientPresentation(data, outputDir),

@@ -2,10 +2,12 @@
 import Layout from '../../../../layouts/Layout.astro';
 import AppHeader from '../../../../components/AppHeader.astro';
 import WcagCoverage from '../../../../components/WcagCoverage.svelte';
-import { existsSync } from 'node:fs';
+import ScanFailedPanel from '../../../../components/ScanFailedPanel.astro';
+import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { isValidReportId } from '../../../../../../server/fs-utils.js';
 import { runDir, isValidRunId } from '../../../../../../server/run-ids.js';
+import { buildAstroMainReportPayload } from '../../../../../../report-astro-payload.js';
 
 export const prerender = false;
 
@@ -23,7 +25,10 @@ if (!existsSync(resultsPath)) {
   return new Response('Report not found', { status: 404 });
 }
 
-const primaryHost = domain.replace(/^www\./, '');
+const json = JSON.parse(readFileSync(resultsPath, 'utf8'));
+const payload = buildAstroMainReportPayload(json);
+const pagesLoaded = payload.pagesLoaded === true;
+const primaryHost = payload.primaryHost || domain.replace(/^www\./, '');
 ---
 
 <Layout title={`WCAG coverage · ${primaryHost}`} description={`WCAG 2.2 coverage matrix for ${primaryHost} from this automated run.`}>
@@ -31,6 +36,15 @@ const primaryHost = domain.replace(/^www\./, '');
     <AppHeader domain={domain} runId={runId} active="coverage" />
     <main id="main" class="app-main" tabindex="-1">
       <div style="background: var(--us-cream); min-height: calc(100dvh - 65px);">
+        {!pagesLoaded ? (
+          <ScanFailedPanel
+            domain={domain}
+            runId={runId}
+            primaryHost={primaryHost}
+            loadFailures={payload.loadFailures || []}
+            title="WCAG coverage is not ready"
+          />
+        ) : (
         <div class="container-narrow" style="padding: clamp(28px, 4vw, 48px) 0 80px;">
           <a class="btn btn-ghost btn-sm" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`}>← Back to report</a>
           <span class="eyebrow" style="display: inline-flex; margin: 18px 0 8px;"><span class="dot"></span>WCAG 2.2 A + AA · {primaryHost}</span>
@@ -41,6 +55,7 @@ const primaryHost = domain.replace(/^www\./, '');
           </p>
           <WcagCoverage client:load {domain} {runId} {primaryHost} />
         </div>
+        )}
       </div>
     </main>
   </div>

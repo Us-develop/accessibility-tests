@@ -2,13 +2,15 @@
   let donutSeq = 0;
 </script>
 <script>
-  /** @type {{ score: number, size?: number, stroke?: number, label?: string, showLabel?: boolean, threshold?: number }} */
+  /** @type {{ score: number | null, size?: number, stroke?: number, label?: string, showLabel?: boolean, threshold?: number }} */
   let { score, size = 160, stroke = 14, label = 'Score', showLabel = true, threshold = 80 } = $props();
 
   const radius = $derived((size - stroke) / 2);
   const circumference = $derived(2 * Math.PI * radius);
-  const offset = $derived(circumference - (Math.max(0, Math.min(100, score)) / 100) * circumference);
-  const passing = $derived(score >= threshold);
+  const available = $derived(typeof score === 'number' && Number.isFinite(score));
+  const clamped = $derived(available ? Math.max(0, Math.min(100, score)) : 0);
+  const offset = $derived(available ? circumference - (clamped / 100) * circumference : circumference);
+  const passing = $derived(available && clamped >= threshold);
   const gradId = `donut-grad-${++donutSeq}`;
 </script>
 
@@ -37,7 +39,7 @@
     />
   </svg>
   <div class="donut-label">
-    <div class="donut-value" style="font-size:{Math.round(size * 0.32)}px;">{score}</div>
+    <div class="donut-value" style="font-size:{Math.round(size * (available ? 0.32 : 0.24))}px;">{available ? clamped : 'n/a'}</div>
     {#if showLabel}
       <div class="donut-caption">{label}</div>
     {/if}

@@ -71,9 +71,9 @@ if (!isValidGuestToken(token)) {
           const suggestedFixes = payload.suggestedFixes || { points: 0, tickets: [] };
           const trendDate = payload.auditedDate?.slice(0, 6) || 'now';
           const manualTotal = MANUAL_TODO_GROUPS.reduce((s, g) => s + g.items.length, 0);
-          pageTitle = `Accessibility snapshot · ${payload.primaryHost}`;
+          pageTitle = `Accessibility snapshot · ${payload.primaryHost || domain}`;
           dashboardProps = {
-            primaryHost: payload.primaryHost,
+            primaryHost: payload.primaryHost || domain.replace(/^www\./, '') || 'This scan',
             auditedDate: payload.auditedDate,
             scoreClamp: payload.scoreClamp,
             pass: payload.pass,
@@ -94,7 +94,9 @@ if (!isValidGuestToken(token)) {
             domain,
             runId,
             sprintPoints: suggestedFixes.points,
-            scoreAvailable: payload.scoreAvailable !== false,
+            scoreAvailable: payload.scoreAvailable === true,
+            pagesLoaded: payload.pagesLoaded === true,
+            loadFailures: payload.loadFailures || [],
             totalAxeIncomplete: payload.totalAxeIncomplete ?? 0,
             pagesScanned: payload.urls.length,
             rulesChecked: payload.rulesTable.length,

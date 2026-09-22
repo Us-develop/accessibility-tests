@@ -70,6 +70,8 @@
    *   coveredScCount?: number,
    *   wcagAaCount?: number,
    *   scoreAvailable?: boolean,
+   *   pagesLoaded?: boolean,
+   *   loadFailures?: Array<{ url?: string, message?: string }>,
    *   totalAxeIncomplete?: number,
    *   locked?: boolean,
    *   guestToken?: string,
@@ -109,6 +111,8 @@
     coveredScCount = 0,
     wcagAaCount = 56,
     scoreAvailable = true,
+    pagesLoaded,
+    loadFailures = [],
     totalAxeIncomplete = 0,
     locked = false,
     guestToken = '',
@@ -137,6 +141,11 @@
         ? 'No automated errors'
         : 'Automated findings'
   );
+  const pagesScannedCount = $derived(pagesScanned ?? urls.length);
+  const hasLoadedPages = $derived(
+    typeof pagesLoaded === 'boolean' ? pagesLoaded : pagesScannedCount > 0
+  );
+  const loadFailureRows = $derived(Array.isArray(loadFailures) ? loadFailures : []);
   const tabs = $derived([
     { key: 'overview', label: 'Overview' },
     { key: 'issues', label: 'Issues', count: severityCounts.errors + severityCounts.warnings },
@@ -145,7 +154,7 @@
     { key: 'pages', label: 'By page', count: pagesTable.length },
     { key: 'rules', label: 'Rules' },
     { key: 'manual', label: 'Manual checks', count: `${manualChecked}/${manualTotal}` },
-    ...(!locked ? [{ key: 'coverage', label: 'WCAG coverage' }] : []),
+    ...(!locked && hasLoadedPages ? [{ key: 'coverage', label: 'WCAG coverage' }] : []),
   ]);
   const variants = [
     { key: 'detailed', label: 'Detailed' },
@@ -158,10 +167,11 @@
 
   const totalChecks = $derived(severityCounts.errors + severityCounts.warnings + severityCounts.passed + severityCounts.notice);
   const pctPassed = $derived(totalChecks > 0 ? Math.round((severityCounts.passed / totalChecks) * 100) : 0);
-  const scoreDelta = $derived(previousScore != null ? scoreClamp - previousScore : null);
+  const scoreDelta = $derived(previousScore != null && scoreAvailable ? scoreClamp - previousScore : null);
   const combinedScore = $derived.by(() => {
+    if (!scoreAvailable || autoApplicable <= 0) return null;
     const applicable = autoApplicable + manualTotal;
-    if (applicable <= 0) return scoreClamp;
+    if (applicable <= 0) return null;
     const checked = Math.max(0, Math.min(manualChecked, manualTotal));
     return Math.max(0, Math.min(100, Math.round(((autoPassed + checked) / applicable) * 100)));
   });
@@ -327,7 +337,7 @@
       <div class="hero-scores">
         <div class="hero-score-block">
           <div class="hero-score-donut-wrap">
-            <ScoreDonut score={scoreClamp} size={130} stroke={12} {threshold} label="" />
+            <ScoreDonut score={scoreAvailable ? scoreClamp : null} size={130} stroke={12} {threshold} label="" />
             <details class="score-info" aria-label="How is the score calculated?">
               <summary aria-label="Score formula">i</summary>
               <div class="score-info-pop">
@@ -362,7 +372,7 @@
           <span class="dot" style="background: {passing ? '#8DFFB7' : '#FFB985'};"></span>
           {automatedLabel} &middot; scanned {auditedDate}
         </span>
-        <h1 class="hero-title">{primaryHost} &middot; {scoreAvailable ? `${scoreClamp}/100` : 'n/a'}</h1>
+        <h1 class="hero-title">{primaryHost || 'This scan'} &middot; {scoreAvailable ? `${scoreClamp}/100` : 'n/a'}</h1>
         <div class="hero-meta">
           <span><strong style="color: #FFB985;">{severityCounts.errors}</strong> errors</span>
           <span><strong style="color: #F3AAFF;">{severityCounts.warnings}</strong> warnings</span>
@@ -371,20 +381,26 @@
             <span><strong style="color: #A7F0FB;">{totalAxeIncomplete}</strong> needs review</span>
           {/if}
           <span>·</span>
-          <span>{pagesScanned ?? urls.length} pages · automated WCAG 2.2 AA checks</span>
+          <span>
+            {#if hasLoadedPages}
+              {pagesScannedCount} pages · automated WCAG 2.2 AA checks
+            {:else}
+              0 pages scanned — nothing loaded
+            {/if}
+          </span>
         </div>
         <p class="hero-disclaimer">
           Automated scores only — not a WCAG 2.2 AA or EAA conformance claim.
           100 without checks = all automated issues gone on a re-scan.
           100 with checks = that, plus every manual item ticked.
           <a class="link" href="/limitations" style="color: inherit; text-decoration: underline;">What we can and cannot test</a>
-          {#if !locked}
+          {#if !locked && hasLoadedPages}
             ·
             <button type="button" class="link" style="background:none;border:0;padding:0;font:inherit;cursor:pointer;color:inherit;text-decoration:underline;" onclick={gotoCoverage}>WCAG coverage analysis</button>
           {/if}
         </p>
       </div>
-      {#if !locked}
+      {#if !locked && hasLoadedPages}
         <div style="display: flex; gap: 8px;">
           <button class="btn btn-ghost btn-sm hero-btn" onclick={exportSalesPdf}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -411,6 +427,20 @@
         <a class="link" href="#lead-form">Talk to a WCAG expert</a>
         is optional.
       </p>
+    {/if}
+    {#if !hasLoadedPages}
+      <div class="load-fail-banner" role="status">
+        <strong>This scan did not load any pages.</strong>
+        There is no WCAG score and no sales, statement, or developer deliverable until a URL opens.
+        {#if loadFailureRows.length > 0}
+          <ul>
+            {#each loadFailureRows as row (row.url + row.message)}
+              <li><span class="mono">{row.url}</span>{row.message ? ` — ${row.message}` : ''}</li>
+            {/each}
+          </ul>
+        {/if}
+        Re-run after DNS, timeouts, or bot protection are resolved.
+      </div>
     {/if}
     <!-- Tabs + density switcher (only on Overview/Issues) -->
     <div class="tabs-row">
@@ -470,14 +500,14 @@
         <div class="stat-strip" class:compact={variant === 'compact'} class:detailed={variant === 'detailed'}>
           <div class="stat" style="background: var(--us-lilac); color: var(--us-lilac-text);">
             <div class="stat-label">Without manual checks</div>
-            <div class="stat-value">{scoreClamp}<span class="stat-suffix">/100</span></div>
+            <div class="stat-value">{scoreAvailable ? scoreClamp : 'n/a'}{#if scoreAvailable}<span class="stat-suffix">/100</span>{/if}</div>
             {#if scoreDelta != null}
               <div class="stat-sub">{scoreDelta >= 0 ? `+${scoreDelta}` : scoreDelta} since last audit</div>
             {/if}
           </div>
           <div class="stat" style="background: var(--us-mint); color: var(--us-mint-text);">
             <div class="stat-label">With manual checks</div>
-            <div class="stat-value">{combinedScore}<span class="stat-suffix">/100</span></div>
+            <div class="stat-value">{combinedScore != null ? combinedScore : 'n/a'}{#if combinedScore != null}<span class="stat-suffix">/100</span>{/if}</div>
             <div class="stat-sub">{manualChecked}/{manualTotal} verified</div>
           </div>
           <div class="stat" style="background: #FCE8E5; color: var(--us-peach-text);">
@@ -495,7 +525,7 @@
           {#if variant === 'compact' || variant === 'detailed'}
             <div class="stat" style="background: var(--us-sky); color: var(--us-sky-text);">
               <div class="stat-label">Pages scanned</div>
-              <div class="stat-value">{pagesScanned ?? urls.length}</div>
+              <div class="stat-value">{pagesScannedCount}</div>
             </div>
             <div class="stat" style="background: var(--us-sky); color: var(--us-sky-text);">
               <div class="stat-label">Est. dev effort</div>
@@ -788,7 +818,7 @@
     {/if}
     </div>
 
-    {#if !locked}
+    {#if !locked && hasLoadedPages}
     <!-- Footer CTAs -->
     <div class="footer-cta">
       <div>
@@ -1414,6 +1444,19 @@
     color: var(--us-sky-text);
     border-radius: var(--r-md);
   }
+  .load-fail-banner {
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    background: #fce8e5;
+    color: var(--us-peach-text);
+    border-radius: var(--r-md);
+  }
+  .load-fail-banner ul {
+    margin: 8px 0;
+    padding-left: 18px;
+  }
   .tab-lock {
     margin-left: 2px;
     opacity: 0.55;
@@ -1451,6 +1494,7 @@
   }
   @media print {
     .locked-banner,
+    .load-fail-banner,
     .tab-panel-veil,
     .tab-panel--locked {
       display: none !important;

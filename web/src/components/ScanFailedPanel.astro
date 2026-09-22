@@ -1,0 +1,42 @@
+---
+interface Props {
+  domain: string;
+  runId: string;
+  primaryHost?: string;
+  loadFailures?: Array<{ url?: string; message?: string }>;
+  title?: string;
+}
+
+const {
+  domain,
+  runId,
+  primaryHost = '',
+  loadFailures = [],
+  title = 'This scan did not load any pages',
+} = Astro.props;
+
+const host = primaryHost || domain.replace(/^www\./, '') || 'this scan';
+const reportHref = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`;
+---
+
+<div class="container-narrow" style="padding: clamp(32px, 5vw, 56px) 0 80px;">
+  <a class="btn btn-ghost btn-sm" href={reportHref}>← Back to report</a>
+  <h1 style="font-size: clamp(28px, 4vw, 40px); margin: 18px 0 10px;">{title}</h1>
+  <p class="muted" style="max-width: 640px;">
+    Nothing was fetched for <strong>{host}</strong>, so there is no sales report, accessibility statement,
+    developer guide, or coverage matrix to share. Fix the load error and re-run the scan.
+  </p>
+  {loadFailures.length > 0 ? (
+    <ul style="margin: 16px 0; padding-left: 18px;">
+      {loadFailures.map((row) => (
+        <li style="font-size: 14px; margin-bottom: 6px;">
+          <code>{row.url}</code>
+          {row.message ? ` — ${row.message}` : ''}
+        </li>
+      ))}
+    </ul>
+  ) : null}
+  <p style="margin-top: 20px;">
+    <a class="btn btn-primary" href={reportHref}>View the load error</a>
+  </p>
+</div>

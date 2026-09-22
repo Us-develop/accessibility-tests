@@ -275,6 +275,8 @@ async function main() {
 
   const report = {
     generatedAt: new Date().toISOString(),
+    // Successfully loaded pages only. Failed gotos stay off this list and are
+    // recorded as customResults with id `page-load` (including the attempted URL).
     urls: [],
     axeResults: {},
     customResults: [],

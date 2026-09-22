@@ -22,7 +22,12 @@ import {
   ASSISTIVE_TECH_ITEMS,
   MANUAL_TODO_GROUPS,
 } from './manual-checklist.js';
-import { scoreFromReport, buildDisabilities } from './report-buckets.js';
+import {
+  scoreFromReport,
+  buildDisabilities,
+  primaryHostFromReport,
+  reportLoadedPages,
+} from './report-buckets.js';
 import {
   formatOccurrenceDescriptor,
   idsFromCustomResult,
@@ -312,19 +317,15 @@ export function generateReport(reportData, options = {}) {
   const totalIssues = fail + warn + totalAxeViolations;
   const criticalIssues = issueMetrics.severity.critical;
   const totalPages = (reportData.urls || []).length;
+  const pagesLoaded = reportLoadedPages(reportData);
   const mostAffected = issueMetrics.mostAffectedPages.slice(0, 7);
-  const primaryHost = (() => {
-    const first = (reportData.urls || [])[0];
-    if (!first) return 'this-site';
-    try {
-      return String(new URL(first).hostname || 'this-site').replace(/^www\./, '');
-    } catch {
-      return 'this-site';
-    }
-  })();
+  const primaryHost = primaryHostFromReport(reportData) || 'this scan';
+  const scoreLabel = score == null ? 'n/a' : `${scoreClamp} / 100`;
   const auditedDate = new Date(reportData.generatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   const complianceHeadline = 'Automated findings — not a WCAG or EAA conformance claim';
-  const complianceNote = `Automated score ${scoreClamp}/100 is the share of applicable machine checks that passed on this run. It is not Level A or AA compliance. A human audit is still required.`;
+  const complianceNote = score == null
+    ? 'No automated score is available because no pages were loaded. This is not a WCAG or EAA conformance claim.'
+    : `Automated score ${scoreClamp}/100 is the share of applicable machine checks that passed on this run. It is not Level A or AA compliance. A human audit is still required.`;
   const categoryStats = computeCategoryStats(fixOrderItems);
   const categoryMax = Math.max(1, ...categoryStats.map((c) => c.count));
   const topCategoryCards = [...categoryStats].sort((a, b) => b.count - a.count).slice(0, 3);
@@ -634,10 +635,12 @@ export function generateReport(reportData, options = {}) {
         </div>
         <div class="report-actions">
           <button type="button" class="btn-pdf" onclick="window.print()" aria-label="Download as PDF">Download PDF</button>
+          ${pagesLoaded ? `
           <span style="font-size:0.85rem; color:var(--text-muted);">Deliverables:</span>
           <a href="./accessibility-developers.html" data-deliverable="accessibility-developers.html" style="font-size:0.9rem;">Developer guide</a>
           <a href="./accessibility-client.html" data-deliverable="accessibility-client.html" style="font-size:0.9rem;">Client presentation</a>
           <a href="./accessibility-statement.html" data-deliverable="accessibility-statement.html" style="font-size:0.9rem;">Accessibility statement</a>
+          ` : `<span style="font-size:0.85rem; color:var(--text-muted);">Deliverables are not ready — no pages loaded.</span>`}
         </div>
       </div>
     </header>
@@ -647,7 +650,7 @@ export function generateReport(reportData, options = {}) {
       <h2 class="audit-domain">${escapeHtml(primaryHost)}</h2>
       <p class="audit-meta">Scanned ${totalPages} page${totalPages === 1 ? '' : 's'} · ${auditedDate} · automated WCAG 2.2 AA checks</p>
       <div class="kpi-grid" aria-label="Top metrics">
-        <div class="kpi"><div class="label">Overall score</div><div class="value warn">${scoreClamp} / 100</div></div>
+        <div class="kpi"><div class="label">Overall score</div><div class="value warn">${escapeHtml(scoreLabel)}</div></div>
         <div class="kpi"><div class="label">Total issues</div><div class="value">${totalIssues}</div></div>
         <div class="kpi"><div class="label">Critical issues</div><div class="value fail">${criticalIssues}</div></div>
         <div class="kpi"><div class="label">Pages affected</div><div class="value">${issueMetrics.pagesAffected} / ${Math.max(1, totalPages)}</div></div>
@@ -799,13 +802,15 @@ export function generateReport(reportData, options = {}) {
 
     ${loadErrors.length > 0 ? `
     <div class="alert alert-error">
-      <strong>No pages could be loaded.</strong> All ${loadErrors.length} URL(s) failed. Possible causes: site blocks headless browsers, bot protection, timeout, or network issues.
+      <strong>${pagesLoaded ? `${loadErrors.length} URL(s) could not be loaded.` : 'No pages could be loaded.'}</strong>
+      ${pagesLoaded ? '' : ' There is no WCAG score and no client deliverables until a page loads.'}
+      Possible causes: DNS, site blocks headless browsers, bot protection, timeout, or network issues.
       <ul style="margin: 12px 0 0 20px;">
         ${loadErrors.map((e) => `<li><strong>${escapeHtml(e.url)}</strong>: ${escapeHtml(e.message)}</li>`).join('')}
       </ul>
       <p style="margin: 12px 0 0;">Fix these issues and re-run <code>npm run test:report</code></p>
     </div>
-    ` : reportData.urls?.length === 0 ? `
+    ` : !pagesLoaded ? `
     <div class="alert alert-warning">
       <strong>No pages were tested.</strong> Add URLs to <code>urls.config.js</code> and run <code>npm run test:report</code>
     </div>
