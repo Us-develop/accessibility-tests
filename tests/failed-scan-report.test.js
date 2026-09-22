@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildAstroMainReportPayload } from '../report-astro-payload.js';
 import { generateAllDeliverables } from '../generate-deliverables.js';
+import { generateReport } from '../generate-report.js';
 import {
   primaryHostFromReport,
   pageLoadFailures,
@@ -57,6 +58,19 @@ describe('failed scan hostname and completeness', () => {
     assert.match(html, /ERR_NAME_NOT_RESOLVED/);
     assert.doesNotMatch(html, /example\.com/);
     assert.doesNotMatch(html, /this-site/);
+  });
+
+  it('renders the static HTML report as n/a without deliverable links', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'a11y-failed-html-'));
+    generateReport(failedDnsReport, { outputDir: dir, noExit: true });
+    const html = readFileSync(join(dir, 'accessibility-report.html'), 'utf8');
+    rmSync(dir, { recursive: true, force: true });
+    assert.match(html, />dev\.mnds\.agency</);
+    assert.match(html, />n\/a</);
+    assert.match(html, /No pages could be loaded/);
+    assert.match(html, /Deliverables are not ready/);
+    assert.doesNotMatch(html, /this-site/);
+    assert.doesNotMatch(html, /data-deliverable=/);
   });
 
   it('hides the deliverables CTA until a page has loaded', () => {
