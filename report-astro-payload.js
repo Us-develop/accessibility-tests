@@ -22,6 +22,9 @@ import {
   buildDisabilities,
   buildSuggestedFixes,
   buildPlainEnglishStats,
+  primaryHostFromReport,
+  pageLoadFailures,
+  reportLoadedPages,
 } from './report-buckets.js';
 import {
   idsFromCustomResult,
@@ -219,15 +222,12 @@ export function buildAstroMainReportPayload(reportData) {
     disabilityStats,
   });
 
-  const primaryHost = (() => {
-    const first = (reportData.urls || [])[0];
-    if (!first) return 'this-site';
-    try {
-      return String(new URL(first).hostname || 'this-site').replace(/^www\./, '');
-    } catch {
-      return 'this-site';
-    }
-  })();
+  const primaryHost = primaryHostFromReport(reportData);
+  const loadFailures = pageLoadFailures(reportData).map((row) => ({
+    url: row.url || '',
+    message: row.message || 'Page failed to load',
+  }));
+  const pagesLoaded = reportLoadedPages(reportData);
 
   const auditedDate = reportData.generatedAt
     ? new Date(reportData.generatedAt).toLocaleDateString('en-GB', {
@@ -240,6 +240,7 @@ export function buildAstroMainReportPayload(reportData) {
   const executiveSummaryHtml = buildExecutiveSummaryHtml({
     reportData,
     scoreClamp,
+    scoreAvailable: score != null,
     pass,
     fail,
     warn,
@@ -348,6 +349,8 @@ export function buildAstroMainReportPayload(reportData) {
     scoreClamp,
     scoreBreakdown,
     scoreAvailable: score != null,
+    pagesLoaded,
+    loadFailures,
     principles,
     disabilities,
     suggestedFixes,

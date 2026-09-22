@@ -63,6 +63,25 @@ describe('scoreFromReport', () => {
   it('returns null when nothing scored', () => {
     assert.equal(scoreFromReport({ urls: [], customResults: [], axeResults: {} }), null);
   });
+
+  it('does not treat a page-load DNS failure as a 0/100 WCAG score', () => {
+    assert.equal(
+      scoreFromReport({
+        urls: [],
+        customResults: [
+          {
+            id: 'page-load',
+            rule: 'Page load',
+            status: 'fail',
+            message: 'page.goto: net::ERR_NAME_NOT_RESOLVED at https://dev.mnds.agency/',
+            url: 'https://dev.mnds.agency/',
+          },
+        ],
+        axeResults: {},
+      }),
+      null
+    );
+  });
 });
 
 describe('combinedScoreWithManual', () => {
@@ -81,6 +100,10 @@ describe('combinedScoreWithManual', () => {
     const breakdown = scoreBreakdownFromReport(sampleReport);
     // (1 + 23) / (4 + 23) = 89
     assert.equal(combinedScoreWithManual(breakdown, 23, 23), 89);
+  });
+
+  it('does not invent a score from the manual list when no automated checks ran', () => {
+    assert.equal(combinedScoreWithManual({ passed: 0, applicable: 0 }, 0, 23), null);
   });
 });
 

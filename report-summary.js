@@ -125,7 +125,9 @@ export function buildExecutiveSummaryHtml(data) {
   }
 
   let scoreHtml;
-  if (scoreClamp >= 80) {
+  if (urlCount === 0 || data.scoreAvailable === false) {
+    scoreHtml = 'No automated WCAG score is available because no applicable machine checks ran on a loaded page.';
+  } else if (scoreClamp >= 80) {
     scoreHtml = `The overall accessibility score is <strong>${scoreClamp}</strong> out of 100, indicating strong alignment with the automated WCAG-oriented checks in this run.`;
   } else if (scoreClamp >= 50) {
     scoreHtml = `The overall accessibility score is <strong>${scoreClamp}</strong> out of 100. There is clear room to improve consistency and resolve outstanding findings.`;
@@ -133,7 +135,10 @@ export function buildExecutiveSummaryHtml(data) {
     scoreHtml = `The overall accessibility score is <strong>${scoreClamp}</strong> out of 100. Addressing the findings in this report should be a priority to support more users and reduce compliance risk.`;
   }
 
-  const p1 = `<p class="exec-summary-lead">This audit covers <strong>${urlCount}</strong> page${urlCount === 1 ? '' : 's'}, using custom checklist rules and the axe-core engine. ${scoreHtml}</p>`;
+  const p1 =
+    urlCount === 0
+      ? `<p class="exec-summary-lead">This run did not load any pages. ${scoreHtml}</p>`
+      : `<p class="exec-summary-lead">This audit covers <strong>${urlCount}</strong> page${urlCount === 1 ? '' : 's'}, using custom checklist rules and the axe-core engine. ${scoreHtml}</p>`;
 
   const p2 = `<p>Across <strong>${total}</strong> automated results, <strong>${pass}</strong> passed, <strong>${warn}</strong> are warnings, <strong>${fail}</strong> are failed custom checks, and axe reported <strong>${totalAxeViolations}</strong> violation${totalAxeViolations === 1 ? '' : 's'}.</p>`;
 

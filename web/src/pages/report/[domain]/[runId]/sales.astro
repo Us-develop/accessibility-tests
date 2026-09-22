@@ -2,6 +2,7 @@
 import Layout from '../../../../layouts/Layout.astro';
 import AppHeader from '../../../../components/AppHeader.astro';
 import SalesDeck from '../../../../components/SalesDeck.svelte';
+import ScanFailedPanel from '../../../../components/ScanFailedPanel.astro';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildAstroMainReportPayload } from '../../../../../../report-astro-payload.js';
@@ -32,6 +33,7 @@ if (!existsSync(resultsPath)) {
 
 const json = JSON.parse(readFileSync(resultsPath, 'utf8'));
 const payload = buildAstroMainReportPayload(json);
+const pagesLoaded = payload.pagesLoaded === true;
 
 const manualProgressPath = join(reportDir, 'manual-progress.json');
 let manualChecked: string[] = [];
@@ -120,7 +122,17 @@ const autoPrint = Astro.url.searchParams.get('print') === '1';
   <div class="app-shell">
     <AppHeader domain={domain} runId={runId} active="sales" />
     <main id="main" class="app-main" tabindex="-1">
-      <SalesDeck client:only="svelte" {...deckProps} autoPrint={autoPrint} />
+      {pagesLoaded ? (
+        <SalesDeck client:only="svelte" {...deckProps} autoPrint={autoPrint} />
+      ) : (
+        <ScanFailedPanel
+          domain={domain}
+          runId={runId}
+          primaryHost={payload.primaryHost || domain}
+          loadFailures={payload.loadFailures || []}
+          title="Sales report is not ready"
+        />
+      )}
     </main>
   </div>
 </Layout>

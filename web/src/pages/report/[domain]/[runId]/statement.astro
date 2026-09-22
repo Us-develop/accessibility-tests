@@ -2,6 +2,7 @@
 import Layout from '../../../../layouts/Layout.astro';
 import AppHeader from '../../../../components/AppHeader.astro';
 import ScoreDonut from '../../../../components/ScoreDonut.svelte';
+import ScanFailedPanel from '../../../../components/ScanFailedPanel.astro';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildAstroMainReportPayload } from '../../../../../../report-astro-payload.js';
@@ -27,6 +28,7 @@ if (!existsSync(resultsPath)) {
 
 const json = JSON.parse(readFileSync(resultsPath, 'utf8'));
 const payload = buildAstroMainReportPayload(json);
+const pagesLoaded = payload.pagesLoaded === true;
 
 const statementMetaPath = join(reportDir, 'statement-meta.json');
 let statementMeta: any = {};
@@ -65,6 +67,15 @@ function nextYear(s: string): string {
   <div class="app-shell">
     <AppHeader domain={domain} runId={runId} active="statement" />
     <main id="main" class="app-main" tabindex="-1">
+      {!pagesLoaded ? (
+        <ScanFailedPanel
+          domain={domain}
+          runId={runId}
+          primaryHost={payload.primaryHost || domain}
+          loadFailures={payload.loadFailures || []}
+          title="Accessibility statement is not ready"
+        />
+      ) : (
       <div data-screen-label="05 Accessibility statement" style="background: var(--us-cream); min-height: calc(100dvh - 65px); min-height: calc(100vh - 65px);">
         <div class="container-narrow statement-page-inner">
           <div class="statement-toolbar">
@@ -214,6 +225,7 @@ function nextYear(s: string): string {
           </div>
         </div>
       </div>
+      )}
     </main>
   </div>
 </Layout>

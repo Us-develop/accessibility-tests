@@ -79,7 +79,7 @@ if (existsSync(manualProgressPath)) {
 const manualTotal = MANUAL_TODO_GROUPS.reduce((s, g) => s + g.items.length, 0);
 
 const dashboardProps = {
-  primaryHost: payload.primaryHost,
+  primaryHost: payload.primaryHost || domain.replace(/^www\./, '') || 'This scan',
   auditedDate: payload.auditedDate,
   scoreClamp: payload.scoreClamp,
   pass: payload.pass,
@@ -100,7 +100,9 @@ const dashboardProps = {
   domain,
   runId,
   sprintPoints: suggestedFixes.points,
-  scoreAvailable: payload.scoreAvailable !== false,
+  scoreAvailable: payload.scoreAvailable === true,
+  pagesLoaded: payload.pagesLoaded === true,
+  loadFailures: payload.loadFailures || [],
   totalAxeIncomplete: payload.totalAxeIncomplete ?? 0,
   pagesScanned: payload.urls.length,
   rulesChecked: payload.rulesTable.length,
@@ -115,7 +117,7 @@ const dashboardProps = {
 };
 ---
 
-<Layout title={`Accessibility report · ${payload.primaryHost}`} description={`Automated WCAG 2.2 AA report for ${payload.primaryHost}.`}>
+<Layout title={`Accessibility report · ${payload.primaryHost || domain}`} description={`Automated WCAG 2.2 AA report for ${payload.primaryHost || domain}.`}>
   <div class="app-shell">
     <AppHeader domain={domain} runId={runId} active="results" />
     <main id="main" class="app-main" tabindex="-1">

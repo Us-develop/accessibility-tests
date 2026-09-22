@@ -11,6 +11,68 @@ export const VACUOUS_PASS_IDS = new Set([
   'flash-alternative',
 ]);
 
+/** Infrastructure failure recorded when Playwright cannot open a URL. Not a WCAG check. */
+export const PAGE_LOAD_CHECK_ID = 'page-load';
+
+function hostnameFromUrl(raw) {
+  try {
+    return String(new URL(String(raw)).hostname || '')
+      .replace(/^www\./i, '')
+      .toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * URLs we actually tried: successfully scanned pages first, then load-error / axe keys.
+ * Failed gotos are omitted from `report.urls` and only appear on customResults.
+ * @param {object} reportData
+ * @returns {string[]}
+ */
+export function attemptedUrlsFromReport(reportData) {
+  const out = [];
+  const seen = new Set();
+  const add = (raw) => {
+    const value = String(raw || '').trim();
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    out.push(value);
+  };
+  for (const url of reportData?.urls || []) add(url);
+  for (const row of reportData?.customResults || []) add(row?.url);
+  for (const key of Object.keys(reportData?.axeResults || {})) add(key);
+  return out;
+}
+
+/**
+ * Hostname for the report hero. Never a fake brand like "this-site".
+ * @param {object} reportData
+ * @returns {string}
+ */
+export function primaryHostFromReport(reportData) {
+  for (const raw of attemptedUrlsFromReport(reportData)) {
+    const host = hostnameFromUrl(raw);
+    if (host) return host;
+  }
+  return '';
+}
+
+/**
+ * @param {object} reportData
+ * @returns {Array<{ id?: string, url?: string, message?: string, status?: string }>}
+ */
+export function pageLoadFailures(reportData) {
+  return (reportData?.customResults || []).filter(
+    (row) => row && row.id === PAGE_LOAD_CHECK_ID && row.status === 'fail'
+  );
+}
+
+/** True when at least one page finished loading and was scanned. */
+export function reportLoadedPages(reportData) {
+  return Array.isArray(reportData?.urls) && reportData.urls.length > 0;
+}
+
 export const PRINCIPLE_META = {
   perceivable: {
     key: 'perceivable',
@@ -259,6 +321,7 @@ export function scoreBreakdownFromReport(reportData) {
   let warn = 0;
   for (const row of reportData.customResults || []) {
     if (row.status === 'info') continue;
+    if (row.id === PAGE_LOAD_CHECK_ID) continue;
     if (row.status === 'pass' && VACUOUS_PASS_IDS.has(row.id)) continue;
     if (row.status === 'pass') pass += 1;
     else if (row.status === 'fail') fail += 1;
@@ -301,6 +364,7 @@ export function scoreFromReport(reportData) {
 export function combinedScoreWithManual(breakdown, manualChecked, manualTotal) {
   const autoPassed = Number(breakdown?.passed) || 0;
   const autoApplicable = Number(breakdown?.applicable) || 0;
+  if (autoApplicable === 0) return null;
   const total = Math.max(0, Number(manualTotal) || 0);
   const checked = Math.max(0, Math.min(Number(manualChecked) || 0, total));
   const applicable = autoApplicable + total;
