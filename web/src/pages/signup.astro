@@ -1,23 +1,48 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import { customerLoginNext, isPricingNext } from '../../../server/login-redirect.mjs';
 
 export const prerender = false;
 const guestToken = Astro.url.searchParams.get('guest') || '';
+const requestedNext = Astro.url.searchParams.get('next') || '';
+const nextPath = customerLoginNext(requestedNext);
 const checkEmail = Astro.url.searchParams.get('check-email') === '1';
 const signupError = Astro.url.searchParams.get('error') === '1';
+const pricingArrival = isPricingNext(nextPath);
+const lead = pricingArrival
+  ? 'Create an account to buy token packs or subscribe to Pro. After you verify your email you return to pricing to finish checkout (the immediate-delivery box is still required).'
+  : guestToken
+    ? 'Save guest snapshots to your email. The public 1-page check stays free without an account.'
+    : 'Create an account to keep scan history, buy token packs, or subscribe to Pro.';
+const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
 ---
 <Layout title="Create account · Us" description="Create an Us accessibility scanner account to save snapshots, buy tokens, or subscribe to Pro." noindex={true} authMode="guest-ok">
   <div class="app-shell">
     <AppHeader crumb="Create account" />
     <main id="main" class="app-main" tabindex="-1">
       <article class="container-narrow page-article">
-        <h1>Create account</h1>
-        <p class="muted prose-width prose-lead">
-          Save guest snapshots to your email. The public 1-page check stays free without an account.
+        <h1>{checkEmail ? 'Check your email' : 'Create account'}</h1>
+        {checkEmail ? (
+          <div id="signup-success" class="card stack-form" role="status">
+            <p class="muted prose-width prose-lead">
+              Open the link we sent, then click Confirm email. Mail previews do not finish this for you.
+            </p>
+            {pricingArrival ? (
+              <p class="muted prose-width">When that is done you will come back to pricing to buy tokens or subscribe.</p>
+            ) : null}
+            <p class="muted" style="font-size: 13px; margin: 0;">
+              Already confirmed? <a class="link" href={loginHref}>Sign in</a>.
+            </p>
+          </div>
+        ) : (
+          <>
+        <p class="muted prose-width prose-lead" id="signup-lead">
+          {lead}
         </p>
         <form id="signup-form" class="card stack-form" method="post" action="/api/auth/signup" autocomplete="on" data-astro-reload>
           {guestToken ? <input type="hidden" name="guestToken" value={guestToken} /> : null}
+          {requestedNext ? <input type="hidden" name="next" id="signup-next" value={nextPath} /> : null}
           <div class="field">
             <label class="field-label" for="name">Name</label>
             <input class="input" id="name" name="name" autocomplete="name" />
@@ -62,16 +87,16 @@ const signupError = Astro.url.searchParams.get('error') === '1';
           </div>
           <button type="submit" class="btn btn-primary" id="signup-btn">Create account</button>
           <p id="signup-msg" class="muted" role={signupError ? 'alert' : 'status'}>
-            {checkEmail
-              ? 'Check your email, open the link, then click Confirm email. Mail previews do not finish this for you.'
-              : signupError
-                ? 'Could not create account. Try a different email, or log in if you already have one.'
-                : ''}
+            {signupError
+              ? 'Could not create account. Try a different email, or log in if you already have one.'
+              : ''}
           </p>
           <p class="muted" style="font-size: 13px; margin: 0;">
             Already have an account? Use <button type="button" class="linklike" id="signup-open-login">Log in</button>.
           </p>
         </form>
+          </>
+        )}
       </article>
     </main>
   </div>
@@ -119,10 +144,19 @@ const signupError = Astro.url.searchParams.get('error') === '1';
         input.focus();
       }
     }
+    function signupQuery() {
+      return new URLSearchParams(window.location.search);
+    }
+    function safeClientNext(raw, fallback) {
+      const t = String(raw || '').trim();
+      if (!t.startsWith('/') || t.startsWith('//') || t === '/login') return fallback;
+      return t;
+    }
     document.addEventListener('click', (event) => {
       const target = event.target;
       if (!(target instanceof Element) || !target.closest('#signup-open-login')) return;
-      document.dispatchEvent(new CustomEvent('wcag:open-login'));
+      const next = safeClientNext(signupQuery().get('next'), '/account');
+      window.location.href = `/login?next=${encodeURIComponent(next)}`;
     });
     document.addEventListener('change', (event) => {
       const target = event.target;
@@ -144,7 +178,9 @@ const signupError = Astro.url.searchParams.get('error') === '1';
       const fd = new FormData(form);
       const api = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl : (p) => p;
       const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
-      const guest = String(fd.get('guestToken') || new URLSearchParams(window.location.search).get('guest') || '');
+      const params = signupQuery();
+      const guest = String(fd.get('guestToken') || params.get('guest') || '');
+      const next = safeClientNext(fd.get('next') || params.get('next'), '/account');
       const res = await fetch(api('/api/auth/signup'), {
         method: 'POST',
         credentials: creds,
@@ -154,6 +190,7 @@ const signupError = Astro.url.searchParams.get('error') === '1';
           email: fd.get('email'),
           password: fd.get('password'),
           guestToken: guest,
+          next,
           acceptTerms: fd.get('acceptTerms') === 'true',
           buyingForBusiness: fd.get('buyingForBusiness') === 'true',
           company: fd.get('company'),
@@ -171,10 +208,14 @@ const signupError = Astro.url.searchParams.get('error') === '1';
         return;
       }
       if (data.needsVerification) {
-        if (msg) msg.textContent = 'Check your email to verify the account, then sign in.';
+        const dest = new URLSearchParams();
+        dest.set('check-email', '1');
+        if (next && next !== '/account') dest.set('next', next);
+        if (guest) dest.set('guest', guest);
+        window.location.href = `/signup?${dest.toString()}`;
         return;
       }
-      window.location.href = '/account';
+      window.location.href = safeClientNext(data.next, next);
     }, true);
   }
 </script>

@@ -1,11 +1,13 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import { customerLoginNext } from '../../../server/login-redirect.mjs';
 
 export const prerender = false;
 const token = String(Astro.url.searchParams.get('token') || '').trim();
 const invalid = Astro.url.searchParams.get('error') === 'invalid';
 const sent = Astro.url.searchParams.get('sent') === '1';
+const nextPath = customerLoginNext(Astro.url.searchParams.get('next') || '');
 ---
 <Layout title="Confirm email · Us" description="Confirm your Us accessibility scanner email address." noindex={true} authMode="guest-ok">
   <div class="app-shell">
@@ -16,6 +18,7 @@ const sent = Astro.url.searchParams.get('sent') === '1';
         {token && !invalid ? (
           <form id="verify-form" class="card stack-form" method="post" action="/api/auth/verify" data-astro-reload>
             <input type="hidden" name="token" value={token} />
+            {nextPath && nextPath !== '/account' ? <input type="hidden" name="next" value={nextPath} /> : null}
             <p class="muted">Click the button to finish creating the account. Mail apps that open the link first will not use it up.</p>
             <button type="submit" class="btn btn-primary" id="verify-btn">Confirm email</button>
           </form>
@@ -61,14 +64,17 @@ const sent = Astro.url.searchParams.get('sent') === '1';
         event.preventDefault();
         event.stopPropagation();
         const token = String(new FormData(form).get('token') || '');
+        const next = String(new FormData(form).get('next') || '');
         const res = await fetch(api('/api/auth/verify'), {
           method: 'POST',
           credentials: creds,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({ token, next }),
         });
         if (res.ok) {
-          window.location.href = '/account';
+          const data = await res.json().catch(() => ({}));
+          const dest = String(data.next || next || '/account');
+          window.location.href = dest.startsWith('/') && !dest.startsWith('//') ? dest : '/account';
           return;
         }
         window.location.href = '/verify?error=invalid';

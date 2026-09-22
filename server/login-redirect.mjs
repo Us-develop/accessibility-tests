@@ -60,3 +60,46 @@ export function customerLoginNext(raw) {
   if (typeof raw !== 'string' || !raw.trim()) return '/account';
   return safeNextAfterLogin(raw, '/account');
 }
+
+export const PENDING_NEXT_COOKIE = 'wcag_next';
+const PENDING_NEXT_MAX_AGE_SEC = 48 * 60 * 60;
+
+function cookieSecureFlag(sameSite) {
+  if (sameSite === 'None') return true;
+  return process.env.NODE_ENV === 'production';
+}
+
+/**
+ * Remember a post-verify destination across the email round-trip.
+ * Always re-checked with safeNextAfterLogin when read.
+ * @param {string} next
+ * @param {{ sameSite?: string, secure?: boolean }} [opts]
+ */
+export function pendingNextSetCookie(next, opts = {}) {
+  const sameSite = opts.sameSite || 'Lax';
+  const secure = opts.secure ?? cookieSecureFlag(sameSite);
+  const value = customerLoginNext(next);
+  const securePart = secure ? '; Secure' : '';
+  return `${PENDING_NEXT_COOKIE}=${encodeURIComponent(value)}; Path=/; Max-Age=${PENDING_NEXT_MAX_AGE_SEC}; SameSite=${sameSite}; HttpOnly${securePart}`;
+}
+
+export function pendingNextClearCookie(opts = {}) {
+  const sameSite = opts.sameSite || 'Lax';
+  const secure = opts.secure ?? cookieSecureFlag(sameSite);
+  const securePart = secure ? '; Secure' : '';
+  return `${PENDING_NEXT_COOKIE}=; Path=/; Max-Age=0; SameSite=${sameSite}; HttpOnly${securePart}`;
+}
+
+export function pendingNextFromCookieHeader(cookieHeader) {
+  const match = String(cookieHeader || '').match(/(?:^|; )wcag_next=([^;]*)/);
+  if (!match) return '';
+  try {
+    return customerLoginNext(decodeURIComponent(match[1]));
+  } catch {
+    return '/account';
+  }
+}
+
+export function isPricingNext(raw) {
+  return pathnameOfNext(raw) === '/pricing';
+}

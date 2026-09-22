@@ -38,6 +38,12 @@ import { isStrongPassword, verifyPassword } from './passwords.mjs';
 import { recordConsent } from './consents.mjs';
 import { LEGAL_PRIVACY_VERSION, LEGAL_TERMS_VERSION, isTruthyFlag } from './legal-versions.mjs';
 import { publicBaseUrl } from './config.mjs';
+import {
+  customerLoginNext,
+  pendingNextClearCookie,
+  pendingNextFromCookieHeader,
+  pendingNextSetCookie,
+} from './login-redirect.mjs';
 
 function publicBase() {
   return publicBaseUrl();
@@ -60,6 +66,36 @@ function sameSiteFromEnv() {
 
 function guestCookie(res, guestToken) {
   res.append('Set-Cookie', `wcag_guest=${guestToken}; Path=/; Max-Age=1209600; SameSite=Lax`);
+}
+
+function cookieOpts() {
+  return { sameSite: sameSiteFromEnv() };
+}
+
+function rememberPendingNext(req, res) {
+  const requested = typeof req.body?.next === 'string' ? req.body.next : '';
+  const next = customerLoginNext(requested);
+  if (requested && next) {
+    res.append('Set-Cookie', pendingNextSetCookie(next, cookieOpts()));
+  }
+  return next;
+}
+
+function consumePendingNext(req, res) {
+  const fromBody = typeof req.body?.next === 'string' ? req.body.next : '';
+  const fromQuery = typeof req.query?.next === 'string' ? req.query.next : '';
+  const fromCookie = pendingNextFromCookieHeader(req.headers?.cookie || '');
+  const next = customerLoginNext(fromBody || fromQuery || fromCookie);
+  res.append('Set-Cookie', pendingNextClearCookie(cookieOpts()));
+  return next;
+}
+
+function signupCheckEmailPath(next, guestToken) {
+  const params = new URLSearchParams();
+  params.set('check-email', '1');
+  if (next && next !== '/account') params.set('next', next);
+  if (guestToken) params.set('guest', guestToken);
+  return `/signup?${params.toString()}`;
 }
 
 function requireCustomer(req, res) {
@@ -209,6 +245,7 @@ export function registerAccountRoutes(app, ctx) {
         version: LEGAL_PRIVACY_VERSION,
         context: { customerType: user.customerType },
       });
+      const pendingNext = rememberPendingNext(req, res);
       const guestToken = String(req.body?.guestToken || '').trim();
       let attached = false;
       if (isValidGuestToken(guestToken)) {
@@ -241,9 +278,14 @@ export function registerAccountRoutes(app, ctx) {
         });
         setSessionCookies(res, { userId: user.id, role: user.role, email: user.email, ver: 1 }, sameSiteFromEnv());
       }
-      const next = verifyToken ? '/signup?check-email=1' : '/account';
+      const next = verifyToken ? signupCheckEmailPath(pendingNext, guestToken) : pendingNext;
       if (typeof req.recordRateLimitHit === 'function') req.recordRateLimitHit();
-      return formOrJson(req, res, next, 200, { ok: true, needsVerification: Boolean(verifyToken), user });
+      return formOrJson(req, res, next, 200, {
+        ok: true,
+        needsVerification: Boolean(verifyToken),
+        user,
+        next: pendingNext,
+      });
     } catch (err) {
       const status = Number(err.status) || 400;
       if (status === 409 && typeof req.recordRateLimitHit === 'function') {
@@ -275,7 +317,7 @@ export function registerAccountRoutes(app, ctx) {
         { userId: changed.id, role: changed.role, email: changed.email, ver: changed.sessionVersion || 1 },
         sameSiteFromEnv()
       );
-      return formOrJson(req, res, '/account', 200, { ok: true, email: changed.email });
+      return formOrJson(req, res, '/account', 200, { ok: true, email: changed.email, next: '/account' });
     }
     const user = await verifyUserEmail(token);
     if (!user) {
@@ -284,7 +326,8 @@ export function registerAccountRoutes(app, ctx) {
       });
     }
     setSessionCookies(res, { userId: user.id, role: user.role, email: user.email, ver: 1 }, sameSiteFromEnv());
-    return formOrJson(req, res, '/account', 200, { ok: true, email: user.email });
+    const next = consumePendingNext(req, res);
+    return formOrJson(req, res, next, 200, { ok: true, email: user.email, next });
   }));
 
   app.post('/api/auth/verify/resend', resendIpLimit, resendEmailLimit, asyncHandler(async (req, res) => {
