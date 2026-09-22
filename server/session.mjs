@@ -49,9 +49,21 @@ function cookieSecure(sameSite) {
   return parseBooleanEnv('AUTH_COOKIE_SECURE', false);
 }
 
-function cookieSuffix(sameSite) {
+/**
+ * Shared Path/SameSite/Max-Age/Secure/HttpOnly suffix for first-party cookies.
+ * @param {{ httpOnly?: boolean, maxAge?: number, sameSite?: string }} [opts]
+ */
+export function cookieFlags(opts = {}) {
+  const sameSiteRaw = String(opts.sameSite || 'Lax').trim();
+  const sameSite = ['Lax', 'Strict', 'None'].includes(sameSiteRaw) ? sameSiteRaw : 'Lax';
+  const maxAge = Number.isFinite(Number(opts.maxAge)) ? Number(opts.maxAge) : MAX_AGE_SEC;
   const secure = cookieSecure(sameSite) ? '; Secure' : '';
-  return `; Path=/; SameSite=${sameSite}; Max-Age=${MAX_AGE_SEC}${secure}`;
+  const httpOnly = opts.httpOnly ? '; HttpOnly' : '';
+  return `; Path=/; SameSite=${sameSite}; Max-Age=${maxAge}${secure}${httpOnly}`;
+}
+
+function cookieSuffix(sameSite) {
+  return cookieFlags({ sameSite, maxAge: MAX_AGE_SEC });
 }
 
 function b64url(buf) {
@@ -204,7 +216,6 @@ export function isHtmlFormPost(req) {
 export function csrfOk(req) {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return true;
   if (CSRF_SAFE_PATHS.has(req.path)) return true;
-  if (req.path === '/api/run' && req.access?.role === 'guest') return true;
   const cookies = parseCookies(req);
   const cookieToken = cookies[CSRF_COOKIE] || '';
   const header = String(req.headers['x-csrf-token'] || req.body?.csrfToken || '').trim();
@@ -213,6 +224,20 @@ export function csrfOk(req) {
   const b = Buffer.from(header);
   if (a.length !== b.length) return false;
   return timingSafeEqual(a, b);
+}
+
+/**
+ * Issue a CSRF cookie on HTML/API GETs so guest forms can send it.
+ * Does not rotate an existing token.
+ * @returns {string} cookie value
+ */
+export function ensureCsrfCookie(req, res, sameSite = 'Lax') {
+  const cookies = parseCookies(req);
+  const existing = cookies[CSRF_COOKIE] || '';
+  if (existing) return existing;
+  const csrf = randomBytes(16).toString('hex');
+  appendCookie(res, `${CSRF_COOKIE}=${csrf}${cookieSuffix(sameSite)}`);
+  return csrf;
 }
 
 export { SESSION_COOKIE, UI_COOKIE, CSRF_COOKIE };

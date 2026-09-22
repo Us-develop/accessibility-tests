@@ -47,7 +47,37 @@ function withEnv(patch, fn) {
 }
 
 describe('load-env production precedence', () => {
-  it('lets host-injected env win over every dotenv file', () => {
+  it('skips dotenv files in production', () => {
+    const root = mkdtempSync(join(tmpdir(), 'wcag-dotenv-'));
+    mkdirSync(join(root, 'web'));
+    writeFileSync(join(root, '.env'), 'FROM_ENV=env\n');
+    const logs = [];
+    const originalLog = console.log;
+    console.log = (...args) => {
+      logs.push(args.map(String).join(' '));
+    };
+    try {
+      withEnv(
+        {
+          NODE_ENV: 'production',
+          FROM_ENV: undefined,
+        },
+        () => {
+          const result = loadAllAppEnv(root);
+          assert.equal(result.production, true);
+          assert.equal(result.override, false);
+          assert.equal(result.loaded.length, 0);
+          assert.equal(process.env.FROM_ENV, undefined);
+          assert.ok(logs.some((line) => line.includes('skipping dotenv in production')));
+        }
+      );
+    } finally {
+      console.log = originalLog;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('lets .env.local win in development', () => {
     const root = mkdtempSync(join(tmpdir(), 'wcag-dotenv-'));
     mkdirSync(join(root, 'web'));
     writeFileSync(join(root, '.env'), 'HOST_WINS=from-env\nFROM_ENV=env\n');
@@ -62,8 +92,8 @@ describe('load-env production precedence', () => {
     try {
       withEnv(
         {
-          NODE_ENV: 'production',
-          HOST_WINS: 'from-host',
+          NODE_ENV: 'development',
+          HOST_WINS: undefined,
           FROM_ENV: undefined,
           FROM_LOCAL: undefined,
           FROM_WEB: undefined,
@@ -71,13 +101,13 @@ describe('load-env production precedence', () => {
         },
         () => {
           const result = loadAllAppEnv(root);
-          assert.equal(result.production, true);
-          assert.equal(result.override, false);
-          assert.equal(process.env.HOST_WINS, 'from-host');
+          assert.equal(result.production, false);
+          assert.equal(result.override, true);
           assert.equal(process.env.FROM_ENV, 'env');
           assert.equal(process.env.FROM_LOCAL, 'local');
           assert.equal(process.env.FROM_WEB, 'web');
           assert.equal(process.env.FROM_WEB_LOCAL, 'weblocal');
+          assert.equal(process.env.HOST_WINS, 'from-web-local');
           assert.equal(result.loaded.length, 4);
           assert.ok(logs.some((line) => line.includes('[env] loaded') && line.includes('.env')));
         }
@@ -149,7 +179,7 @@ describe('production startup mail', () => {
     withEnv(
       {
         NODE_ENV: 'production',
-        AUTH_ENABLED: 'false',
+        AUTH_ENABLED: 'true',
         MAIL_FROM: 'noreply@localhost',
         PUBLIC_BASE_URL: 'https://wcag.example',
         COMPANY_LEGAL_NAME: 'Example BV',

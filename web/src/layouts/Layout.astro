@@ -33,10 +33,10 @@ const devApiBase =
 const appBaseMeta =
   import.meta.env.DEV && devApiBase ? devApiBase : publicAppBase || devApiBase;
 /** Non-HttpOnly hint cookie so SSR can skip the login overlay on signed-in navigations. */
-const uiHint = Astro.cookies.get('wcag_ui')?.value;
-const staffHint = uiHint === '1' || uiHint === 'c';
-const signedRole = uiHint === '1' ? 'staff' : uiHint === 'c' ? 'customer' : '';
-const gateLocked = authMode === 'required' && !staffHint;
+const access = Astro.locals?.access;
+const signedRole = access?.role === 'staff' || access?.role === 'customer' ? access.role : '';
+const signedIn = Boolean(signedRole);
+const gateLocked = authMode === 'required' && !signedIn;
 
 const siteOrigin = String(Astro.site ?? import.meta.env.PUBLIC_BASE_URL ?? 'https://wcag.about-us.be')
   .trim()
@@ -62,7 +62,7 @@ function ownerWeight(filename: string): string {
 }
 ---
 <!DOCTYPE html>
-<html lang="en" class={staffHint ? 'wcag-staff' : undefined}>
+<html lang="en" class={signedIn ? 'wcag-staff' : undefined}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -119,9 +119,6 @@ function ownerWeight(filename: string): string {
         try {
           var staff = false;
           try { staff = sessionStorage.getItem('wcagStaff') === '1'; } catch (e) {}
-          if (!staff && typeof document.cookie === 'string' && /(^|; )wcag_ui=(?:1|c)(;|$)/.test(document.cookie)) {
-            staff = true;
-          }
           if (staff) document.documentElement.classList.add('wcag-staff');
         } catch (e) {}
         var m = document.querySelector('meta[name="accessibility-app-base"]');
@@ -211,10 +208,7 @@ function ownerWeight(filename: string): string {
         }
         var bar = document.getElementById('wcag-session-bar');
         if (bar) bar.hidden = false;
-        if (/(?:^|; )wcag_ui=c(?:;|$)/.test(document.cookie || '')) {
-          document.body.classList.add('is-customer');
-          document.body.classList.remove('is-staff');
-        } else {
+        if (!document.body.classList.contains('is-customer')) {
           document.body.classList.add('is-staff');
         }
       })();

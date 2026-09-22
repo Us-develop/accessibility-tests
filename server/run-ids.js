@@ -4,7 +4,7 @@
  */
 import { randomBytes } from 'crypto';
 import { existsSync, readdirSync, statSync } from 'fs';
-import { join } from 'path';
+import { join, relative, resolve, sep } from 'path';
 import { REPORTS_BASE } from './paths.js';
 import { isValidReportId, readJsonIfExists } from './fs-utils.js';
 
@@ -24,7 +24,16 @@ export function newRunId(date = new Date()) {
 
 /** Validate a runId path segment (also rejects path traversal). */
 export function isValidRunId(runId) {
-  return typeof runId === 'string' && /^[A-Za-z0-9._-]+$/.test(runId) && runId.length <= 80;
+  if (typeof runId !== 'string' || runId.length === 0 || runId.length > 80) return false;
+  if (runId === '.' || runId === '..' || runId.includes('..')) return false;
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(runId);
+}
+
+function isInsideReportsBase(target) {
+  const base = resolve(REPORTS_BASE);
+  const resolved = resolve(target);
+  const rel = relative(base, resolved);
+  return Boolean(rel) && !rel.startsWith(`..${sep}`) && rel !== '..' && !rel.split(sep).includes('..');
 }
 
 /** Same shape rule as report ids but renamed for clarity. */
@@ -33,11 +42,25 @@ export function isValidDomain(domain) {
 }
 
 export function runDir(domain, runId) {
-  return join(REPORTS_BASE, domain, runId);
+  if (!isValidDomain(domain) || !isValidRunId(runId)) {
+    throw new Error('Invalid report path');
+  }
+  const dir = resolve(join(REPORTS_BASE, domain, runId));
+  if (!isInsideReportsBase(dir)) {
+    throw new Error('Invalid report path');
+  }
+  return dir;
 }
 
 export function domainDir(domain) {
-  return join(REPORTS_BASE, domain);
+  if (!isValidDomain(domain)) {
+    throw new Error('Invalid report path');
+  }
+  const dir = resolve(join(REPORTS_BASE, domain));
+  if (!isInsideReportsBase(dir)) {
+    throw new Error('Invalid report path');
+  }
+  return dir;
 }
 
 /** List runId folder names under reports/<domain>/, newest first by mtime. */

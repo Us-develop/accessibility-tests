@@ -10,5 +10,7 @@ export function readJsonIfExists(filePath) {
 }
 
 export function isValidReportId(id) {
-  return /^[a-zA-Z0-9.-]+$/.test(id) && id.length <= 120;
+  if (typeof id !== 'string' || id.length === 0 || id.length > 120) return false;
+  if (id === '.' || id === '..' || id.includes('..')) return false;
+  return /^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/.test(id);
 }

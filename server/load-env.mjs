@@ -52,8 +52,11 @@ export function loadWebEnv(repoRoot, opts = {}) {
 /** Root env + web env (typical for server.js and web/run-server.mjs). */
 export function loadAllAppEnv(repoRoot) {
   const production = process.env.NODE_ENV === 'production';
-  const override =
-    !production && String(process.env.WCAG_DOTENV_OVERRIDE || '').trim() !== '0';
+  if (production) {
+    console.log('[env] skipping dotenv in production (use systemd EnvironmentFile)');
+    return { loaded: [], production, override: false };
+  }
+  const override = String(process.env.WCAG_DOTENV_OVERRIDE || '').trim() !== '0';
   const preserved = {};
   for (const k of ENV_PRESERVE_FROM_HOST) {
     if (process.env[k] !== undefined) preserved[k] = process.env[k];

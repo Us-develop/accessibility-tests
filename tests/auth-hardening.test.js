@@ -52,7 +52,7 @@ describe('auth hardening factory', () => {
     const prevSecret = process.env.SESSION_SECRET;
     const prevAuth = process.env.AUTH_ENABLED;
     process.env.NODE_ENV = 'production';
-    process.env.AUTH_ENABLED = 'false';
+    process.env.AUTH_ENABLED = 'true';
     process.env.SESSION_SECRET = 'too-short';
     try {
       assert.throws(() => createAccessibilityApp(repoRoot), /SESSION_SECRET \(>=32 chars\) is required/);
@@ -60,6 +60,20 @@ describe('auth hardening factory', () => {
       if (prevNode === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = prevNode;
       process.env.SESSION_SECRET = prevSecret;
+      process.env.AUTH_ENABLED = prevAuth;
+    }
+  });
+
+  it('throws when AUTH_ENABLED is false in production', () => {
+    const prevNode = process.env.NODE_ENV;
+    const prevAuth = process.env.AUTH_ENABLED;
+    process.env.NODE_ENV = 'production';
+    process.env.AUTH_ENABLED = 'false';
+    try {
+      assert.throws(() => createAccessibilityApp(repoRoot), /AUTH_ENABLED must be true in production/);
+    } finally {
+      if (prevNode === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNode;
       process.env.AUTH_ENABLED = prevAuth;
     }
   });
@@ -212,7 +226,7 @@ describe('auth hardening HTTP', () => {
     assert.equal(boom.status, 500);
     const body = await boom.json();
     assert.equal(body.error, 'Internal error');
-    const health = await fetch(`${origin}/api/health/db`);
+    const health = await fetch(`${origin}/api/config`);
     assert.equal(health.status, 200);
   });
 
