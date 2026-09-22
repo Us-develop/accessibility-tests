@@ -61,6 +61,8 @@ describe('assertPublicHttpUrl', () => {
       'http://0177.0.0.1/',
       'http://private-target.example/',
       'file:///etc/passwd',
+      'http://foo.svc.cluster.local/',
+      'http://bar.cluster.local/',
     ];
     for (const url of blocked) {
       await assert.rejects(() => assertPublicHttpUrl(url, { lookup }), /cannot be scanned|Only http and https|valid URL|single public/i);

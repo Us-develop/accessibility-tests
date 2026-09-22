@@ -1,3 +1,4 @@
+# Live host must `caddy reload` this file so HSTS actually ships on https://wcag.about-us.be.
 wcag.about-us.be {
 	encode zstd gzip
 	header {

@@ -85,6 +85,7 @@ export function isBlockedHostname(hostname) {
   if (!host) return true;
   if (BLOCKED_HOSTS.has(host) || BLOCKED_HOSTS.has(`${host}.`)) return true;
   if (host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.local')) return true;
+  if (host.endsWith('.cluster.local') || host.endsWith('.svc.cluster.local')) return true;
   if (isIP(host) && isBlockedIp(host)) return true;
   return false;
 }

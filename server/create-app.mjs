@@ -2564,7 +2564,6 @@ app.get('/report/:domain/:runId/:file', async (req, res, next) => {
   }
   if (html) {
     res.setHeader('Content-Type', 'text/html');
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     return res.send(html);
   }
   if (existsSync(join(reportDir, 'accessibility-report.html'))) {

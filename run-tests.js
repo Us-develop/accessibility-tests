@@ -21,28 +21,10 @@ import { runDynamicChecks } from './tests/chapter8-dynamic.js';
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { lookup as dnsLookup } from 'dns/promises';
-import { isIP } from 'net';
-import { isBlockedHostname, isBlockedIp, scannerUserAgent, stripBrackets } from './server/url-guard.mjs';
+import { scannerUserAgent, assertPublicHttpUrl } from './server/url-guard.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPORTS_BASE = process.env.REPORTS_BASE?.trim() || join(__dirname, 'reports');
-
-/** @type {Map<string, Promise<{ address: string }[]>>} */
-const hostLookupCache = new Map();
-
-async function lookupHostCached(hostname) {
-  const host = stripBrackets(hostname).toLowerCase();
-  if (hostLookupCache.has(host)) return hostLookupCache.get(host);
-  const pending = dnsLookup(host, { all: true })
-    .then((records) => (Array.isArray(records) ? records : [records]))
-    .catch((err) => {
-      hostLookupCache.delete(host);
-      throw err;
-    });
-  hostLookupCache.set(host, pending);
-  return pending;
-}
 
 async function httpUrlIsBlocked(raw) {
   let parsed;
@@ -54,16 +36,9 @@ async function httpUrlIsBlocked(raw) {
   if (parsed.protocol === 'data:' || parsed.protocol === 'blob:' || parsed.protocol === 'about:') {
     return false;
   }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return true;
-  }
-  const hostname = stripBrackets(parsed.hostname);
-  if (isBlockedHostname(hostname)) return true;
-  if (isIP(hostname)) return isBlockedIp(hostname);
   try {
-    const records = await lookupHostCached(hostname);
-    const addresses = records.map((row) => (typeof row === 'string' ? row : row.address)).filter(Boolean);
-    return !addresses.length || addresses.some((addr) => isBlockedIp(addr));
+    await assertPublicHttpUrl(raw);
+    return false;
   } catch {
     return true;
   }
