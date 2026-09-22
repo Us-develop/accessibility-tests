@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import {
   dbPool,
   dbDeleteUser,
@@ -37,6 +37,43 @@ export const SIGNUP_EMAIL_TAKEN_ERROR =
 function httpError(message, status, field) {
   return Object.assign(new Error(message), { status, ...(field ? { field } : {}) });
 }
+
+const AUTH_TOKEN_PREFIX = 'sha256$';
+
+/** @type {Map<string, string>} */
+const issuedRawAuthTokens = new Map();
+
+export function hashAuthToken(raw) {
+  return `${AUTH_TOKEN_PREFIX}${createHash('sha256').update(String(raw || '')).digest('hex')}`;
+}
+
+export function authTokenMatches(stored, raw) {
+  const expected = String(stored || '');
+  if (!expected.startsWith(AUTH_TOKEN_PREFIX)) return false;
+  const a = Buffer.from(expected.slice(AUTH_TOKEN_PREFIX.length), 'hex');
+  const b = Buffer.from(createHash('sha256').update(String(raw || '')).digest('hex'), 'hex');
+  if (a.length !== 32 || b.length !== 32 || a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/**
+ * Raw token from the last issue for this email (tests). Production mail uses the
+ * return value of createUser / restartEmailVerification / startPasswordReset.
+ */
+export function takeIssuedAuthToken(email) {
+  const key = String(email || '').trim().toLowerCase();
+  const raw = issuedRawAuthTokens.get(key) || null;
+  issuedRawAuthTokens.delete(key);
+  return raw;
+}
+
+function issueAuthToken(email) {
+  const raw = randomBytes(16).toString('hex');
+  issuedRawAuthTokens.set(String(email || '').trim().toLowerCase(), raw);
+  return { raw, stored: hashAuthToken(raw) };
+}
+
+export const PASSWORD_RULE_ERROR = 'Use a password of at least 10 characters that is not your email.';
 
 /** Dummy scrypt hash so missing users still pay the verifyPassword cost. */
 const DUMMY_PASSWORD_HASH =
@@ -247,8 +284,8 @@ export async function createUser({
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
     throw httpError('Enter a valid email address.', 400, 'email');
   }
-  if (!isStrongPassword(password)) {
-    throw httpError('Use a password of at least 10 characters.', 400, 'password');
+  if (!isStrongPassword(password, normalized)) {
+    throw httpError(PASSWORD_RULE_ERROR, 400, 'password');
   }
   if (await getUserByEmail(normalized)) {
     throw httpError(SIGNUP_EMAIL_TAKEN_ERROR, 409, 'email');
@@ -258,6 +295,7 @@ export async function createUser({
   const vat = normalizeVatNumber(vatNumber);
   assertBusinessCompany(type, companyName);
   const autoVerify = !emailVerificationRequired();
+  const issued = autoVerify ? null : issueAuthToken(normalized);
   const user = {
     id: randomBytes(12).toString('hex'),
     email: normalized,
@@ -265,7 +303,7 @@ export async function createUser({
     role: 'customer',
     passwordHash: await hashPassword(password),
     emailVerified: autoVerify,
-    verifyToken: autoVerify ? null : randomBytes(16).toString('hex'),
+    verifyToken: issued?.stored || null,
     verifyExpiresAt: autoVerify ? null : new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
     resetToken: null,
     resetExpiresAt: null,
@@ -289,7 +327,7 @@ export async function createUser({
     throw err;
   }
   await ensureCustomerSubscription(user.id, { emailVerified: user.emailVerified });
-  return { user: publicUser(user), verifyToken: user.verifyToken };
+  return { user: publicUser(user), verifyToken: issued?.raw || null };
 }
 
 export async function authenticateUser(email, password) {
@@ -341,16 +379,17 @@ export async function updateContactDetails(userId, patch) {
 export async function findUserByVerifyToken(token) {
   const value = String(token || '').trim();
   if (!value) return null;
+  const hashed = hashAuthToken(value);
   let user = null;
   if (useDb()) {
-    const { rows } = await dbPool.query(`SELECT id FROM users WHERE verify_token = $1 LIMIT 1`, [value]);
+    const { rows } = await dbPool.query(`SELECT id FROM users WHERE verify_token = $1 LIMIT 1`, [hashed]);
     if (rows[0]) user = await getUserById(rows[0].id);
     if (!user) {
-      const fromJson = loadUsers().find((u) => u.verifyToken && u.verifyToken === value) || null;
+      const fromJson = loadUsers().find((u) => authTokenMatches(u.verifyToken, value)) || null;
       if (fromJson) user = await hydrateJsonUser(fromJson);
     }
   } else {
-    user = loadUsers().find((u) => u.verifyToken && u.verifyToken === value) || null;
+    user = loadUsers().find((u) => authTokenMatches(u.verifyToken, value)) || null;
   }
   if (!user) return null;
   if (user.verifyExpiresAt && Date.parse(user.verifyExpiresAt) < Date.now()) return null;
@@ -368,19 +407,19 @@ export async function verifyUserEmail(token) {
 export async function restartEmailVerification(email) {
   const user = await getUserByEmail(email);
   if (!user || user.emailVerified) return null;
-  const token = randomBytes(16).toString('hex');
+  const issued = issueAuthToken(user.email);
   const saved = await updateUser(user.id, {
-    verifyToken: token,
+    verifyToken: issued.stored,
     verifyExpiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
   });
-  return { user: publicUser(saved), token };
+  return { user: publicUser(saved), token: issued.raw };
 }
 
 export async function setPassword(id, password) {
-  if (!isStrongPassword(password)) {
-    throw Object.assign(new Error('Use a password of at least 10 characters.'), { status: 400 });
-  }
   const current = await getUserById(id);
+  if (!isStrongPassword(password, current?.email)) {
+    throw Object.assign(new Error(PASSWORD_RULE_ERROR), { status: 400 });
+  }
   return publicUser(
     await updateUser(id, {
       passwordHash: await hashPassword(password),
@@ -394,20 +433,21 @@ export async function setPassword(id, password) {
 export async function startPasswordReset(email) {
   const user = await getUserByEmail(email);
   if (!user) return null;
-  const token = randomBytes(16).toString('hex');
+  const issued = issueAuthToken(user.email);
   await updateUser(user.id, {
-    resetToken: token,
+    resetToken: issued.stored,
     resetExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
   });
-  return { user: publicUser(user), token };
+  return { user: publicUser(user), token: issued.raw };
 }
 
 export async function consumePasswordReset(token) {
   if (!token) return null;
+  const hashed = hashAuthToken(token);
   if (useDb()) {
     const { rows } = await dbPool.query(
       `SELECT id FROM users WHERE reset_token = $1 LIMIT 1`,
-      [token]
+      [hashed]
     );
     if (!rows[0]) return null;
     const user = await getUserById(rows[0].id);
@@ -415,7 +455,7 @@ export async function consumePasswordReset(token) {
     if (user.resetExpiresAt && Date.parse(user.resetExpiresAt) < Date.now()) return null;
     return user;
   }
-  const user = loadUsers().find((u) => u.resetToken && u.resetToken === token) || null;
+  const user = loadUsers().find((u) => authTokenMatches(u.resetToken, token)) || null;
   if (!user) return null;
   if (user.resetExpiresAt && Date.parse(user.resetExpiresAt) < Date.now()) return null;
   return withContactDefaults(user);

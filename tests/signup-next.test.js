@@ -17,7 +17,7 @@ process.env.AUTH_EMAIL_VERIFY = 'required';
 process.env.DEFER_ROOT_LOGIN_TO_SHELL = 'true';
 
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
-const { getUserByEmail } = await import('../server/users.mjs');
+const { takeIssuedAuthToken } = await import('../server/users.mjs');
 const { PENDING_NEXT_COOKIE } = await import('../server/login-redirect.mjs');
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -111,14 +111,15 @@ describe('signup next through verify', () => {
     assert.equal(htmlSignup.status, 303);
     assert.equal(htmlSignup.headers.get('location'), '/signup?check-email=1&next=%2Fpricing');
 
-    const created = await getUserByEmail('pricing-next@example.com');
+    const token = takeIssuedAuthToken('pricing-next@example.com');
+    assert.equal(String(token).length, 32);
     const verify = await fetch(`${origin}/api/auth/verify`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         cookie: jar.header(),
       },
-      body: JSON.stringify({ token: created.verifyToken }),
+      body: JSON.stringify({ token }),
     });
     const verified = await verify.json();
     assert.equal(verify.status, 200, verified.error || '');

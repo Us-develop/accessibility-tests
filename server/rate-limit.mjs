@@ -1,5 +1,7 @@
 /**
  * In-memory rate limiter. Prunes expired keys on each call. No extra dependency.
+ * Limits live in this process only: they reset on restart and do not apply across
+ * multiple Node processes. Keep WCAG_DISABLE_RATE_LIMIT unset in production.
  * `countFailures: true` does not increment on the way in. Call
  * `req.recordRateLimitHit()` (alias `recordRateLimitFailure`) after an outcome
  * that should count (failed logins, created accounts).

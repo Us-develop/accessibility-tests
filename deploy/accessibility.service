@@ -13,6 +13,9 @@ TimeoutStopSec=30
 Restart=on-failure
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/accessibility-tests
 
 [Install]
 WantedBy=multi-user.target

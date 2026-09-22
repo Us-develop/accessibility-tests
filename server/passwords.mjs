@@ -39,7 +39,10 @@ export async function verifyPassword(password, stored) {
   return timingSafeEqual(actual, expected);
 }
 
-export function isStrongPassword(password) {
+export function isStrongPassword(password, email) {
   const value = String(password || '');
-  return value.length >= 10;
+  if (value.length < 10) return false;
+  const mail = String(email || '').trim().toLowerCase();
+  if (mail && value.trim().toLowerCase() === mail) return false;
+  return true;
 }

@@ -15,6 +15,7 @@ import {
   updateContactDetails,
   verifyUserEmail,
   normalizeCustomerType,
+  PASSWORD_RULE_ERROR,
 } from './users.mjs';
 import { attachRunToUser, listProjectsForUser } from './projects.mjs';
 import { clearSessionCookies, cookieFlags, isHtmlFormPost, parseCookies, setSessionCookies } from './session.mjs';
@@ -414,8 +415,8 @@ export function registerAccountRoutes(app, ctx) {
     const next = String(req.body?.password || req.body?.newPassword || '');
     const ok = await verifyPassword(current, user.passwordHash);
     if (!ok) return res.status(400).json({ error: 'Current password is incorrect.' });
-    if (!isStrongPassword(next)) {
-      return res.status(400).json({ error: 'Use a password of at least 10 characters.' });
+    if (!isStrongPassword(next, user.email)) {
+      return res.status(400).json({ error: PASSWORD_RULE_ERROR });
     }
     try {
       await setPassword(user.id, next);

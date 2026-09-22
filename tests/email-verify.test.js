@@ -17,9 +17,14 @@ process.env.AUTH_EMAIL_VERIFY = 'required';
 process.env.DEFER_ROOT_LOGIN_TO_SHELL = 'true';
 
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
-const { getUserByEmail, GENERIC_CREDENTIALS_ERROR, UNVERIFIED_EMAIL_CODE, UNVERIFIED_EMAIL_ERROR } = await import(
-  '../server/users.mjs'
-);
+const {
+  getUserByEmail,
+  hashAuthToken,
+  takeIssuedAuthToken,
+  GENERIC_CREDENTIALS_ERROR,
+  UNVERIFIED_EMAIL_CODE,
+  UNVERIFIED_EMAIL_ERROR,
+} = await import('../server/users.mjs');
 const { setUrlGuardLookup } = await import('../server/url-guard.mjs');
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -70,6 +75,7 @@ function listen(app) {
 describe('email verification', () => {
   let server;
   let origin;
+  let needsVerifyToken;
 
   it('starts the app', async () => {
     const app = createAccessibilityApp(repoRoot, {
@@ -95,8 +101,12 @@ describe('email verification', () => {
     assert.equal(body.needsVerification, true);
     const created = await getUserByEmail('needs-verify@example.com');
     assert.equal(created.emailVerified, false);
-    const token = created.verifyToken;
+    const token = takeIssuedAuthToken('needs-verify@example.com');
+    needsVerifyToken = token;
     assert.equal(String(token).length, 32);
+    assert.match(created.verifyToken, /^sha256\$[a-f0-9]{64}$/);
+    assert.equal(created.verifyToken, hashAuthToken(token));
+    assert.notEqual(created.verifyToken, token);
 
     const first = await fetch(`${origin}/api/auth/verify?token=${encodeURIComponent(token)}`, {
       redirect: 'manual',
@@ -105,18 +115,17 @@ describe('email verification', () => {
     assert.equal(first.headers.get('location'), `/verify?token=${encodeURIComponent(token)}`);
     const afterGet = await getUserByEmail('needs-verify@example.com');
     assert.equal(afterGet.emailVerified, false);
-    assert.equal(afterGet.verifyToken, token);
+    assert.equal(afterGet.verifyToken, hashAuthToken(token));
 
     const second = await fetch(`${origin}/api/auth/verify?token=${encodeURIComponent(token)}`, {
       redirect: 'manual',
     });
     assert.equal(second.status, 303);
-    assert.equal((await getUserByEmail('needs-verify@example.com')).verifyToken, token);
+    assert.equal((await getUserByEmail('needs-verify@example.com')).verifyToken, hashAuthToken(token));
   });
 
   it('confirms the account on POST and signs the user in', async () => {
-    const created = await getUserByEmail('needs-verify@example.com');
-    const token = created.verifyToken;
+    const token = needsVerifyToken;
     const jar = new CookieJar();
     const res = await fetch(`${origin}/api/auth/verify`, {
       method: 'POST',
@@ -145,7 +154,9 @@ describe('email verification', () => {
     });
     assert.equal(signup.status, 200);
     const first = await getUserByEmail('resend-verify@example.com');
-    const oldToken = first.verifyToken;
+    const oldToken = takeIssuedAuthToken('resend-verify@example.com');
+    assert.match(first.verifyToken, /^sha256\$/);
+    assert.notEqual(first.verifyToken, oldToken);
     const resend = await fetch(`${origin}/api/auth/verify/resend`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -153,8 +164,11 @@ describe('email verification', () => {
     });
     assert.equal(resend.status, 200);
     const next = await getUserByEmail('resend-verify@example.com');
+    const nextToken = takeIssuedAuthToken('resend-verify@example.com');
     assert.ok(next.verifyToken);
-    assert.notEqual(next.verifyToken, oldToken);
+    assert.ok(nextToken);
+    assert.notEqual(next.verifyToken, first.verifyToken);
+    assert.notEqual(nextToken, oldToken);
     const used = await fetch(`${origin}/api/auth/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -164,7 +178,7 @@ describe('email verification', () => {
     const confirm = await fetch(`${origin}/api/auth/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: next.verifyToken }),
+      body: JSON.stringify({ token: nextToken }),
     });
     assert.equal(confirm.status, 200);
     assert.equal((await getUserByEmail('resend-verify@example.com')).emailVerified, true);
