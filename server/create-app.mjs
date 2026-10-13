@@ -9,7 +9,7 @@ import { spawn } from 'child_process';
 import { createHash, timingSafeEqual } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { sendRunNotificationEmail, createSmtpTransport, sendAccessRequestEmail, sendLeadEmail, assertProductionMailFrom } from '../server-email.js';
+import { sendRunNotificationEmail, createSmtpTransport, sendAccessRequestEmail, sendLeadEmail, sendLeadConfirmationEmail, assertProductionMailFrom } from '../server-email.js';
 import { REPORTS_BASE } from './paths.js';
 import { dbPool, dbUpsertRun, dbGetRun, dbGetLatestRun, dbGetRunByGuestToken, dbInsertLead, dbListLeads } from './db.js';
 import { mergeReportData } from './report-data.js';
@@ -90,7 +90,7 @@ import {
   refundScanEntitlement,
   rememberRunEntitlement,
 } from './billing.mjs';
-import { MAX_PAGES_PER_CUSTOMER_RUN } from './plan-catalog.mjs';
+import { LEAD_SOURCES, MAX_PAGES_PER_CUSTOMER_RUN } from './plan-catalog.mjs';
 import {
   customerHasActiveScan,
   enqueueScanJob,
@@ -207,6 +207,7 @@ const PUBLIC_GET_PATHS = new Set([
   '/loading',
   '/limitations',
   '/pricing',
+  '/contact',
   '/terms',
   '/privacy',
   '/cookies',
@@ -1962,6 +1963,9 @@ app.post('/api/lead', leadIpLimit, async (req, res) => {
   const phone = String(req.body?.phone ?? '').trim().slice(0, 80);
   const message = String(req.body?.message ?? '').trim().slice(0, 4000);
   const token = String(req.body?.token ?? '').trim();
+  // Where the visitor opened the form. A guest token means the scan teaser.
+  const requestedSource = String(req.body?.source ?? '').trim();
+  const source = token ? 'scan-teaser' : LEAD_SOURCES.includes(requestedSource) ? requestedSource : 'other';
   if (!name || !email) {
     return res.status(400).json({ error: 'Name and email are required.' });
   }
@@ -2001,11 +2005,18 @@ app.post('/api/lead', leadIpLimit, async (req, res) => {
     domain,
     runToken: token,
     score,
-    source: 'scan-teaser',
+    source,
     cta: 'wcag-services',
   };
   try {
-    const { emailed } = await sendLeadEmail(row);
+    // Mail the team first so the stored row can say whether it went out, but a
+    // mail failure must not lose the lead: it is saved either way.
+    let emailed = false;
+    try {
+      ({ emailed } = await sendLeadEmail(row));
+    } catch (err) {
+      console.error('[lead] team mail failed:', err?.message || err);
+    }
     row.emailed = emailed;
     if (dbPool) {
       try {
@@ -2025,12 +2036,19 @@ app.post('/api/lead', leadIpLimit, async (req, res) => {
         version: LEGAL_PRIVACY_VERSION,
         ip: clientIp(req),
         userAgent: req.headers['user-agent'],
-        context: { source: 'scan-teaser', domain, runToken: token },
+        context: { source, domain, runToken: token },
       });
     } catch (err) {
       console.error('[lead] consent failed:', err?.message || err);
     }
-    return res.json({ ok: true, emailed });
+    // Confirmation to the visitor. Best effort: the request is already saved.
+    let confirmationSent = false;
+    try {
+      ({ emailed: confirmationSent } = await sendLeadConfirmationEmail(row));
+    } catch (err) {
+      console.error('[lead] confirmation mail failed:', err?.message || err);
+    }
+    return res.json({ ok: true, emailed, confirmationSent });
   } catch (err) {
     console.error('[lead]', err?.message || err);
     return res.status(500).json({ error: 'Could not submit your request. Try again later.' });

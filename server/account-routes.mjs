@@ -21,7 +21,7 @@ import {
 import { attachRunToUser, listProjectsForUser } from './projects.mjs';
 import { clearSessionCookies, cookieFlags, isHtmlFormPost, parseCookies, setSessionCookies } from './session.mjs';
 import { isValidGuestToken, guestFreebieClaimed, clientIp, deleteGuestTokenFile } from './guest.mjs';
-import { sendAccountEmail } from '../server-email.js';
+import { sendAccountEmail, verifyEmailText } from '../server-email.js';
 import { asyncHandler } from './http-utils.mjs';
 import { clientKey, rateLimit } from './rate-limit.mjs';
 import {
@@ -290,8 +290,9 @@ export function registerAccountRoutes(app, ctx) {
         await sendAccountEmailSafely({
           kind: 'verify',
           to: user.email,
-          subject: 'Verify your Us accessibility account',
-        text: `Confirm your email:\n${link}\nOpen the link, then click Confirm email. This link expires in 48 hours.\n`,
+          subject: 'Confirm your email address · Us accessibility',
+          text: verifyEmailText(link),
+          action: { label: 'Confirm my email address', url: link },
         });
       } else {
         await ensureFreebieLot(user.id, {
@@ -383,8 +384,9 @@ export function registerAccountRoutes(app, ctx) {
       await sendAccountEmailSafely({
         kind: 'verify',
         to: started.user.email,
-        subject: 'Verify your Us accessibility account',
-        text: `Confirm your email:\n${link}\nThis link expires in 48 hours.\n`,
+        subject: 'Confirm your email address · Us accessibility',
+        text: verifyEmailText(link),
+        action: { label: 'Confirm my email address', url: link },
       });
     }
     return formOrJson(req, res, '/verify?sent=1', 200, { ok: true });

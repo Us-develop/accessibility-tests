@@ -189,8 +189,81 @@ export async function sendAccountEmail(opts) {
     logSkippedMail({ kind, to, messageId });
     return { emailed: false, messageId };
   }
-  const html = `<p>${escapeHtml(text).replace(/\n/g, '<br/>')}</p>`;
+  // An optional action becomes a real link in the HTML part; the plain-text
+  // part already carries the address. Content only, no styling.
+  const action = opts?.action?.url && opts?.action?.label ? opts.action : null;
+  const html =
+    `<p>${escapeHtml(text).replace(/\n/g, '<br/>')}</p>` +
+    (action ? `<p><a href="${escapeHtml(action.url)}">${escapeHtml(action.label)}</a></p>` : '');
   await transport.sendMail({ from, to, subject, text, html, messageId });
+  return { emailed: true, messageId };
+}
+
+/**
+ * Body of the "confirm your email address" mail: says what it is in the first
+ * line, then the one thing to do. The HTML part adds the link as a labelled action.
+ * @param {string} link
+ */
+export function verifyEmailText(link) {
+  return [
+    'Welcome to the Us accessibility scanner. One step left: confirm that this email address is yours.',
+    '',
+    'Confirm my email address:',
+    link,
+    '',
+    'Open the link, then click "Confirm email" on the page. The link works for 48 hours.',
+    'Your free scan is added to your account as soon as you have confirmed.',
+    '',
+    'Did you not create an account? Then ignore this message; nothing will happen.',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Tell the visitor we received their request, so a sent form is not a leap of faith.
+ * Plain text with real content: what they asked, and what happens next.
+ * @param {{ name?: string, email?: string, message?: string, scannedUrl?: string }} payload
+ */
+export function leadConfirmationText(payload) {
+  const name = String(payload?.name || '').trim();
+  const message = String(payload?.message || '').trim();
+  const scannedUrl = String(payload?.scannedUrl || '').trim();
+  return [
+    `Hello${name ? ` ${name}` : ''},`,
+    '',
+    'Thank you for getting in touch with Us about web accessibility. We received your request and one of our accessibility specialists will reply within two working days.',
+    '',
+    ...(scannedUrl ? [`Page you scanned: ${scannedUrl}`, ''] : []),
+    ...(message ? ['Your message:', message, ''] : []),
+    'You do not need to do anything else. If you want to add something, reply to this email.',
+    '',
+    'Us',
+    'https://about-us.be',
+    '',
+  ].join('\n');
+}
+
+export async function sendLeadConfirmationEmail(payload) {
+  const to = String(payload?.email || '').trim();
+  if (!to) return { emailed: false };
+  const replyTo = String(process.env.ACCESS_REQUEST_TO || 'info@about-us.be').trim();
+  const transport = createSmtpTransport();
+  const messageId = newMessageId();
+  if (!transport) {
+    logSkippedMail({ kind: 'lead-confirmation', to, messageId });
+    return { emailed: false, messageId };
+  }
+  const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@localhost';
+  const text = leadConfirmationText(payload);
+  await transport.sendMail({
+    from,
+    to,
+    replyTo,
+    subject: 'We received your request · Us accessibility',
+    text,
+    html: `<p>${escapeHtml(text).replace(/\n/g, '<br/>')}</p>`,
+    messageId,
+  });
   return { emailed: true, messageId };
 }
 

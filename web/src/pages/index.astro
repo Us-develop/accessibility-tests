@@ -81,6 +81,17 @@ export const prerender = false;
               placeholder="https://example.com"
               required
             />
+            <div id="guest-freebie-used" class="guest-freebie-used" role="alert" tabindex="-1" hidden style="margin-top: 14px;">
+              <p style="font-weight: 600; margin-bottom: 6px;">You have already used your free scan.</p>
+              <p class="muted" style="font-size: 14px; margin-bottom: 12px;">
+                To scan again, buy tokens (one token is one page), subscribe to Pro, or sign in if you already have an account.
+              </p>
+              <div class="guest-cta-row">
+                <a class="btn btn-primary btn-sm" href="/pricing#tokens">Buy tokens</a>
+                <a class="btn btn-secondary btn-sm" href="/pricing#pro">Subscribe to Pro</a>
+                <button type="button" class="btn btn-ghost btn-sm" data-open-login>Sign in</button>
+              </div>
+            </div>
             <p class="muted" style="font-size: 13px; margin-top: 12px;">
               One free snapshot per visitor. By starting a scan you confirm you are allowed to request this URL.
             </p>
@@ -108,7 +119,7 @@ export const prerender = false;
             <a class="btn btn-secondary" href="/pricing#pro">Subscribe to Pro</a>
           </div>
           <p class="muted" style="font-size: 13px; margin-top: 16px;">
-            <a class="link" href="https://about-us.be/contact/">Talk to a WCAG expert</a>
+            <a class="link" href="/contact?source=home">Talk to a WCAG expert</a>
             ·
             <a class="link" href="/signup">Create an account</a>
           </p>
@@ -126,7 +137,7 @@ export const prerender = false;
             ·
             <a class="link" href="/account">Buy extra tokens</a>
             ·
-            <a class="link" href="https://about-us.be/contact/">Request Us services</a>
+            <a class="link" href="/contact?source=home">Talk to a WCAG expert</a>
           </p>
         </div>
 
@@ -440,7 +451,23 @@ export const prerender = false;
     if (fieldId) markFieldInvalid(fieldId);
   }
 
+  /** The free scan is gone: explain under the URL field and move focus to the next steps. */
+  function showFreebieUsed() {
+    const box = document.getElementById('guest-freebie-used');
+    const input = document.getElementById('guest-url');
+    if (!box) return;
+    box.hidden = false;
+    if (input) {
+      input.setAttribute('aria-describedby', 'guest-freebie-used');
+      input.setAttribute('aria-invalid', 'true');
+    }
+    box.focus();
+  }
+
   function clearFormError() {
+    const box = document.getElementById('guest-freebie-used');
+    if (box) box.hidden = true;
+    document.getElementById('guest-url')?.removeAttribute('aria-describedby');
     const errEl = formErrorEl();
     if (!errEl) return;
     errEl.replaceChildren();
@@ -658,6 +685,15 @@ export const prerender = false;
       });
       const data = await parseJsonResponse(res);
       if (!res.ok) {
+        if (res.status === 429 && data.code === 'guest_freebie_used') {
+          // Said right under the field, with the ways to continue, instead of
+          // in the general error line at the bottom of the page.
+          showFreebieUsed();
+          if (btn) btn.textContent = 'See pricing';
+          form.dataset.freebieUsed = '1';
+          if (window.turnstile && turnstileWidgetId != null) window.turnstile.reset(turnstileWidgetId);
+          return;
+        }
         const ctas = { ...(data.ctas || {}), signin: true };
         showFormError(data.error || res.statusText || 'Request failed', ctas, 'guest-url');
         if (res.status === 429) {

@@ -557,7 +557,7 @@ describe('account HTTP', () => {
     const body = await run.json();
     assert.equal(run.status, 429);
     assert.equal(body.code, 'empty_tokens');
-    assert.equal(body.ctas.services, 'https://about-us.be/contact/');
+    assert.equal(body.ctas.services, '/contact?source=scan-limit');
     assert.match(body.error || '', /token|Pro|Us/i);
   });
 

@@ -155,7 +155,8 @@ const onHome = Astro.url.pathname === '/';
     document.addEventListener('click', (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      if (target.closest('#wcag-header-login')) {
+      // Any element marked data-open-login opens the sign-in dialog, on every page.
+      if (target.closest('#wcag-header-login, [data-open-login]')) {
         document.dispatchEvent(new CustomEvent('wcag:open-login'));
       }
     });
