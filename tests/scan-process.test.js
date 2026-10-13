@@ -137,6 +137,17 @@ describe('scan child process', () => {
     assert.equal(JSON.stringify(done).includes('/srv/'), false);
   });
 
+  it('refuses a host that cannot be a report folder before creating any state', async () => {
+    spawned.length = 0;
+    onSpawn = () => {};
+    for (const url of ['https://trailing-dot.example./', 'https://under_score.example/']) {
+      const { res, json } = await staffRun(url);
+      assert.equal(res.status, 400, `${url} -> ${res.status} ${JSON.stringify(json)}`);
+      assert.match(json.error, /plain host name/);
+    }
+    assert.equal(spawned.length, 0);
+  });
+
   it('stops a child that outlives the process timeout', async () => {
     spawned.length = 0;
     onSpawn = () => {};
