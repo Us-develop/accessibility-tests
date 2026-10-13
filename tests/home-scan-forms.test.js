@@ -173,18 +173,20 @@ describe('own product accessibility markup', () => {
   });
 
   it('starts Stripe checkout from delegated Buy and Subscribe clicks', () => {
-    assert.match(pricingAstro, /__wcagBillingCheckoutBound/);
-    assert.match(pricingAstro, /addEventListener\(\s*'click'/);
-    assert.match(pricingAstro, /\.pricing-checkout, \.token-buy/);
-    assert.match(pricingAstro, /true\s*\)/);
-    assert.match(pricingAstro, /finally \{/);
+    // One shared module binds the clicks for both pages (web/src/lib/checkout.js).
+    const checkoutLib = readFileSync(join(repoRoot, 'web/src/lib/checkout.js'), 'utf8');
+    assert.match(checkoutLib, /__wcagBillingCheckoutBound/);
+    assert.match(checkoutLib, /addEventListener\(\s*'click'/);
+    assert.match(checkoutLib, /\.pricing-checkout, \.token-buy/);
+    assert.match(checkoutLib, /true\s*\)/);
+    assert.match(checkoutLib, /finally \{/);
+    assert.match(pricingAstro, /bindCheckout\(\)/);
     assert.doesNotMatch(pricingAstro, /querySelectorAll\('\.pricing-checkout'\)/);
-    assert.match(accountAstro, /__wcagBillingCheckoutBound/);
+    assert.match(accountAstro, /bindCheckout\(\)/);
     assert.match(accountAstro, /class="btn btn-primary pricing-checkout"/);
     assert.match(accountAstro, /data-interval="monthly"/);
     assert.match(accountAstro, /data-interval="yearly"/);
     assert.match(accountAstro, /id="account-billing-msg"/);
-    assert.match(accountAstro, /\.pricing-checkout, \.token-buy/);
     assert.doesNotMatch(accountAstro, /href="\/pricing#pro"/);
   });
 

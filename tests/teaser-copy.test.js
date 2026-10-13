@@ -46,8 +46,11 @@ describe('teaser, loading, and catalog CTAs', () => {
     assert.doesNotMatch(home, /complimentary token/);
     assert.match(home, /See pricing/);
     assert.match(home, /ctas\.signin/);
-    assert.match(pricing, /developer guide, and the manual checklist/);
-    assert.doesNotMatch(pricing, /sales deck, developer guide, manual checklist, Jira/);
+    // The pricing cards list their features from the plan catalog, including
+    // what the token tier does not get (sales report, Jira).
+    assert.match(pricing, /planFeatureList\(NONE_PLAN_ID\)/);
+    assert.match(pricing, /planFeatureList\(PRO_PLAN_ID\)/);
+    assert.doesNotMatch(pricing, /Full Pro deliverables for each spent token/);
     assert.match(account, /id="subscribe-actions"/);
     assert.match(account, /subscribeActions\.hidden = isPro/);
     assert.match(layout, /Talk to a WCAG expert/);

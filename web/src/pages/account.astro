@@ -17,6 +17,14 @@ const pack100Label = formatVatInclusivePrice(8000);
         <h1>Account</h1>
         <p id="account-status" class="muted mt-1">Loading…</p>
 
+        <section id="billing-success" class="card stack-form account-section" role="status" tabindex="-1" hidden>
+          <h2>Payment received, thank you</h2>
+          <p id="billing-success-text" class="muted">Updating your balance…</p>
+          <div class="guest-cta-row">
+            <a class="btn btn-primary" href="/">Start a scan</a>
+          </div>
+        </section>
+
         <section id="usage-card" class="card stack-form account-section" hidden>
           <h2>Subscription</h2>
           <p id="plan-name" class="muted"></p>
@@ -29,15 +37,15 @@ const pack100Label = formatVatInclusivePrice(8000);
           <p class="muted" style="font-size: 13px;">Cancel at the end of the billing period through Manage billing. You keep Pro until that date.</p>
         </section>
 
-        <section id="tokens-card" class="card stack-form account-section" hidden>
+        <section id="tokens-card" class="card stack-form account-section" data-checkout-scope hidden>
           <h2 id="tokens">Tokens</h2>
           <p id="token-balance" class="muted"></p>
           <p class="muted" style="font-size: 13px;">Buy extra tokens for occasional scans or to continue after this month’s Pro pages. Packs expire after 12 months. Tick the immediate-delivery box first — it also covers Subscribe on this page.</p>
           <label class="legal-check">
-            <input type="checkbox" id="withdrawal-waiver" name="withdrawalWaiver" value="true" />
+            <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver" name="withdrawalWaiver" value="true" />
             <span>{WITHDRAWAL_WAIVER_TEXT}</span>
           </label>
-          <p id="account-billing-msg" class="muted" role="status" aria-live="polite"></p>
+          <p id="account-billing-msg" class="checkout-msg muted" role="status" aria-live="polite"></p>
           <div id="subscribe-actions" class="guest-cta-row">
             <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">Subscribe monthly</button>
             <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">Subscribe yearly</button>
@@ -158,6 +166,11 @@ const pack100Label = formatVatInclusivePrice(8000);
   </div>
 </Layout>
 <script>
+  import { announceBalanceChanged, balanceLong } from '../lib/balance.js';
+  import { bindCheckout, watchPaymentLanding } from '../lib/checkout.js';
+
+  bindCheckout();
+
   const api = (p) => (typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(p) : p);
   const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
   const headers = () =>
@@ -386,9 +399,38 @@ const pack100Label = formatVatInclusivePrice(8000);
       markInvalid(['delete-password'], true);
     }
     const billingFlag = params.get('billing');
-    if (billingFlag === 'success') setMsg('Payment received. Tokens and Pro update as soon as Stripe confirms the webhook.');
+    if (billingFlag === 'success') showPaymentReceived();
     if (billingFlag === 'portal') setMsg('Back from billing. Subscription changes apply when Stripe confirms them.');
     attachGuestIfPresent().finally(load);
+  }
+
+  /**
+   * Back from Stripe: confirm at the top of the page, then show the new balance
+   * as soon as the payment has been processed (it can take a few seconds).
+   */
+  function showPaymentReceived() {
+    const panel = document.getElementById('billing-success');
+    const text = document.getElementById('billing-success-text');
+    if (!panel || !text) return;
+    panel.hidden = false;
+    panel.focus();
+    // Drop ?billing=success so a reload does not start the wait again.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('billing');
+    history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+    watchPaymentLanding(({ balance, settled, timedOut }) => {
+      if (settled && balance) {
+        text.textContent = `Your balance is now: ${balanceLong(balance)}.`;
+        announceBalanceChanged();
+        load();
+      } else if (timedOut) {
+        text.textContent = balance
+          ? `Your balance shows ${balanceLong(balance)}. The payment is still being confirmed; this page updates when you reload it.`
+          : 'The payment is still being confirmed. Reload this page in a minute.';
+      } else {
+        text.textContent = 'Updating your balance…';
+      }
+    });
   }
 
   if (!globalThis.__wcagAccountDelegated) {
@@ -495,90 +537,4 @@ const pack100Label = formatVatInclusivePrice(8000);
   }
   bootAccount();
 
-  function checkoutMessageEl() {
-    return (
-      document.getElementById('account-billing-msg') ||
-      document.getElementById('pricing-msg') ||
-      document.getElementById('account-msg')
-    );
-  }
-
-  function showCheckoutMessage(text, isError = false) {
-    const msg = checkoutMessageEl();
-    if (!msg) return;
-    msg.textContent = text || '';
-    msg.setAttribute('role', isError ? 'alert' : 'status');
-    if (msg.id === 'account-billing-msg') {
-      const fallback = document.getElementById('account-msg');
-      if (fallback && fallback !== msg) fallback.textContent = '';
-    }
-  }
-
-  function checkoutBodyFromButton(btn) {
-    const kind = btn.getAttribute('data-kind');
-    if (kind === 'pro') {
-      return { kind: 'pro', interval: btn.getAttribute('data-interval') || 'monthly', withdrawalWaiver: true };
-    }
-    const packId = btn.getAttribute('data-pack');
-    if (kind === 'pack' || packId) {
-      return { kind: 'pack', packId, withdrawalWaiver: true };
-    }
-    return null;
-  }
-
-  async function startCheckout(btn) {
-    const waiver = document.getElementById('withdrawal-waiver');
-    if (!(waiver instanceof HTMLInputElement) || !waiver.checked) {
-      showCheckoutMessage('Tick the immediate-delivery box before checkout.', true);
-      waiver?.focus?.();
-      return;
-    }
-    const body = checkoutBodyFromButton(btn);
-    if (!body) {
-      showCheckoutMessage('Could not start checkout.', true);
-      return;
-    }
-    btn.disabled = true;
-    showCheckoutMessage('Starting checkout…');
-    try {
-      const auth = await fetch(api('/api/auth/status'), { credentials: creds }).then((r) => r.json()).catch(() => ({}));
-      if (auth.authenticated !== true || auth.role !== 'customer') {
-        const next = document.getElementById('pricing-msg') ? '/pricing' : '/account';
-        window.location.href = `/signup?next=${next}`;
-        return;
-      }
-      const res = await fetch(api('/api/billing/checkout'), {
-        method: 'POST',
-        credentials: creds,
-        headers: headers(),
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (data.url) {
-        window.location.href = data.url;
-        return;
-      }
-      showCheckoutMessage(data.error || 'Could not start checkout.', true);
-    } catch {
-      showCheckoutMessage('Could not start checkout. Check your connection and try again.', true);
-    } finally {
-      if (btn.isConnected) btn.disabled = false;
-    }
-  }
-
-  // Same flag as pricing.astro so ClientRouter cannot leave Buy/Subscribe unbound.
-  if (!globalThis.__wcagBillingCheckoutBound) {
-    globalThis.__wcagBillingCheckoutBound = true;
-    document.addEventListener(
-      'click',
-      (event) => {
-        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-        const btn = target?.closest?.('.pricing-checkout, .token-buy');
-        if (!(btn instanceof HTMLButtonElement)) return;
-        event.preventDefault();
-        startCheckout(btn);
-      },
-      true
-    );
-  }
 </script>

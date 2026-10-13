@@ -467,7 +467,7 @@ describe('stripe HTTP', () => {
     assert.match(pricing, /Buy 10/);
     assert.match(pricing, /Subscribe monthly/);
     assert.match(pricing, /Us-diensten/);
-    assert.match(pricing, /\/api\/billing\/checkout/);
+    assert.match(readFileSync(join(repoRoot, 'web/src/lib/checkout.js'), 'utf8'), /\/api\/billing\/checkout/);
     assert.doesNotMatch(pricing, /centsWithVat/);
     const catalog = readFileSync(join(repoRoot, 'scripts/stripe-catalog.mjs'), 'utf8');
     assert.match(catalog, /tax_behavior: TAX_BEHAVIOR/);
@@ -481,7 +481,7 @@ describe('stripe HTTP', () => {
     assert.match(account, /Cancel at the end of the billing period/);
     assert.doesNotMatch(account, /pause/i);
     assert.doesNotMatch(account, /href="\/pricing#pro"/);
-    assert.match(pricing, /__wcagBillingCheckoutBound/);
+    assert.match(pricing, /bindCheckout\(\)/);
     assert.doesNotMatch(pricing, /querySelectorAll\('\.pricing-checkout'\)/);
     const home = readFileSync(join(repoRoot, 'web/src/pages/index.astro'), 'utf8');
     assert.match(home, /href="\/pricing"/);

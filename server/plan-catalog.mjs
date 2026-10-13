@@ -57,6 +57,44 @@ export const TOKEN_PACKS = [
   },
 ];
 
+/**
+ * What a paid scan includes, per tier. The pricing page lists these, and the
+ * server checks the same flags before serving a Pro-only feature, so the page
+ * can never promise something the server refuses.
+ * "Token tier" is an account without Pro that pays per page with tokens.
+ */
+const TOKEN_TIER_FEATURES = Object.freeze({
+  fullReport: true,
+  developerGuide: true,
+  statement: true,
+  manualChecklist: true,
+  history: true,
+  salesReport: false,
+  jira: false,
+});
+const PRO_TIER_FEATURES = Object.freeze({ ...TOKEN_TIER_FEATURES, salesReport: true, jira: true });
+
+/** Order and wording of the feature list on the pricing page. */
+export const PLAN_FEATURE_LABELS = Object.freeze([
+  ['fullReport', 'Full report: every issue, where it is and how to fix it'],
+  ['developerGuide', 'Developer fix list'],
+  ['statement', 'Draft accessibility statement'],
+  ['manualChecklist', 'Manual checklist and overall score'],
+  ['history', 'Scan history and score trend'],
+  ['salesReport', 'Sales report and PDF export'],
+  ['jira', 'Export fixes to Jira'],
+]);
+
+/**
+ * Feature list of a plan for display: every feature, marked included or not.
+ * @param {string} planId NONE_PLAN_ID (tokens only) or PRO_PLAN_ID
+ * @returns {{ key: string, label: string, included: boolean }[]}
+ */
+export function planFeatureList(planId) {
+  const plan = DEFAULT_PLANS.find((p) => p.id === planId);
+  return PLAN_FEATURE_LABELS.map(([key, label]) => ({ key, label, included: plan?.features?.[key] === true }));
+}
+
 export const DEFAULT_PLANS = [
   {
     id: NONE_PLAN_ID,
@@ -65,7 +103,7 @@ export const DEFAULT_PLANS = [
     maxScansPerMonth: null,
     maxPagesPerMonth: 0,
     maxProjects: null,
-    features: { deliverables: true, tokens: true },
+    features: { ...TOKEN_TIER_FEATURES, deliverables: true, tokens: true },
     priceCents: 0,
     yearlyPriceCents: 0,
     billingInterval: null,
@@ -78,7 +116,7 @@ export const DEFAULT_PLANS = [
     maxScansPerMonth: null,
     maxPagesPerMonth: PRO_PAGES_PER_MONTH,
     maxProjects: null,
-    features: { deliverables: true, tokens: true, dashboard: true },
+    features: { ...PRO_TIER_FEATURES, deliverables: true, tokens: true, dashboard: true },
     priceCents: 4900,
     yearlyPriceCents: 49000,
     billingInterval: 'monthly',
