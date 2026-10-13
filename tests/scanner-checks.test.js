@@ -159,6 +159,7 @@ describe('chapter 5: multimedia', () => {
   it('flags a playable video without a caption track for review', async () => {
     const { byId } = await check(runMultimediaChecks, page('<video controls src="talk.mp4"></video>'));
     assert.equal(byId['video-captions'].status, 'warn');
+    assert.match(byId['video-captions'].message, /cannot tell whether captions are burned into the video or whether the video has no speech/);
   });
 
   it('passes a video with a caption track', async () => {

@@ -78,6 +78,12 @@ describe('static report benchmark section', () => {
     assert.match(html, /Not detected/);
   });
 
+  it('sources the disability figure in the business impact section from Eurostat', () => {
+    assert.match(html, /82\.3% of people with a severe disability and 89\.0% of people with a moderate disability used the internet in 2024/);
+    assert.match(html, /href="https:\/\/ec\.europa\.eu\/eurostat\/web\/products-eurostat-news\/w\/ddn-20250827-1"/);
+    assert.doesNotMatch(html, /15% of users/);
+  });
+
   it('no longer shows invented averages, percentiles or projected scores', () => {
     for (const gone of [
       /industry avg/i,

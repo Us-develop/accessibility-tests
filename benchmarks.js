@@ -27,6 +27,27 @@ export const WEBAIM_MILLION = Object.freeze({
 });
 
 /**
+ * Internet use by people with a disability in the EU. Used in the report's
+ * business impact section. Eurostat measures disability as self-assessed
+ * limitation in usual activities for at least six months (severe / moderate).
+ * The article gives no figure for how many people have a disability, so the
+ * report must not turn these into "x% of your visitors".
+ */
+export const EUROSTAT_INTERNET_USE = Object.freeze({
+  name: 'Eurostat, "80% of disabled people used the internet in 2024"',
+  publisher: 'Eurostat',
+  url: 'https://ec.europa.eu/eurostat/web/products-eurostat-news/w/ddn-20250827-1',
+  published: '2025-08-27',
+  retrieved: '2026-10-13',
+  year: 2024,
+  scope: 'EU',
+  /** Share who used the internet in the past 12 months. */
+  severeDisabilityPct: 82.3,
+  moderateDisabilityPct: 89.0,
+  noDisabilityPct: 95.2,
+});
+
+/**
  * WebAIM's six most common failure types, with the rules in this scanner that
  * detect the same kind of problem. `pct` is the share of home pages affected.
  */

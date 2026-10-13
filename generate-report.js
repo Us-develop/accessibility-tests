@@ -36,7 +36,7 @@ import {
   duplicateIdSnippet,
 } from './duplicate-ids.js';
 import { occurrenceDetailsFromCustom, occurrenceDetailsFromAxe } from './occurrence-details.js';
-import { buildPublishedBenchmarks } from './benchmarks.js';
+import { buildPublishedBenchmarks, EUROSTAT_INTERNET_USE } from './benchmarks.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUTPUT_DIR = join(__dirname, 'reports');
@@ -683,7 +683,7 @@ export function generateReport(reportData, options = {}) {
         <div class="impact-card">
           <div class="impact-icon cash">€</div>
           <h4>Lost revenue</h4>
-          <p>~15% of users have a disability. With ${criticalIssues} critical issues on ${escapeHtml(topPath)}, a measurable share of conversions may be blocked.</p>
+          <p>People with a disability are online: in the ${EUROSTAT_INTERNET_USE.scope}, ${EUROSTAT_INTERNET_USE.severeDisabilityPct}% of people with a severe disability and ${EUROSTAT_INTERNET_USE.moderateDisabilityPct.toFixed(1)}% of people with a moderate disability used the internet in ${EUROSTAT_INTERNET_USE.year} (<a href="${escapeHtml(EUROSTAT_INTERNET_USE.url)}" target="_blank" rel="noopener">${escapeHtml(EUROSTAT_INTERNET_USE.publisher)}</a>). With ${criticalIssues} critical issue${criticalIssues === 1 ? '' : 's'} on ${escapeHtml(topPath)}, some of those visitors may be unable to complete what they came to do.</p>
         </div>
         <div class="impact-card">
           <div class="impact-icon up">↑</div>
