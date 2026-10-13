@@ -13,7 +13,8 @@ export async function runVisualChecks(page, options = {}) {
   if (enableContrastChecks) {
     // Text contrast check (normal text >= 4.5:1, large/bold-large >= 3:1)
     const contrastCheck = await page.evaluate(() => {
-    const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'CANVAS', 'IMG', 'VIDEO', 'AUDIO']);
+    // tagName is lower-case for inline SVG, upper-case for HTML elements.
+    const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'svg', 'CANVAS', 'IMG', 'VIDEO', 'AUDIO']);
 
     function parseRgba(value) {
       if (!value || typeof value !== 'string') return null;
