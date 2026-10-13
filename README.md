@@ -1,78 +1,179 @@
-# Accessibility Test Suite
+# Us accessibility scanner
 
-Automated accessibility testing for websites based on **Deque University** checklists. Generates client-ready reports.
+A web app that scans public web pages for accessibility problems against WCAG 2.2 A and AA, scores them, and turns the findings into reports: a dashboard, a client presentation, a developer fix list and a draft accessibility statement. Built and run by [Us](https://about-us.be), live at `https://wcag.about-us.be`.
 
-## Checklist Chapters
+It combines [axe-core](https://github.com/dequelabs/axe-core), a set of custom checks, and a manual checklist. It is an assisted review, **not** a complete WCAG audit or legal sign-off; the app says so on every report and on its `/limitations` page.
 
-| Chapter | Topic | Source |
-|---------|-------|--------|
-| 1 | Semantic Structure and Navigation | [module-semantic-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-semantic-checklist.pdf) |
-| 2 | Images, Canvas, SVG, Non-Text Content | [module-images-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-images-checklist.pdf) |
-| 3 | Visual Design and Colors | [module-visual-design-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-visual-design-checklist.pdf) |
-| 4 | Responsive Design and Zoom | [module-responsive-zoom-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-responsive-zoom-checklist.pdf) |
-| 5 | Multimedia, Animations, Motion | [module-multimedia-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-multimedia-checklist.pdf) |
-| 6 | Device-Independent Input Methods | [module-input-methods-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-input-methods-checklist.pdf) |
-| 7 | Form Labels, Instructions, Validation | [module-forms-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-forms-checklist.pdf) |
-| 8 | Dynamic Updates, AJAX, SPAs | [module-dynamic-updates-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-dynamic-updates-checklist.pdf) |
+## Contents
 
-## Setup (dependencies)
+- [Who uses it](#who-uses-it)
+- [How it fits together](#how-it-fits-together)
+- [Quick start](#quick-start)
+- [Run modes](#run-modes)
+- [Configuration](#configuration)
+- [Signing in locally](#signing-in-locally)
+- [Running a scan](#running-a-scan)
+- [Tests](#tests)
+- [How the score works](#how-the-score-works)
+- [Benchmarks in the report](#benchmarks-in-the-report)
+- [How scans work, and their limits](#how-scans-work-and-their-limits)
+- [What is tested](#what-is-tested)
+- [Deploying](#deploying)
+- [Branches and contributing](#branches-and-contributing)
+- [Troubleshooting](#troubleshooting)
 
-Install packages and Chromium once per machine:
+## Who uses it
 
-```bash
-npm install
-npx playwright install chromium   # ~250MB; required for tests
-```
-
-**Exact local steps:** follow **[SETUP-GUIDE.md](SETUP-GUIDE.md)** (step-by-step checklist).
-
-### Web UI authentication
-
-The server defaults to `AUTH_ENABLED=true` and **requires** `APP_PASSWORD` (≥12 characters) and `SESSION_SECRET` (≥32 characters). It **exits on start** if either is missing or too short. For **local development** only, use:
-
-```bash
-AUTH_ENABLED=false npm start
-```
-
-Staff sign in with `APP_USERNAME` / `APP_PASSWORD` (cookie session only — no HTTP Basic or `X-App-Password` headers). Customers sign up at `/signup` (email + hashed password, signed `wcag_sid` session, CSRF). Guest 1-page snapshots can attach to the new account (`/signup?guest=TOKEN`). Account deletion (`POST /api/account/delete`) requires the current password, cancels Stripe, and removes that customer's runs, leads, consents (except a deletion tombstone), and guest bindings. `PUT /api/account/email` confirms the new address before switching. A retention job (`node scripts/retention.mjs`, every 6 hours from `web/run-server.mjs`) prunes guest tokens/runs, old leads, expired auth tokens, aged token lots, and `_queue` files.
-
-| Variable | Required in production | Purpose |
+| Who | Signs in with | What they can do |
 | --- | --- | --- |
-| `AUTH_ENABLED` | yes (keep `true`) | `false` only for local demos. |
-| `APP_USERNAME` | yes | Staff login username. No default. |
-| `APP_PASSWORD` | yes | Staff login password, ≥12 characters. Server exits if missing when auth is on. |
-| `SESSION_SECRET` | yes | HMAC key for `wcag_sid`, ≥32 characters, and HKDF input for encrypting `reports/<domain>/jira-oauth.json` at rest. Server exits if missing when auth is on or `NODE_ENV=production`. |
-| `STAFF_SESSION_VERSION` | no (default `1`) | Bump to invalidate all staff sessions after rotating `APP_PASSWORD`. |
-| `DEBUG_ENDPOINTS` | no (default off) | Set `true` to enable staff-only `/api/debug/*` routes. Default off; staff still get 404 when unset. |
-| `AUTH_COOKIE_SECURE` | yes (`true` on HTTPS) | Cookie `Secure` flag. Forced `true` when `NODE_ENV=production`; may be `false` only outside production. |
-| `TRUST_PROXY_HOPS` | no (default `1`) | Express `trust proxy` hop count (Caddy sits in front). |
-| `AUTH_EMAIL_VERIFY` | no (default `required` in production, `auto` otherwise) | `required` sends a verification link and grants the free scan token only after the address is confirmed. |
-| `TURNSTILE_SEND_IP` | no (default off) | When `true`, guest captcha verification includes the client IP. Default omits `remoteip`. |
-| `GUEST_IP_HASH_SALT` | no (falls back to `SESSION_SECRET`) | Salt for SHA-256 hashes of guest IPs stored in `_guest-tokens/*.json`. |
-| `LEAD_RETENTION_DAYS` | no (default `365`) | Retention job (`node scripts/retention.mjs`, every 6 hours in `web/run-server.mjs`) deletes leads older than this. |
-| `GUEST_RUN_RETENTION_DAYS` | no (default `30`) | Retention job deletes guest-owned runs, token files, and FTP copies older than this. |
-| `WCAG_DISABLE_RATE_LIMIT` | no | Set `1` only in automated tests. Do not set in production. |
-| `SCANNER_NO_SANDBOX` | no (default off) | Set `true` only if Chromium cannot start because the host forbids the process sandbox (user namespaces / seccomp). Leave unset on the VPS. |
-| `MAIL_FROM` | yes | Envelope From for SMTP. Server exits in production if unset or if it ends with `@localhost`. |
-| `PUBLIC_BASE_URL` | yes | Public origin, e.g. `https://wcag.about-us.be`. Server exits in production if unset or if it contains `localhost`. |
-| `DATABASE_CA` | no | Path to a PEM CA bundle when `DATABASE_SSL=true` and the server cert is not in the system trust store. |
-| `COMPANY_LEGAL_NAME` | yes | Legal name shown in the footer, privacy, terms, and Stripe pack invoice footer. Server exits in production if empty. |
-| `COMPANY_KBO` | yes | Crossroads Bank for Enterprises number. Server exits in production if empty. |
-| `COMPANY_VAT` | yes | VAT number (for example `BE0123456789`). Server exits in production if empty. Also printed on pack invoices. |
-| `COMPANY_ADDRESS` | yes | Registered address. Server exits in production if empty. |
-| `COMPANY_EMAIL` | yes | Privacy/contact email for data-subject requests. Server exits in production if empty. |
-| `VAT_RATE_DISPLAY` | no (default `0.21`) | Belgian VAT rate used only to show VAT-inclusive catalog prices. Stripe Tax calculates the live amount. |
+| **Guest** | Nothing | One free scan of one page. Sees the score, the counts and the top three issues; the rest of the report is shown locked. Can turn the scan into an account. |
+| **Customer** | Email and password (`/signup`) | Scans up to 50 pages of one site at a time, paid with tokens (1 token = 1 page) or a Pro subscription (300 pages a month). Sees only their own scans. |
+| **Staff** | `APP_USERNAME` / `APP_PASSWORD` | Unlimited scans, sitemap and CSV upload, every report, leads, Jira tickets. |
 
-The public homepage stays the free 1-page **Gratis snapshot** (one per person, guest or signed-in — not both) unless someone is actually signed in with remaining tokens or Pro. Complimentary token is spent first, then **Pro** (300 pages/month), then prepaid **tokens** (1 token = 1 URL, 12-month expiry). Customer `/api/run` validates URLs first, then consumes tokens inside a per-user lock (one queued/running scan per account). A second scan while one is queued or running returns 409. Empty Pro pages and tokens return 429 with buy / subscribe / Us-diensten CTAs. A customer scan that ends in `error` (or is dropped after `SCAN_JOB_TTL_MS`, default 24h) refunds that entitlement once. Pricing is at `/pricing` (VAT-inclusive primary figures). Legal pages: `/terms`, `/privacy`, `/cookies`, `/legal/subprocessors`, `/accessibility`. Those eight URLs (home, pricing, limitations, and the legal set) are the indexable set; `/signup`, `/forgot`, `/reset`, `/loading`, `/teaser/*`, and signed-in surfaces send `noindex`. `GET /robots.txt` allows `/` and disallows `/api/`, `/report/`, `/audits`, `/admin/`, `/account`, and `/teaser/`, and points at `/sitemap.xml`. Fonts are self-hosted woff2 under `web/public/fonts/` (Public Sans, Archivo; optional Adobe Owners files in `web/public/fonts/owners/`). Caddy already gzip/zstd-encodes responses.
+## How it fits together
 
-### How scans work (and limitations)
+```
+Browser ──> Caddy (TLS, production only)
+              │
+              ▼
+        web/run-server.mjs          one Node process
+        ├─ Express API              server/create-app.mjs  (/api, /auth, /report files)
+        ├─ static assets            web/dist/client
+        └─ Astro pages (SSR)        web/src/pages, Svelte components
+              │
+              │ queue (reports/_queue), up to 3 scans at once
+              ▼
+        run-tests.js                one child process per scan
+        └─ Chromium (Playwright) + axe-core + custom checks
+              │
+              ▼
+        reports/<domain>/<runId>/   results JSON, HTML reports, screenshots
+        Postgres (optional locally) accounts, runs, tokens, payments
+```
 
-- **Page load:** URLs open with `domcontentloaded` (see `PAGE_GOTO_TIMEOUT_MS`, optional `WAIT_FOR_NETWORKIDLE` in the test runner and server-spawned runs).
-- **Public URLs only:** Every scan URL (guest, customer, staff textarea, CSV, sitemap, other file) is checked with `assertPublicHttpUrl` before it is accepted. Private, loopback, link-local, metadata, and other reserved addresses are dropped with a per-URL reason. The Playwright child re-checks DNS before navigation and aborts requests (including redirect chains) that leave that allowlist.
-- **Scanner UA / motion:** Pages load as `AccessibilityScanner/1.0 (+https://<PUBLIC_BASE_URL>)` with `prefers-reduced-motion: reduce` and animations/transitions disabled before axe runs.
-- **Media:** `BLOCK_MEDIA_REQUESTS` (default `true`) skips video/audio fetches, which can change layout or behavior on media-heavy pages.
-- **Assisted review:** The suite combines axe-core (WCAG 2.2 A/AA tags), custom heuristics, and a manual checklist. It is **not** a complete WCAG audit or legal sign-off. See `/limitations` in the web UI. The product’s own statement is `/accessibility`. `node scripts/self-scan.mjs` builds the app and fails if public pages still have critical/serious axe violations or a `no-horizontal-scroll` fail at 320px or 1280px.
-- **Reports:** Axe results are placed in **one primary checklist chapter** per rule (so chapter charts do not double-count the same axe issue). Use the per-page violation list for the canonical axe finding list.
+- A scan request is validated (public addresses only), queued, and run in a separate process with a stripped-down environment, so a scanned page never shares a process with the server's secrets.
+- Report files live on disk under `reports/`. Accounts, runs, tokens and payments live in Postgres in production; without `DATABASE_URL` they fall back to JSON files under `reports/_saas/`, which is fine for local work only.
+
+### Where things are
+
+| Path | What it is |
+| --- | --- |
+| `server/` | The API: routes (`create-app.mjs`), accounts and sessions, billing, the scan queue, the database layer (`db.js`), the address guard for scans (`url-guard.mjs`). |
+| `web/` | The Astro app: pages in `web/src/pages`, Svelte components in `web/src/components`, styles in `web/public/styles`. `web/run-server.mjs` starts everything. |
+| `run-tests.js` | The scanner. Run by the server for each scan, or by hand from the command line. |
+| `tests/chapter1-…` to `chapter8-….js`, `tests/describe-els.js` | The scanner's custom checks. Despite the folder name these are production code. |
+| `tests/*.test.js` | The unit tests. |
+| `scoring.js`, `score-model.js` | The score. |
+| `generate-report.js`, `generate-deliverables.js`, `report-*.js` | Build the static HTML report, the client and developer deliverables, and the data for the dashboard. |
+| `checklists.js`, `manual-checklist.js`, `remediation-data.js`, `wcag-coverage.js`, `wcag-sc-labels.js`, `benchmarks.js` | Reference data: checklist chapters, the manual checks, fix advice and WCAG mappings, coverage of success criteria, published benchmark figures. |
+| `server.js` | Starts the API alone, without the pages. Only useful together with `npm run dev:web`. |
+| `scripts/` | Maintenance scripts: retention, Stripe catalog, self-scan of the product, one-off migrations. |
+| `deploy/` | Production setup: systemd unit, Caddyfile, deploy guide. |
+| `docs/` | [Configuration reference](docs/configuration.md), [billing](docs/billing.md), subprocessors. |
+
+## Quick start
+
+You need **Node.js 22.12 or newer** and npm. Nothing else: no database and no accounts with outside services.
+
+```bash
+git clone git@github.com:Us-develop/accessibility-tests.git
+cd accessibility-tests
+git switch development          # the working branch
+
+npm run build                   # installs both packages, downloads Chromium (about 250 MB), builds the pages
+AUTH_ENABLED=false npm run serve
+```
+
+Open **http://localhost:3456**. With `AUTH_ENABLED=false` there is no login and you are treated as staff. Paste a public URL and start a scan.
+
+`npm run build` reinstalls both `node_modules` folders from the lockfiles each time. After the first run, `npm run build:web` is enough to rebuild the pages.
+
+## Run modes
+
+| Command | What starts | Port | Use it for |
+| --- | --- | --- | --- |
+| `npm run serve` | The whole app from the last build: API, pages, queue | 3456 | Normal local use, and what production runs. Rebuild with `npm run build:web` after changing anything under `web/`. |
+| `npm start` | The API only. There are no pages, so opening it in a browser gives a 404. | 3456 | The backend half of the next row. |
+| `npm run dev:web` | Astro's dev server with hot reload. It forwards `/api`, `/auth` and `/report` to port 3456. | 4321 | Working on pages and components. Run `npm start` in a second terminal first. Report pages are served without the API's access checks in this mode, so use it for development only. |
+
+Set `PORT` to change 3456.
+
+## Configuration
+
+Everything is set through environment variables.
+
+```bash
+cp .env.example .env.local      # then uncomment what you need
+```
+
+`.env.local` is ignored by git and read on startup when `NODE_ENV` is not `production`. Locally, a value in it **overrides** the same variable given on the command line (except `PORT` and `NODE_ENV`).
+
+The full reference, including authentication, Postgres, scan limits, mail and the optional integrations, is in **[docs/configuration.md](docs/configuration.md)**. Stripe is in **[docs/billing.md](docs/billing.md)**.
+
+Do not set `NODE_ENV=production` locally: it makes Postgres, the company details and a public base URL mandatory, and skips `.env.local`.
+
+## Signing in locally
+
+- **No login:** `AUTH_ENABLED=false`. Every request counts as staff. Guest and customer behaviour cannot be tried in this mode.
+- **Real logins:** set these in `.env.local` and start without `AUTH_ENABLED=false`:
+
+  ```
+  APP_USERNAME=admin
+  APP_PASSWORD=at-least-12-characters
+  SESSION_SECRET=at-least-32-characters-of-random-text
+  ```
+
+  The server refuses to start if `APP_PASSWORD` is shorter than 12 characters or `SESSION_SECRET` shorter than 32.
+  - Staff: sign in at `/auth/staff` with the username and password above.
+  - Customer: create an account at `/signup`. Locally the email address is accepted without a confirmation mail. A new account gets one free token.
+  - Guest: open the home page signed out.
+- **Password reset** needs working mail (`SMTP_*`), because the link is only sent by email.
+- **Paying** needs Stripe sandbox keys: see [docs/billing.md](docs/billing.md). Without them the pricing page works and checkout answers 503.
+
+## Running a scan
+
+**In the app:** paste one or more URLs of the same site and start. Staff can also upload a sitemap or CSV. The loading page follows progress and opens the report when it is ready.
+
+- A report lives at `/report/<domain>/<runId>/`, with its history at `/report/<domain>/history`.
+- Every scan gets its own folder, `reports/<domain>/<runId>/`.
+- One scan covers one site (one host name).
+- An account can have one scan queued or running at a time; a second request answers 409.
+- Only public addresses can be scanned. Private, loopback and internal addresses are refused, so the scanner cannot be pointed at another app on your machine.
+
+**From the command line**, without the app:
+
+```bash
+npm run scan:report -- --urls="https://example.com,https://example.com/contact"
+```
+
+This writes to `reports/latest/`:
+
+| File | What it is |
+| --- | --- |
+| `accessibility-results.json` | Raw results: axe findings and custom checks |
+| `accessibility-report.html` | The static report |
+| `accessibility-client.html` | Client presentation |
+| `accessibility-developers.html` | Developer fix list |
+| `accessibility-statement.html` | Draft accessibility statement, to be edited before publishing |
+
+Without `--urls`, the scanner uses the list in `urls.config.js`. `npm run report` rebuilds the HTML files from an existing `reports/latest/accessibility-results.json`.
+
+## Tests
+
+```bash
+npm run build:web     # once, and after changing web/: one test inspects the built files
+npm test              # all unit tests
+```
+
+- The tests use Node's built-in test runner and need Chromium, which `npm run build` installed. Some start the API on a random port; none need the network.
+- `tests/scanner-checks.test.js` runs the custom checks against small HTML pages in a real browser.
+- Tests that need Postgres are in `tests/postgres.test.js` and are skipped without `DATABASE_URL`. To run them, point `DATABASE_URL` at an **empty throwaway** database; they write rows and do not clean up.
+
+  ```bash
+  DATABASE_URL=postgres://user:pass@localhost:5432/scratch node --test tests/postgres.test.js
+  ```
+- CI (`.github/workflows/test.yml`) runs both on every push and pull request.
+- `node scripts/self-scan.mjs` builds the app and scans its own public pages; it fails if they have serious accessibility problems.
 
 ## How the score works
 
@@ -102,147 +203,14 @@ The static report shows published reference figures next to a run's own findings
 - WebAIM publishes a new edition each spring. Update `edition`, `retrieved` and all figures in `benchmarks.js` together.
 - Planned: once enough scans exist in our own database, add percentiles computed from them alongside the published figures.
 
-## Web UI
+## How scans work, and their limits
 
-After `AUTH_ENABLED=false npm start` (or `APP_PASSWORD` set — see above), open:
-
-**http://localhost:3456**
-
-You can:
-
-- **Add URLs** in the text area (one per line or comma-separated)
-- **Upload a CSV or XML file** (e.g. sitemap.xml) with URLs
-- Click **Run accessibility tests** → loading page → report URL
-
-Reports use IDs in the URL, e.g. `http://localhost:3456/report/example.com/` when keyed by domain.
-
-Current behavior:
-
-- Reports are keyed by **domain + run id** (e.g. `https://example.com` →
-  `/report/example.com/2026-05-04T13-45-12Z-ab12cd34ef56/`).
-- `/report/<domain>/` redirects to the latest run the **viewer owns** (staff: latest on the domain; a customer: their own latest, or 404). Two customers on the same domain never see each other's runs.
-- `/report/<domain>/history` lists runs the viewer may see. Customers only see scans attached to their account; staff see the full domain.
-- Each run must contain URLs from a **single domain**.
-- Re-running tests for the same domain creates a new run row and a new
-  on-disk folder under `reports/<domain>/<runId>/`. A second scan for the **same owner** while one is queued or running returns 409; a guest scan does not block a customer scan of that domain.
-
-### Optional: Postgres persistence
-
-To store run status/results/manual checklist progress **and** customer accounts (users, projects, plans, usage) in Postgres:
-
-- Set **`DATABASE_URL`** in `/etc/accessibility.env` on the VPS (loaded by the systemd unit — not `Environment=` with a password that contains `*` or `%`).
-- Optional for SSL-required connections: **`DATABASE_SSL=true`**. With SSL on, the pool uses `rejectUnauthorized: true` and, if set, **`DATABASE_CA`** (path to a PEM file). Localhost Postgres does **not** need SSL.
-
-When `DATABASE_URL` is set, the server creates `runs`, `leads`, `users`, `projects`, `plans`, `subscriptions`, `usage`, `payments`, `token_lots`, `consents`, and `stripe_events` tables. Duplicate Stripe webhook deliveries are ignored (`stripe_events` primary key). `payments.stripe_payment_intent_id` and `subscriptions.stripe_subscription_id` / `stripe_customer_id` are unique when set. Existing `reports/_saas/users.json` and `projects.json` are **inserted once** (`ON CONFLICT DO NOTHING`, never overwriting a DB `password_hash`) and then renamed to `*.imported`. Scan HTML/screenshots stay on disk under `reports/<domain>/<runId>/`.
-
-If `DATABASE_URL` is not set, accounts fall back to those JSON files (fine for local tests; not safe for a campaign).
-
-### Stripe billing
-
-Sellable Stripe items are **one Product each**: token pack 10, pack 50, pack 100, and **one** Pro product with monthly + yearly Prices. Do not put pack prices on the Pro product. Catalog amounts (€10 / €45 / €80 packs, €49 / €490 Pro) are **VAT-inclusive**; Prices use `tax_behavior: inclusive` so the incl-VAT total stays a round euro. Token packs use Checkout `mode: 'payment'`; Pro uses `mode: 'subscription'`. Fulfilment is from **webhooks**, not the success page. Prefer a [restricted API key](https://docs.stripe.com/keys.md#manage-your-api-keys) (`rk_`) over `sk_`. Never commit secrets.
-
-Belgian Pro checkout needs **SEPA Direct Debit** enabled in the Dashboard payment methods (Bancontact is one-off; Stripe uses it to set up SEPA for subscriptions). Checkout always collects a billing address so Stripe Tax can locate subscription invoices.
-
-On the VPS, put these in `/etc/accessibility.env` (see **[deploy/README.md](deploy/README.md)**) and restart `accessibility.service`:
-
-| Variable | Purpose |
-| --- | --- |
-| `STRIPE_SECRET_KEY` | Restricted sandbox key first (`rk_test_…`). |
-| `STRIPE_WEBHOOK_SECRET` | Signing secret for `POST /api/stripe/webhook`. |
-| `STRIPE_PRICE_PACK_10` / `_50` / `_100` | One-time pack Price IDs. |
-| `STRIPE_PRICE_PRO_MONTHLY` / `STRIPE_PRICE_PRO_YEARLY` | Pro Price IDs on the single Pro product. |
-| `STRIPE_AUTOMATIC_TAX` | Default `true`. Checkout in `NODE_ENV=production` returns **503** if this is `false`. Requires Tax Settings with a **head office** and **Collecting** registrations (Belgium domestic + Union OSS — confirm with your advisor). |
-| `STRIPE_TAX_CODE` | Product tax code (catalog script default `txcd_10103001`). The server logs a warning at boot if unset. |
-| `PUBLIC_BASE_URL` | Public origin (`https://wcag.about-us.be`). Required in production. |
-| `SCAN_JOB_TTL_MS` | Optional. Default `86400000` (24h). Queued jobs older than this are dropped and consumed customer tokens are refunded. Not required in production. |
-
-Create sandbox Products with `node scripts/stripe-catalog.mjs` (inclusive Prices, placeholder tax code `txcd_10103001` SaaS – Business Use until the advisor confirms). Re-run after this catalog change and put the printed Price IDs in `/etc/accessibility.env` — existing exclusive Prices cannot be converted. Point a webhook at `https://wcag.about-us.be/api/stripe/webhook` for `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.*`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.refund.updated`, `charge.dispute.created`, `charge.dispute.closed`. A pack refund removes tokens in proportion to the refunded amount (full refund: all of them; partial: the same share, rounded down). A dispute removes the whole pack until it is closed; a won dispute gives the tokens back. Duplicate deliveries of the same event id return 200 without granting again. Out-of-order `customer.subscription.deleted` events for an old subscription id are ignored when a newer id is already stored.
-
-Pack Checkout sessions enable `invoice_creation` and print `COMPANY_LEGAL_NAME` / `COMPANY_VAT` on the invoice footer. **Set the subscription invoice template once in the Stripe Dashboard** (Settings → Billing → Invoices); the API does not attach that footer to `mode: 'subscription'` sessions.
-
-Customer Portal: allow card update, monthly/yearly switch, and **cancel at period end**. Do not enable pause. Until keys are set, checkout and portal return **503**. `/pricing` still lists the catalog. Checkout requires the immediate-delivery withdrawal waiver and Stripe `consent_collection.terms_of_service`.
-
-Us-diensten (manual AT, remediation, training) has **no Stripe SKU** — link to https://about-us.be/contact/.
-
-After this change is merged to `development`, publish as **`deploy`** (not `debian`). Follow **[deploy/README.md](deploy/README.md)** (git pull, optional `npm ci`, Astro build, `systemctl restart accessibility.service`).
-
-1. Put the Stripe variables above plus `COMPANY_LEGAL_NAME`, `COMPANY_KBO`, `COMPANY_VAT`, `COMPANY_ADDRESS`, and `COMPANY_EMAIL` in `/etc/accessibility.env` (`chmod 600`). Keep `STRIPE_AUTOMATIC_TAX=true` once Tax Settings have a Belgian head office and Collecting registrations. Production checkout refuses to start if automatic tax is off. Do not open Postgres `5432` to the internet.
-2. In Stripe Dashboard → Developers → Webhooks, add `https://wcag.about-us.be/api/stripe/webhook` for the events listed above. Copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
-3. Dashboard → Tax: set the Belgian head office. Ask the advisor to record **Belgium domestic + Union OSS**. Dashboard → Settings → Billing → Invoices: set the subscription invoice footer to the company legal name and VAT. Threshold monitoring starts at the first **live** payment. Live Products/Prices and live `rk_` only after that confirmation.
-
-Monitoring:
-
-- `GET /api/health/db` → DB health (`up`, `down`, or `disabled`). No login required.
-- `GET /api/report/:domain/:runId/urls` → list URLs stored for a run.
-- `GET /api/audits/:domain/runs` → runs for a given domain the viewer may see (history page; customers are filtered to their own `user_id`).
-
-### Publish to the live VPS (OVH)
-
-Install, update, Caddy, systemd, and Postgres env-file commands live in **[deploy/README.md](deploy/README.md)**. The production app pulls the **`development`** branch and restarts **`accessibility.service`**.
-
-**Different origin for HTML vs API:** If users load the form from another host, add inside `<head>` of the Astro layout (`web/src/layouts/Layout.astro`):
-
-```html
-<meta name="accessibility-app-base" content="https://your-node-api-host.example">
-```
-
-(no trailing slash). Omit this meta when the UI and API are the **same** origin (normal local use).
-
-**Subpath on one host:** If the app lives under e.g. `/accessibility`, use:
-
-```html
-<meta name="accessibility-app-base" content="/accessibility">
-```
-
-**Heavy scans:** On small instances, tune **`MAX_URLS_PER_RUN`**, **`URL_CONCURRENCY`** (often `1`), and related env vars documented elsewhere in this README.
-
-### Optional: store manual checklist progress on FTP
-
-To persist the manual/assistive-tech checklist state on FTP, set these environment variables before starting the server:
-
-| Variable | Description |
-|----------|-------------|
-| `FTP_HOST` | FTP host (e.g. `ftp.yourdomain.com`) |
-| `FTP_USER` | FTP username |
-| `FTP_PASSWORD` | FTP password |
-| `FTP_SECURE` | FTPS (TLS). Default `true`. Production refuses plaintext FTP. |
-| `FTP_REMOTE_PATH` | Optional. Base path on the server (e.g. `reports` or `accessibility/reports`) |
-
-Progress is stored per run as `{FTP_REMOTE_PATH}/{domain}/{runId}/manual-progress.json` (and `runs.manual_progress_json` in Postgres). Domain-level `manual-progress.json` files are no longer written. Migrate leftovers with `node scripts/migrate-manual-progress.mjs --apply`. If FTP variables are not set, progress is stored only on the server’s local disk (and in the browser).
-
-## CLI (alternative)
-
-### With urls.config.js
-
-Edit `urls.config.js` and run:
-
-```bash
-npm run test:report
-```
-
-### With inline URLs
-
-```bash
-node run-tests.js --report --urls="https://example.com,https://example.com/about" --output-id=my-run
-```
-
-### Generate HTML report from existing results
-
-```bash
-npm run report
-```
-
-For day-to-day local UI work without reinstalling Chromium, prefer **`npm run build:web`** (Astro only) or **`npm run build --prefix web`**.
-
-## Output
-
-- **`reports/accessibility-results.json`** – Raw test results (axe violations + custom checks)
-- **`reports/accessibility-report.html`** – Client-ready HTML report
-- **`reports/accessibility-developers.html`** – Developer guide (issues + fix snippets)
-- **`reports/accessibility-client.html`** – Client presentation (stats + phased plan)
-- **`reports/accessibility-statement.html`** – Draft accessibility statement (customize before publishing)
-
-Each report includes links to these deliverables. When served by the web server, open the report at `/report/{id}/` (trailing slash required for relative links to work), then use the links in the header to open each deliverable.
+- **Page load:** URLs open with `domcontentloaded` (see `PAGE_GOTO_TIMEOUT_MS`, optional `WAIT_FOR_NETWORKIDLE` in the test runner and server-spawned runs).
+- **Public URLs only:** Every scan URL (guest, customer, staff textarea, CSV, sitemap, other file) is checked with `assertPublicHttpUrl` before it is accepted. Private, loopback, link-local, metadata, and other reserved addresses are dropped with a per-URL reason. The Playwright child re-checks DNS before navigation and aborts requests (including redirect chains) that leave that allowlist.
+- **Scanner UA / motion:** Pages load as `AccessibilityScanner/1.0 (+https://<PUBLIC_BASE_URL>)` with `prefers-reduced-motion: reduce` and animations/transitions disabled before axe runs.
+- **Media:** `BLOCK_MEDIA_REQUESTS` (default `true`) skips video/audio fetches, which can change layout or behavior on media-heavy pages.
+- **Assisted review:** The suite combines axe-core (WCAG 2.2 A/AA tags), custom heuristics, and a manual checklist. It is **not** a complete WCAG audit or legal sign-off. See `/limitations` in the web UI. The product’s own statement is `/accessibility`. `node scripts/self-scan.mjs` builds the app and fails if public pages still have critical/serious axe violations or a `no-horizontal-scroll` fail at 320px or 1280px.
+- **Reports:** Axe results are placed in **one primary checklist chapter** per rule (so chapter charts do not double-count the same axe issue). Use the per-page violation list for the canonical axe finding list.
 
 ## What is tested
 
@@ -251,3 +219,44 @@ Each report includes links to these deliverables. When served by the web server,
 - **Custom result statuses** – `pass` / `fail` / `warn` / `info` (informational; `info` does not count as a warning in summary totals).
 
 Some checklist items require manual verification (e.g., audio description quality, full 1.4.10 reflow). The report includes pass/warn/fail/info and references to the Deque PDFs for full criteria.
+
+### Checklist chapters
+
+The custom checks follow the Deque University checklists:
+
+| Chapter | Topic | Source |
+|---------|-------|--------|
+| 1 | Semantic Structure and Navigation | [module-semantic-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-semantic-checklist.pdf) |
+| 2 | Images, Canvas, SVG, Non-Text Content | [module-images-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-images-checklist.pdf) |
+| 3 | Visual Design and Colors | [module-visual-design-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-visual-design-checklist.pdf) |
+| 4 | Responsive Design and Zoom | [module-responsive-zoom-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-responsive-zoom-checklist.pdf) |
+| 5 | Multimedia, Animations, Motion | [module-multimedia-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-multimedia-checklist.pdf) |
+| 6 | Device-Independent Input Methods | [module-input-methods-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-input-methods-checklist.pdf) |
+| 7 | Form Labels, Instructions, Validation | [module-forms-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-forms-checklist.pdf) |
+| 8 | Dynamic Updates, AJAX, SPAs | [module-dynamic-updates-checklist.pdf](https://media.dequeuniversity.com/courses/generic/testing-basic-method-and-tools/2.0/en/docs/module-dynamic-updates-checklist.pdf) |
+
+## Deploying
+
+Production is one Node process on a VPS behind Caddy, managed by systemd, with Postgres on the same machine. Everything about it is in **[deploy/README.md](deploy/README.md)**: first install, the env file, publishing an update, backups.
+
+## Branches and contributing
+
+- **`development`** is the working branch and the one production is deployed from.
+- **`master`** is the repository's default branch and is kept equal to `development` by fast-forward. Do not commit to it directly.
+- Work on a branch off `development` and open a pull request into `development`. CI must pass.
+- Commit messages follow `type(scope): summary`, for example `fix(billing): …`, `feat(score): …`, `docs: …`.
+- A change to behaviour comes with a test. `npm test` must pass before you open the pull request.
+
+## Troubleshooting
+
+| What you see | What to do |
+| --- | --- |
+| `Cannot find module …/web/dist/server/entry.mjs` on `npm run serve` | The pages are not built. Run `npm run build:web`. |
+| A 404 at `http://localhost:3456` | You started `npm start` (API only). Use `npm run serve`. |
+| The server exits at once with a message about `APP_PASSWORD` or `SESSION_SECRET` | Set them (12 and 32 characters or more), or start with `AUTH_ENABLED=false`. |
+| `AUTH_ENABLED=false` seems ignored | `.env.local` sets it to `true` and wins. Change it there. |
+| Playwright says the browser executable does not exist | `npx playwright install chromium` |
+| The build fails on an Astro or Vite error about the Node version | Node must be 22.12 or newer: `node -v`. |
+| "We can't scan … yet" | The host name cannot be used as a folder name (trailing dot, underscore, raw IP address). Use the plain host name. |
+| A scan of `localhost` or an internal address is refused | By design: only public addresses are scanned. |
+| One test fails with "web/dist is missing" | Run `npm run build:web` first. |

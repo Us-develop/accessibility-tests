@@ -83,10 +83,11 @@ systemctl list-units --type=service --state=running | grep -iE 'access|node|wcag
 ```bash
 sudo ss -lntp | grep -E '3000|MainThread'
 sudo journalctl -u accessibility.service -n 20 --no-pager | grep -i postgres
-curl -sS http://127.0.0.1:3000/api/health/db
 ```
 
-Expect `{"ok":true,"db":"up"}` when Postgres is wired. `db: "disabled"` means `DATABASE_URL` is not loaded. A bad password crash-loops the unit (`password authentication failed for user "wcag"`).
+Expect the line `Postgres persistence enabled (runs table ready).` in the journal. A bad password crash-loops the unit (`password authentication failed for user "wcag"`).
+
+`/api/health/db` reports `{"ok":true,"db":"up"}`, but only to a signed-in staff user: open it in the browser after signing in at `/auth/staff`. A plain `curl` gets 401.
 
 `DATABASE_URL` must be an env file, not a systemd `Environment=` line (passwords with `*` or `%` break `Environment=`):
 
