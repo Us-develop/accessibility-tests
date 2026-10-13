@@ -12,6 +12,7 @@ import { runDir, isValidRunId } from '../../../../server/run-ids.js';
 import { dbPool, dbGetRunByGuestToken } from '../../../../server/db.js';
 import { isValidGuestToken, readGuestTokenRecord } from '../../../../server/guest.mjs';
 import { MANUAL_TODO_GROUPS } from '../../../../manual-checklist.js';
+import { buildLockedDashboardData } from '../../../../server/teaser-payload.mjs';
 
 export const prerender = false;
 
@@ -24,15 +25,6 @@ let pending = false;
 let dashboardProps = null;
 let pageTitle = 'Your accessibility snapshot · Us';
 let notFound = false;
-
-function lockFixItems(items) {
-  return (Array.isArray(items) ? items : []).map((item) => ({
-    ...item,
-    snippet: '',
-    fixCode: '',
-    fixCodeLanguage: undefined,
-  }));
-}
 
 if (!isValidGuestToken(token)) {
   notFound = true;
@@ -67,7 +59,8 @@ if (!isValidGuestToken(token)) {
           const payload = buildAstroMainReportPayload(json);
           const principles = payload.principles || [];
           const disabilities = payload.disabilities || [];
-          const lockedFixes = lockFixItems(payload.fixOrderItems || []);
+          // Nothing real goes behind the blur: see buildLockedDashboardData.
+          const lockedData = buildLockedDashboardData(payload, json);
           const suggestedFixes = payload.suggestedFixes || { points: 0, tickets: [] };
           const trendDate = payload.auditedDate?.slice(0, 6) || 'now';
           const manualTotal = MANUAL_TODO_GROUPS.reduce((s, g) => s + g.items.length, 0);
@@ -85,8 +78,9 @@ if (!isValidGuestToken(token)) {
             severityCounts: payload.severityCounts,
             trend: [{ date: trendDate, score: payload.scoreClamp }],
             pagesTable: payload.pagesTable,
-            rulesTable: payload.rulesTable,
-            fixOrderItems: lockedFixes,
+            rulesTable: lockedData.rulesTable,
+            fixOrderItems: lockedData.fixOrderItems,
+            topIssues: lockedData.topIssues,
             principles,
             disabilities,
             urls: payload.urls,
@@ -104,7 +98,7 @@ if (!isValidGuestToken(token)) {
             manualGroups: MANUAL_TODO_GROUPS,
             manualInitialChecked: [],
             manualTotal,
-            scoreModel: payload.scoreModel,
+            scoreModel: { ...payload.scoreModel, reviewKeys: [] },
             coveredScCount: payload.coveredScCount ?? 0,
             locked: true,
             guestToken: token,

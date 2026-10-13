@@ -75,6 +75,7 @@
    *   loadFailures?: Array<{ url?: string, message?: string }>,
    *   totalAxeIncomplete?: number,
    *   locked?: boolean,
+   *   topIssues?: { title: string, wcag: string[], impact: string }[],
    *   guestToken?: string,
    * }}
    */
@@ -116,6 +117,7 @@
     loadFailures = [],
     totalAxeIncomplete = 0,
     locked = false,
+    topIssues = [],
     guestToken = '',
   } = $props();
 
@@ -679,6 +681,25 @@
           </div>
         </div>
 
+        {#if locked && topIssues.length > 0}
+          <div class="card-flat" style="margin-bottom: 24px;">
+            <h3 style="font-size: 16px; margin-bottom: 4px;">Your top {topIssues.length} issue{topIssues.length === 1 ? '' : 's'}</h3>
+            <p class="muted" style="font-size: 13px; margin-bottom: 14px;">
+              The most severe findings on this page. Where they are and how to fix them is in the full report.
+            </p>
+            <ol class="top-issues">
+              {#each topIssues as issue, i (i)}
+                <li>
+                  <span class="top-issues-title">{issue.title}</span>
+                  {#if issue.wcag.length > 0}
+                    <span class="muted" style="font-size: 12px;">WCAG {issue.wcag.join(', ')}</span>
+                  {/if}
+                </li>
+              {/each}
+            </ol>
+          </div>
+        {/if}
+
         <!-- PRINCIPLES + AFFECTED PAGES -->
         <div class="principles-pages-grid">
           <div class="card-flat">
@@ -1102,6 +1123,19 @@
   }
   .hero-score-donut-wrap {
     position: relative;
+  }
+  .top-issues {
+    margin: 0;
+    padding-left: 20px;
+    display: grid;
+    gap: 10px;
+  }
+  .top-issues li {
+    padding-left: 4px;
+  }
+  .top-issues-title {
+    display: block;
+    font-weight: 600;
   }
   .review-box {
     border: 1px solid var(--border-decor);
