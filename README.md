@@ -88,6 +88,7 @@ One overall score out of 100, made of three parts. The model is in `score-model.
 - **Overall** is 100 only when all three parts are 100, and stays at 79 or below while a critical failure remains.
 - **Points to gain:** each failing rule shows how many overall points fixing it everywhere is worth. This is exact, not an estimate.
 - Guests and the static HTML report show the Errors score, because they have no manual or review state.
+- **Marking a warning as reviewed:** in the dashboard, open a warning and choose "Mark as reviewed" (or "on all pages"). Marks are stored per run in `reports/<domain>/<runId>/reviewed.json` and saved through `PUT /api/report/:domain/:runId/reviewed`. When the same owner scans the site again, marks carry over for every warning that is still there (`server/reviewed.mjs`).
 - 100 means nothing is left that this tool can find and the manual checks are done. It is not WCAG conformance.
 
 The scanner always records which axe rules passed (rule ids only), because the Errors part needs them. The former `ENABLE_AXE_PASSES` setting is gone.

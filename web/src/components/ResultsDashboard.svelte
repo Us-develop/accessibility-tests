@@ -169,8 +169,53 @@
   const totalChecks = $derived(severityCounts.errors + severityCounts.warnings + severityCounts.passed + severityCounts.notice);
   const pctPassed = $derived(totalChecks > 0 ? Math.round((severityCounts.passed / totalChecks) * 100) : 0);
   const scoreDelta = $derived(previousScore != null && scoreAvailable ? scoreClamp - previousScore : null);
+  /** Guests see a locked teaser and have nowhere to save marks. */
+  const readOnlyReview = $derived(locked || !domain || !runId);
   /** Keys of "to review" findings a person has marked as reviewed. */
   let reviewedKeys = $state(reviewedInitial);
+  let reviewSaveError = $state('');
+  let reviewSaveGeneration = 0;
+
+  /** Review keys of every page where this warning's rule was flagged. */
+  function reviewKeysForRule(item) {
+    const prefix = `${item.id}|`;
+    return scoreModel.reviewKeys.filter((key) => key.startsWith(prefix));
+  }
+
+  /**
+   * Mark warnings as reviewed (or not). The score updates at once; the save
+   * follows, and a failed save puts the previous marks back.
+   */
+  async function setReviewed(keys, reviewed) {
+    if (readOnlyReview || keys.length === 0) return;
+    const previous = reviewedKeys;
+    const next = new Set(previous);
+    for (const key of keys) {
+      if (reviewed) next.add(key);
+      else next.delete(key);
+    }
+    reviewedKeys = [...next];
+    reviewSaveError = '';
+    const generation = ++reviewSaveGeneration;
+    try {
+      const res = await fetch(`/api/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/reviewed`, {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: typeof globalThis.wcagHeaders === 'function'
+          ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' })
+          : { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewed: reviewedKeys }),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      const data = await res.json().catch(() => null);
+      if (generation === reviewSaveGeneration && data && Array.isArray(data.reviewed)) reviewedKeys = data.reviewed;
+    } catch (err) {
+      if (generation === reviewSaveGeneration) {
+        reviewedKeys = previous;
+        reviewSaveError = 'Could not save. Check your connection and try again.';
+      }
+    }
+  }
   const reviewTotal = $derived(scoreModel.reviewKeys.length);
   const reviewDone = $derived(scoreModel.reviewKeys.filter((key) => reviewedKeys.includes(key)).length);
   /** The three-part score (score-model.js), recomputed as boxes are ticked. */
@@ -721,6 +766,9 @@
               {#if variant !== 'compact'}
                 <span class="tag tag-outline" style="font-size: 11px;">{urlsForFix(item).length || 1} page{urlsForFix(item).length === 1 ? '' : 's'}</span>
               {/if}
+              {#if item.reviewKey && reviewedKeys.includes(item.reviewKey)}
+                <span class="tag tag-success" style="font-size: 11px;">Reviewed</span>
+              {/if}
               {#if item.scoreGain > 0}
                 <span class="tag tag-success" style="font-size: 11px;" title="Overall score gained by fixing this rule on every page where it fails">+{item.scoreGain} score</span>
               {/if}
@@ -928,6 +976,37 @@
             </div>
           </div>
 
+          {#if selected.reviewKey && !readOnlyReview}
+            {@const isReviewed = reviewedKeys.includes(selected.reviewKey)}
+            {@const ruleKeys = reviewKeysForRule(selected)}
+            {@const ruleOpen = ruleKeys.filter((key) => !reviewedKeys.includes(key))}
+            <div class="review-box">
+              <p class="review-box-text">
+                This is a warning: the tool flagged it but cannot decide by itself. Fix it, or if you have
+                checked it and it is fine, mark it as reviewed. Reviewed warnings count toward your score
+                and stay reviewed on your next scan.
+              </p>
+              <div class="fix-actions" style="margin-bottom: 0;">
+                <button
+                  type="button"
+                  class="btn btn-ink btn-sm"
+                  aria-pressed={isReviewed}
+                  onclick={() => setReviewed([selected.reviewKey], !isReviewed)}
+                >
+                  {isReviewed ? 'Reviewed ✓ (undo)' : 'Mark as reviewed'}
+                </button>
+                {#if ruleKeys.length > 1 && ruleOpen.length > 0}
+                  <button type="button" class="btn btn-secondary btn-sm" onclick={() => setReviewed(ruleKeys, true)}>
+                    Mark as reviewed on all {ruleKeys.length} pages
+                  </button>
+                {/if}
+              </div>
+              {#if reviewSaveError}
+                <p class="review-box-error" role="alert">{reviewSaveError}</p>
+              {/if}
+            </div>
+          {/if}
+
           {#if selected.fixCode}
             <div class="fix-actions">
               <button class="btn btn-ink btn-sm" onclick={() => (showFixCode = !showFixCode)}>
@@ -1023,6 +1102,22 @@
   }
   .hero-score-donut-wrap {
     position: relative;
+  }
+  .review-box {
+    border: 1px solid var(--border-decor);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 24px;
+    background: var(--us-cream);
+  }
+  .review-box-text {
+    margin: 0 0 12px;
+    font-size: 13px;
+  }
+  .review-box-error {
+    margin: 10px 0 0;
+    font-size: 13px;
+    color: var(--us-peach-text);
   }
   .hero-score-cap {
     font-size: 11px;

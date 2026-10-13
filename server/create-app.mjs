@@ -54,6 +54,7 @@ import {
   setUrlGuardLookup,
 } from './url-guard.mjs';
 import { scanProcessTimeoutMs, tailForLog } from './scan-child.mjs';
+import { carryReviewedForward, readReviewed, writeReviewed } from './reviewed.mjs';
 import { buildTeaserPayload } from './teaser-payload.mjs';
 import {
   clearSessionCookies,
@@ -2244,6 +2245,7 @@ async function finalizeSuccessfulRun({
     }
   }
   if (existsSync(reportPath)) {
+    await carryReviewedMarks(domain, runId);
     persistReportArtifactsToFtp(domain, runId, FTP_CONFIG).catch((err) => {
       console.error(`[run ${domain}/${runId}] FTP persistence failed:`, err.message);
     });
@@ -2251,6 +2253,24 @@ async function finalizeSuccessfulRun({
     return true;
   }
   return false;
+}
+
+/**
+ * Warnings already marked as reviewed on the owner's previous scan of this site
+ * stay reviewed on the new one. Staff inherit from any earlier run of the
+ * domain, a customer only from their own, a guest from none.
+ */
+async function carryReviewedMarks(domain, runId) {
+  const state = runStatus.get(runKey(domain, runId)) || {};
+  let access = null;
+  if (state.tier === 'staff' || state.userId === 'staff') access = { role: 'staff' };
+  else if (state.userId) access = { role: 'customer', userId: state.userId };
+  if (!access) return;
+  try {
+    await carryReviewedForward(domain, runId, (candidate) => canAccessRun(access, domain, candidate));
+  } catch (err) {
+    console.error(`[run ${domain}/${runId}] could not carry reviewed marks forward:`, err?.message || err);
+  }
 }
 
 async function resolveLatestRunIdForDomain(domain) {
@@ -2433,6 +2453,24 @@ app.put('/api/report/:domain/:runId/manual-progress', async (req, res) => {
   const out = await writeManualProgress(domain, runId, checked);
   if (out.error) return res.status(out.status).json({ error: out.error });
   res.json({ ok: true, checked: out.checked });
+});
+
+/** Warnings a person has marked as reviewed on this run. See server/reviewed.mjs. */
+app.get('/api/report/:domain/:runId/reviewed', async (req, res) => {
+  const { domain, runId } = req.params;
+  if (!isValidDomain(domain) || !isValidRunId(runId)) return res.status(400).json({ error: 'Invalid run id' });
+  res.json({ reviewed: readReviewed(domain, runId) });
+});
+
+app.put('/api/report/:domain/:runId/reviewed', async (req, res) => {
+  const { domain, runId } = req.params;
+  if (!isValidDomain(domain) || !isValidRunId(runId)) return res.status(400).json({ error: 'Invalid run id' });
+  const reviewed = req.body?.reviewed;
+  if (!Array.isArray(reviewed)) return res.status(400).json({ error: 'Body must include reviewed array' });
+  if (reviewed.length > 5000) return res.status(400).json({ error: 'Too many items.' });
+  const saved = writeReviewed(domain, runId, reviewed);
+  if (!saved) return res.status(404).json({ error: 'Report not found' });
+  res.json({ ok: true, reviewed: saved });
 });
 
 app.put('/api/report/:id/manual-progress', async (req, res) => {

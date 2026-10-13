@@ -11,6 +11,7 @@ import { listVisibleRunsForDomain, viewerFromAstro } from '../../../../../../ser
 import { dbPool } from '../../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../../server/paths.js';
 import { MANUAL_TODO_GROUPS, normalizeManualProgress } from '../../../../../../manual-checklist.js';
+import { readReviewed } from '../../../../../../server/reviewed.mjs';
 
 export const prerender = false;
 
@@ -111,6 +112,7 @@ const dashboardProps = {
   manualInitialChecked: manualChecked,
   manualTotal,
   scoreModel: payload.scoreModel,
+  reviewedInitial: readReviewed(domain, runId),
   coveredScCount: payload.coveredScCount ?? 0,
   wcagAaCount: payload.wcagAaCount ?? 56,
 };
