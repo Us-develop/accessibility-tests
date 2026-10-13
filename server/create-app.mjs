@@ -366,10 +366,30 @@ async function maybeSendRunEmail(domain, runId) {
   }
 }
 
+// Uploads are buffered in memory and /api/run is open to guests, so every
+// dimension is capped: worst case is about 11 MB per request.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 1024 * 1024 },
+  limits: { fileSize: 1024 * 1024, files: 1, fields: 40, parts: 42, fieldSize: 256 * 1024 },
 });
+
+/** `upload.single('file')` with multer's limit errors turned into 4xx responses. */
+function uploadSingleFile(req, res, next) {
+  upload.single('file')(req, res, (err) => {
+    if (!err) return next();
+    if (!(err instanceof multer.MulterError)) return next(err);
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'That file is too large. Uploads are limited to 1 MB.' });
+    }
+    if (err.code === 'LIMIT_FIELD_VALUE') {
+      return res.status(413).json({ error: 'That is too much text for one field. Upload a file instead.' });
+    }
+    if (err.code === 'LIMIT_FIELD_COUNT' || err.code === 'LIMIT_PART_COUNT' || err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({ error: 'Too many fields or files in this upload.' });
+    }
+    return res.status(400).json({ error: 'That upload could not be read.' });
+  });
+}
 
 function normalizeDomainFromUrl(input) {
   try {
@@ -1443,7 +1463,7 @@ app.get('/auth/jira/connect', requireStaff, (req, res) => {
 
 app.use('/api/debug', requireStaff, requireDebugEndpoints);
 
-app.post('/api/run', upload.single('file'), async (req, res) => {
+app.post('/api/run', uploadSingleFile, async (req, res) => {
   const staff = requestIsStaff(req);
   const customer = req.access?.role === 'customer';
   const customerUser = customer ? await getUserById(req.access.userId) : null;

@@ -280,6 +280,37 @@ describe('scan input SSRF HTTP', () => {
     assert.equal(spawnCounter.calls.length, 0);
   });
 
+  it('answers 413 for a file over 1 MB instead of a 500', async () => {
+    const { res, json } = await staffRunFile('big.csv', 'https://example.com/\n'.repeat(60_000));
+    assert.equal(res.status, 413, JSON.stringify(json));
+    assert.match(json.error, /too large/i);
+  });
+
+  it('refuses a multipart body with an unreasonable number of fields', async () => {
+    const form = new FormData();
+    for (let i = 0; i < 200; i += 1) form.set(`field${i}`, 'x');
+    form.set('urls', 'https://example.com/');
+    const res = await fetch(`${origin}/api/run`, {
+      method: 'POST',
+      headers: { cookie: jar.header(), 'X-CSRF-Token': jar.get('wcag_csrf') },
+      body: form,
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /too many/i);
+    assert.equal(spawnCounter.calls.length, 0);
+  });
+
+  it('refuses a text field larger than the field limit', async () => {
+    const form = new FormData();
+    form.set('urls', 'x'.repeat(300 * 1024));
+    const res = await fetch(`${origin}/api/run`, {
+      method: 'POST',
+      headers: { cookie: jar.header(), 'X-CSRF-Token': jar.get('wcag_csrf') },
+      body: form,
+    });
+    assert.equal(res.status, 413);
+  });
+
   it('builds a child env without STRIPE_* or SESSION_SECRET', () => {
     const env = buildScanProcessEnv(process.env);
     assert.equal(env.SESSION_SECRET, undefined);
