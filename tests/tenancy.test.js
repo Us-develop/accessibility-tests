@@ -156,6 +156,24 @@ describe('parseTenantPath', () => {
     assert.equal(parseTenantPath('/report/example.com/history').scoped, 'domain');
     assert.equal(parseTenantPath('/api/audits/example.com/runs').scoped, 'domain');
   });
+
+  it('matches the route prefix in any case', () => {
+    const parsed = parseTenantPath('/API/Report/example.com/2026-05-04T13-45-12Z-aabbccddeeff/urls');
+    assert.equal(parsed.scoped, 'run');
+    assert.equal(parsed.domain, 'example.com');
+  });
+
+  it('flags segments that are not a plain domain or run id', () => {
+    assert.equal(parseTenantPath('/api/status/example%2Ecom/2026-05-04T13-45-12Z-aabbccddeeff').invalid, true);
+    assert.equal(parseTenantPath('/api/report/example.com/%32026-05-04T13-45-12Z-aabbccddeeff/urls').invalid, true);
+    assert.equal(parseTenantPath('/report/example.com/2026-05-04T13-45-12Z-aabbccddeeff/').invalid, undefined);
+    assert.equal(parseTenantPath('/report/example.com/').invalid, undefined);
+  });
+
+  it('ignores paths outside the tenant prefixes', () => {
+    assert.equal(parseTenantPath('/api/audits'), null);
+    assert.equal(parseTenantPath('/api/account'), null);
+  });
 });
 
 describe('canAccessRun memory fallthrough', () => {
@@ -451,6 +469,43 @@ describe('tenant isolation HTTP', () => {
     });
     assert.equal(attached.some((row) => row.runId === guestRunId), true);
     deleteJob(`${guestDomain}:${guestRunId}`);
+  });
+
+  it('blocks customer B when the path is percent-encoded or upper-cased', async () => {
+    const encodedDomain = domain.replace('.', '%2E');
+    const encodedRunId = `%${runIdA.charCodeAt(0).toString(16)}${runIdA.slice(1)}`;
+    const variants = [
+      `/api/status/${encodedDomain}/${runIdA}`,
+      `/api/report/${encodedDomain}/${runIdA}/urls`,
+      `/api/report/${domain}/${encodedRunId}/urls`,
+      `/report/${encodedDomain}/${runIdA}/`,
+      `/API/status/${domain}/${runIdA}`,
+      `/Api/Report/${domain}/${runIdA}/urls`,
+      `/REPORT/${domain}/${runIdA}/`,
+    ];
+    for (const path of variants) {
+      const res = await fetch(`${origin}${path}`, { headers: headers(jarB), redirect: 'manual' });
+      assert.ok([400, 403, 404].includes(res.status), `${path} returned ${res.status}`);
+      const body = await res.text();
+      assert.equal(body.includes(`https://${domain}/`), false, `${path} leaked run urls`);
+    }
+
+    const putB = await fetch(`${origin}/API/report/${domain}/${runIdA}/manual-progress`, {
+      method: 'PUT',
+      headers: { ...headers(jarB), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ checked: [] }),
+    });
+    assert.ok([400, 403, 404].includes(putB.status), `PUT returned ${putB.status}`);
+    assert.equal(existsSync(join(runDir(domain, runIdA), 'manual-progress.json')), false);
+  });
+
+  it('rejects an upper-cased API path that carries no CSRF token', async () => {
+    const res = await fetch(`${origin}/API/account/attach-guest`, {
+      method: 'POST',
+      headers: { cookie: jarB.header(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'x' }),
+    });
+    assert.equal(res.status, 403);
   });
 
   it('lets customer A write manual progress only on their run', async () => {
