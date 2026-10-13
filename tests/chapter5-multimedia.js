@@ -45,7 +45,7 @@ export async function runMultimediaChecks(page) {
         status: videoChecks.noCaptions === 0 ? 'pass' : 'warn',
         message:
           videoChecks.noCaptions > 0
-            ? `${videoChecks.noCaptions} video(s) without a caption track - check that captions are provided another way`
+            ? `${videoChecks.noCaptions} video(s) without a caption track. This tool cannot tell whether captions are burned into the video or whether the video has no speech, so check by hand.`
             : 'All videos have caption tracks',
         chapter: chapterId,
         occurrences: videoChecks.noCaptions > 0 ? videoChecks.captionOccurrences : [],
