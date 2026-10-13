@@ -1,7 +1,8 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
-import { TOKEN_PACKS } from '../../../server/plan-catalog.mjs';
+import { NONE_PLAN_ID, PRO_PLAN_ID, TOKEN_PACKS, planFeatureList } from '../../../server/plan-catalog.mjs';
+import { billingPublicConfig } from '../../../server/stripe.mjs';
 import { formatVatInclusivePrice } from '../../../server/vat-display.mjs';
 import { WITHDRAWAL_WAIVER_TEXT } from '../../../server/legal-versions.mjs';
 
@@ -17,6 +18,16 @@ const pack100Price = formatVatInclusivePrice(pack100?.priceCents || 8000);
 const proMonth = formatVatInclusivePrice(4900);
 const proYear = formatVatInclusivePrice(49000);
 const siteOrigin = String(Astro.site ?? 'https://wcag.about-us.be').replace(/\/$/, '');
+const tokenFeatures = planFeatureList(NONE_PLAN_ID);
+const proFeatures = planFeatureList(PRO_PLAN_ID);
+// What can actually be bought right now. A button whose price is not connected
+// to Stripe would only answer "503"; say so instead of offering it.
+const billing = await billingPublicConfig();
+const packReady = Object.fromEntries(billing.packs.map((pack) => [pack.id, pack.checkoutReady]));
+const anyPackReady = billing.packs.some((pack) => pack.checkoutReady);
+const proMonthlyReady = billing.pro.checkoutReadyMonthly;
+const proYearlyReady = billing.pro.checkoutReadyYearly;
+const proReady = proMonthlyReady || proYearlyReady;
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Product',
@@ -76,10 +87,6 @@ const jsonLd = {
           or ask Us for manual testing and remediation.
         </p>
         <p id="pricing-msg" class="muted" role="status" aria-live="polite">{canceled ? 'Checkout was cancelled. No charge was made.' : ''}</p>
-        <label class="legal-check" style="max-width: 640px; margin: 0 0 20px;">
-          <input type="checkbox" id="withdrawal-waiver" name="withdrawalWaiver" value="true" />
-          <span>{WITHDRAWAL_WAIVER_TEXT}</span>
-        </label>
 
         <div id="pricing-grid" class="pricing-grid">
           <section class="card pricing-card" id="gratis">
@@ -91,30 +98,74 @@ const jsonLd = {
             </div>
           </section>
 
-          <section class="card pricing-card" id="tokens">
+          <section class="card pricing-card" id="tokens" data-checkout-scope>
             <h2>Tokens</h2>
             <p class="pricing-price">{unitPrice} <span>per URL-scan</span></p>
-            <p class="muted">Pay-per-scan packs. 1 token = 1 URL. Minimum 10. Unused tokens expire after 12 months. Full Pro deliverables for each spent token.</p>
+            <p class="muted">Pay per page, no subscription. 1 token = 1 URL. Minimum 10. Unused tokens expire after 12 months.</p>
             <ul class="pricing-packs">
               <li>10 tokens · {pack10Price}</li>
               <li>50 tokens · {pack50Price} (−10%)</li>
               <li>100 tokens · {pack100Price} (−20%)</li>
             </ul>
-            <div class="pricing-cta pricing-pack-actions">
-              <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_10">Buy 10</button>
-              <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_50">Buy 50</button>
-              <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_100">Buy 100</button>
-            </div>
+            <h3 style="font-size: 16px; margin: 16px 0 8px;">Each scan includes</h3>
+            <ul class="pricing-packs" style="list-style: none; padding-left: 0;">
+              {tokenFeatures.map((feature) => (
+                <li class={feature.included ? undefined : 'muted'}>
+                  <span aria-hidden="true">{feature.included ? '✓' : '–'}</span>
+                  {feature.included ? feature.label : `${feature.label}: Pro only`}
+                </li>
+              ))}
+            </ul>
+            {anyPackReady ? (
+              <Fragment>
+                <label class="legal-check" style="margin-top: 16px;">
+                  <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver-tokens" name="withdrawalWaiver" value="true" />
+                  <span>{WITHDRAWAL_WAIVER_TEXT}</span>
+                </label>
+                <p class="checkout-msg muted" role="status" aria-live="polite"></p>
+                <div class="pricing-cta pricing-pack-actions">
+                  {packReady.pack_10 ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_10">Buy 10</button> : null}
+                  {packReady.pack_50 ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_50">Buy 50</button> : null}
+                  {packReady.pack_100 ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_100">Buy 100</button> : null}
+                </div>
+              </Fragment>
+            ) : (
+              <p class="muted" role="status">
+                Token packs cannot be bought online yet. <a class="link" href="/contact?source=pricing">Contact Us</a> and we will set you up.
+              </p>
+            )}
           </section>
 
-          <section class="card pricing-card" id="pro">
+          <section class="card pricing-card" id="pro" data-checkout-scope>
             <h2>Pro</h2>
             <p class="pricing-price">{proMonth} <span>/ month</span></p>
-            <p class="muted">or {proYear} / year (2 months free). 300 page-scans/month, max 50 URLs per run, 1 concurrent scan, unlimited own projects, email support. Full UI: dashboard, history, statement, developer guide, and the manual checklist.</p>
-            <div class="pricing-cta">
-              <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">Subscribe monthly</button>
-              <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">Subscribe yearly</button>
-            </div>
+            <p class="muted">or {proYear} / year (2 months free). 300 page-scans a month, up to 50 URLs per run, one scan at a time, unlimited own projects, email support.</p>
+            <h3 style="font-size: 16px; margin: 16px 0 8px;">Each scan includes</h3>
+            <ul class="pricing-packs" style="list-style: none; padding-left: 0;">
+              {proFeatures.map((feature) => (
+                <li class={feature.included ? undefined : 'muted'}>
+                  <span aria-hidden="true">{feature.included ? '✓' : '–'}</span>
+                  {feature.label}
+                </li>
+              ))}
+            </ul>
+            {proReady ? (
+              <Fragment>
+                <label class="legal-check" style="margin-top: 16px;">
+                  <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver-pro" name="withdrawalWaiver" value="true" />
+                  <span>{WITHDRAWAL_WAIVER_TEXT}</span>
+                </label>
+                <p class="checkout-msg muted" role="status" aria-live="polite"></p>
+                <div class="pricing-cta">
+                  {proMonthlyReady ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">Subscribe monthly</button> : null}
+                  {proYearlyReady ? <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">Subscribe yearly</button> : null}
+                </div>
+              </Fragment>
+            ) : (
+              <p class="muted" role="status">
+                Pro cannot be bought online yet. <a class="link" href="/contact?source=pricing">Contact Us</a> and we will set you up.
+              </p>
+            )}
           </section>
 
           <section class="card pricing-card" id="us-diensten">
@@ -135,92 +186,14 @@ const jsonLd = {
   </div>
 </Layout>
 <script>
-  const api = (p) => (typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(p) : p);
-  const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
-  const headers = () =>
-    typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' };
+  import { bindCheckout, resumeCheckout } from '../lib/checkout.js';
 
-  function checkoutMessageEl() {
-    return (
-      document.getElementById('pricing-msg') ||
-      document.getElementById('account-billing-msg') ||
-      document.getElementById('account-msg')
-    );
-  }
-
-  function showCheckoutMessage(text, isError = false) {
-    const msg = checkoutMessageEl();
-    if (!msg) return;
-    msg.textContent = text || '';
-    msg.setAttribute('role', isError ? 'alert' : 'status');
-  }
-
-  function checkoutBodyFromButton(btn) {
-    const kind = btn.getAttribute('data-kind');
-    if (kind === 'pro') {
-      return { kind: 'pro', interval: btn.getAttribute('data-interval') || 'monthly', withdrawalWaiver: true };
-    }
-    const packId = btn.getAttribute('data-pack');
-    if (kind === 'pack' || packId) {
-      return { kind: 'pack', packId, withdrawalWaiver: true };
-    }
-    return null;
-  }
-
-  async function startCheckout(btn) {
-    const waiver = document.getElementById('withdrawal-waiver');
-    if (!(waiver instanceof HTMLInputElement) || !waiver.checked) {
-      showCheckoutMessage('Tick the immediate-delivery box before checkout.', true);
-      waiver?.focus?.();
-      return;
-    }
-    const body = checkoutBodyFromButton(btn);
-    if (!body) {
-      showCheckoutMessage('Could not start checkout.', true);
-      return;
-    }
-    btn.disabled = true;
-    showCheckoutMessage('Starting checkout…');
-    try {
-      const auth = await fetch(api('/api/auth/status'), { credentials: creds }).then((r) => r.json()).catch(() => ({}));
-      if (auth.authenticated !== true || auth.role !== 'customer') {
-        const next = document.getElementById('pricing-msg') ? '/pricing' : '/account';
-        window.location.href = `/signup?next=${next}`;
-        return;
-      }
-      const res = await fetch(api('/api/billing/checkout'), {
-        method: 'POST',
-        credentials: creds,
-        headers: headers(),
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (data.url) {
-        window.location.href = data.url;
-        return;
-      }
-      showCheckoutMessage(data.error || 'Could not start checkout.', true);
-    } catch {
-      showCheckoutMessage('Could not start checkout. Check your connection and try again.', true);
-    } finally {
-      if (btn.isConnected) btn.disabled = false;
-    }
-  }
-
-  // Capture-phase document delegation survives Astro ClientRouter swaps;
-  // querySelectorAll(...).forEach(addEventListener) dies after the first visit.
-  if (!globalThis.__wcagBillingCheckoutBound) {
-    globalThis.__wcagBillingCheckoutBound = true;
-    document.addEventListener(
-      'click',
-      (event) => {
-        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-        const btn = target?.closest?.('.pricing-checkout, .token-buy');
-        if (!(btn instanceof HTMLButtonElement)) return;
-        event.preventDefault();
-        startCheckout(btn);
-      },
-      true
-    );
+  bindCheckout();
+  // Returning from sign-up with ?checkout=<item>: continue the purchase.
+  if (!globalThis.__wcagPricingResumeBound) {
+    globalThis.__wcagPricingResumeBound = true;
+    document.addEventListener('astro:page-load', () => {
+      if (window.location.pathname === '/pricing') resumeCheckout();
+    });
   }
 </script>
