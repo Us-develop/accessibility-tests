@@ -15,6 +15,7 @@ import {
   NONE_PLAN_ID,
   PRO_PLAN_ID,
   TOKEN_PACKS,
+  contactHref,
   tokenPackById,
 } from './plan-catalog.mjs';
 import { applyRefundToTokenLot, findTokenLotByCheckoutSession, grantTokenPack } from './tokens.mjs';
@@ -123,7 +124,7 @@ export async function billingPublicConfig() {
     configured: stripeConfigured(),
     automaticTax: automaticTaxEnabled(),
     currency: 'eur',
-    servicesUrl: 'https://about-us.be/contact/',
+    servicesUrl: contactHref('pricing'),
     packs: TOKEN_PACKS.map((pack) => ({
       id: pack.id,
       name: pack.name,

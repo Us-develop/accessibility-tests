@@ -1,0 +1,39 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AppHeader from '../components/AppHeader.astro';
+import GuestLeadForm from '../components/GuestLeadForm.svelte';
+import { LEAD_SOURCES } from '../../../server/plan-catalog.mjs';
+
+export const prerender = false;
+
+// Where the visitor came from, so the team knows the context of the request.
+const requested = String(Astro.url.searchParams.get('source') || '');
+const source = LEAD_SOURCES.includes(requested) ? requested : 'contact';
+---
+
+<Layout
+  title="Talk to a WCAG expert · Us"
+  description="Ask Us for an accessibility audit, help fixing findings, an accessibility statement or training."
+  noindex={true}
+  authMode="guest-ok"
+>
+  <div class="app">
+    <AppHeader crumb="Contact" />
+    <main id="main" class="app-main" tabindex="-1">
+      <div class="container" style="padding: 56px 32px 96px; max-width: 760px;">
+        <span class="eyebrow"><span class="dot"></span>Us services</span>
+        <h1 class="run-hero-title">Talk to a WCAG expert</h1>
+        <p class="p-large muted" style="margin-bottom: 28px;">
+          The scanner finds what a machine can find. For the rest, a person helps: a manual audit with assistive
+          technology, fixing the findings, an accessibility statement, or training for your team.
+        </p>
+        <GuestLeadForm
+          client:load
+          source={source}
+          heading="Tell us what you need"
+          intro="Leave your details and a short description. An accessibility specialist replies within two working days. No obligation."
+        />
+      </div>
+    </main>
+  </div>
+</Layout>

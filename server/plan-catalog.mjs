@@ -5,7 +5,29 @@
 
 export const NONE_PLAN_ID = 'none';
 export const PRO_PLAN_ID = 'pro';
+/** Us's own website, for the few links that leave the app. */
 export const US_SERVICES_URL = 'https://about-us.be/contact/';
+/** The one in-app route to a person at Us: a page with the lead form. */
+export const CONTACT_PATH = '/contact';
+/** Where a lead came from. Anything else is stored as "other". */
+export const LEAD_SOURCES = Object.freeze([
+  'teaser',
+  'home',
+  'scan-limit',
+  'pricing',
+  'account',
+  'report',
+  'history',
+  'developer-guide',
+  'footer',
+  'login',
+  'contact',
+]);
+
+/** Link to the contact form, remembering where the visitor came from. */
+export function contactHref(source = 'contact') {
+  return `${CONTACT_PATH}?source=${encodeURIComponent(LEAD_SOURCES.includes(source) ? source : 'contact')}`;
+}
 export const PRO_PAGES_PER_MONTH = 300;
 export const MAX_PAGES_PER_CUSTOMER_RUN = 50;
 export const TOKEN_TTL_MONTHS = 12;
@@ -87,7 +109,7 @@ export function commercialCtas() {
   return {
     tokens: '/pricing#tokens',
     pro: '/pricing#pro',
-    services: US_SERVICES_URL,
+    services: contactHref('scan-limit'),
   };
 }
 

@@ -6,6 +6,7 @@
   import CodeBlock from './CodeBlock.svelte';
   import ManualChecklist from './ManualChecklist.svelte';
   import { CRITICAL_CAP, overallScore } from '../../../score-model.js';
+  import { balanceLong, fetchBalance } from '../lib/balance.js';
 
   /**
    * @typedef {{ url: string, title: string, errors: number, warnings: number, passed: number }} PageRow
@@ -170,6 +171,15 @@
   const totalChecks = $derived(severityCounts.errors + severityCounts.warnings + severityCounts.passed + severityCounts.notice);
   const pctPassed = $derived(totalChecks > 0 ? Math.round((severityCounts.passed / totalChecks) * 100) : 0);
   const scoreDelta = $derived(previousScore != null && scoreAvailable ? scoreClamp - previousScore : null);
+  /** The customer's remaining tokens and Pro pages; null for staff and guests. */
+  let balance = $state(null);
+  $effect(() => {
+    if (locked) return;
+    fetchBalance().then((value) => {
+      balance = value;
+    });
+  });
+
   /** Guests see a locked teaser and have nowhere to save marks. */
   const readOnlyReview = $derived(locked || !domain || !runId);
   /** Keys of "to review" findings a person has marked as reviewed. */
@@ -493,7 +503,7 @@
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-            Export PDF
+            Export sales report (PDF)
           </button>
           <button class="btn btn-cream btn-sm" onclick={gotoSales}>Open sales report →</button>
         </div>
@@ -943,8 +953,25 @@
         <div style="opacity: 0.65; font-size: 14px; margin-top: 4px;">One link to share with each audience.</div>
       </div>
       <button class="btn btn-cream" onclick={gotoSales}>Sales report</button>
-      <button class="btn btn-cream" onclick={gotoStatement}>A11y statement</button>
-      <button class="btn btn-grad" onclick={gotoDeveloper}>Developer next-steps</button>
+      <button class="btn btn-cream" onclick={gotoStatement}>Accessibility statement</button>
+      <button class="btn btn-grad" onclick={gotoDeveloper}>Developer fix list</button>
+    </div>
+    <!-- What next: scan again with what is left, or let Us do the work. -->
+    <div class="card-flat next-steps">
+      <div>
+        <h2 style="font-size: 20px; margin-bottom: 4px;">What next?</h2>
+        <p class="muted" style="font-size: 14px; margin: 0;" role="status">
+          {#if balance}
+            You have {balanceLong(balance)}.
+          {:else}
+            Scan another page, or let Us fix the findings for you.
+          {/if}
+        </p>
+      </div>
+      <div class="guest-cta-row">
+        <a class="btn btn-primary" href="/">Scan another page</a>
+        <a class="btn btn-secondary" href="/contact?source=report">Talk to a WCAG expert</a>
+      </div>
     </div>
     {/if}
   </div>
@@ -1138,6 +1165,14 @@
   .top-issues-title {
     display: block;
     font-weight: 600;
+  }
+  .next-steps {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-top: 24px;
   }
   .review-box {
     border: 1px solid var(--border-decor);

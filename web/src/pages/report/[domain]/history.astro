@@ -71,10 +71,13 @@ function formatRunId(runId: string): string {
                 ) : null}
               </p>
             </div>
-            <a class="btn btn-primary btn-lg" href={`/?url=${encodeURIComponent(`https://${domain}`)}`}>
+            <div class="guest-cta-row">
+              <a class="btn btn-primary btn-lg" href={`/?url=${encodeURIComponent(`https://${domain}`)}`}>
               Run new audit
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
             </a>
+              <a class="btn btn-secondary btn-lg" href="/contact?source=history">Talk to a WCAG expert</a>
+            </div>
           </div>
 
           {trendPoints.length > 0 && (
