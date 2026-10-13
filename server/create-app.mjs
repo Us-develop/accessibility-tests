@@ -230,6 +230,11 @@ function isReadHttpMethod(method) {
   return method === 'GET' || method === 'HEAD';
 }
 
+/** Any-case match, so `/API/…` cannot slip past a check written for `/api/…`. */
+function isApiPath(path) {
+  return /^\/api\//i.test(String(path || ''));
+}
+
 function isGuestOpenPath(req) {
   const p = canonicalPublicPath(req);
   if (isReadHttpMethod(req.method)) {
@@ -531,6 +536,8 @@ export function createAccessibilityApp(repoRoot, options = {}) {
 
   const app = express();
   app.disable('x-powered-by');
+  // Auth, CSRF and tenancy middleware compare lower-case paths; keep the router as strict as they are.
+  app.set('case sensitive routing', true);
   const trustHops = Number(process.env.TRUST_PROXY_HOPS || 1);
   app.set('trust proxy', Number.isFinite(trustHops) && trustHops >= 0 ? trustHops : 1);
   patchAppAsyncHandlers(app);
@@ -1330,7 +1337,7 @@ app.use(async (req, res, next) => {
   const cookieAccess = await readAccessFromCookies(req);
   if (cookieAccess) {
     req.access = cookieAccess;
-    if (!csrfOk(req) && req.path.startsWith('/api/')) {
+    if (!csrfOk(req) && isApiPath(req.path)) {
       if (isHtmlFormPost(req)) {
         const next = req.path.startsWith('/api/account') ? '/account?error=csrf' : '/?error=csrf';
         return res.redirect(303, next);
@@ -1342,7 +1349,7 @@ app.use(async (req, res, next) => {
 
   if (isGuestOpenPath(req)) {
     req.access = { role: 'guest' };
-    if (!csrfOk(req) && req.path.startsWith('/api/')) {
+    if (!csrfOk(req) && isApiPath(req.path)) {
       return res.status(403).json({ error: 'Missing or invalid CSRF token.' });
     }
     return next();
@@ -1716,8 +1723,12 @@ async function resolveStatus({ domain, runId }) {
 app.use(async (req, res, next) => {
   const parsed = parseTenantPath(req.path);
   if (!parsed) return next();
+  const isApi = isApiPath(req.path);
+  if (parsed.invalid) {
+    if (isApi) return res.status(400).json({ error: 'Invalid report path.' });
+    return res.status(400).type('txt').send('Invalid report path.');
+  }
   const { domain, runId, scoped } = parsed;
-  if (domain === 'leads' || !isValidDomain(domain)) return next();
   let allowed = false;
   if (scoped === 'run') {
     const memoryRun = runStatus.get(runKey(domain, runId)) || null;
@@ -1726,7 +1737,7 @@ app.use(async (req, res, next) => {
     allowed = await canAccessDomain(req.access, domain);
   }
   if (allowed) return next();
-  if (req.path.startsWith('/api/')) {
+  if (isApi) {
     return res.status(403).json({ error: 'You do not have access to this project.' });
   }
   return res.status(403).send('You do not have access to this project.');

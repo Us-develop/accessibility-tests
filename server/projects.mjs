@@ -156,20 +156,29 @@ const DOMAIN_SCOPED_SECONDS = new Set(['history', 'manual-progress', 'urls', 'ru
 /**
  * Parse report/API paths into a domain-scoped vs run-scoped tenancy check.
  * `/api/debug/deliverable/:domain/:runId/…` is run-scoped.
+ *
+ * Works on the raw request path, so it must be at least as loose as the routers
+ * behind it: the prefix matches in any case, and a domain or run id segment that
+ * is not already a plain id (percent-encoded, wrong characters) comes back as
+ * `{ invalid: true }` so the caller can refuse it. Valid ids never need encoding.
+ * Returns null for paths that are not tenant-scoped.
  */
 export function parseTenantPath(pathname) {
   const path = String(pathname || '');
-  const debug = path.match(/^\/api\/debug\/deliverable\/([^/]+)\/([^/]+)(?:\/|$)/);
+  const debug = path.match(/^\/api\/debug\/deliverable\/([^/]+)\/([^/]+)(?:\/|$)/i);
   if (debug) {
+    if (!isValidDomain(debug[1]) || !isValidRunId(debug[2])) return { invalid: true };
     return { domain: debug[1], runId: debug[2], scoped: 'run' };
   }
-  const match = path.match(/^\/(?:api\/status|api\/report|api\/audits|report)\/([^/]+)(?:\/([^/]+))?(?:\/.*)?$/);
+  const match = path.match(/^\/(?:api\/status|api\/report|api\/audits|report)\/([^/]+)(?:\/([^/]+))?(?:\/.*)?$/i);
   if (!match) return null;
   const domain = match[1];
   const second = match[2] || '';
-  if (!second || DOMAIN_SCOPED_SECONDS.has(second) || !isValidRunId(second)) {
+  if (!isValidDomain(domain)) return { invalid: true };
+  if (!second || DOMAIN_SCOPED_SECONDS.has(second)) {
     return { domain, runId: null, scoped: 'domain' };
   }
+  if (!isValidRunId(second)) return { invalid: true };
   return { domain, runId: second, scoped: 'run' };
 }
 
