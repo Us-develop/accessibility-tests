@@ -53,7 +53,7 @@ describe('teaser, loading, and catalog CTAs', () => {
     assert.doesNotMatch(pricing, /Full Pro deliverables for each spent token/);
     assert.match(account, /id="subscribe-actions"/);
     assert.match(account, /subscribeActions\.hidden = isPro/);
-    assert.match(layout, /Talk to a WCAG expert/);
+    assert.match(layout, /tr\('cta\.expert'\)/);
     assert.doesNotMatch(layout, />Us-diensten</);
   });
 });

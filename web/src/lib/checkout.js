@@ -17,6 +17,10 @@
  * ?checkout= alone never counts as consent.
  */
 import { fetchBalance } from './balance.js';
+import { pageLang, t } from '../../../i18n/index.mjs';
+
+/** Message text in the language of the page. */
+const msg = (key) => t(pageLang(), key);
 
 const api = (path) => (typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(path) : path);
 const credentials = () =>
@@ -73,11 +77,13 @@ function scopeOf(el) {
   return el.closest('[data-checkout-scope]') || document;
 }
 
-function showMessage(scope, text, isError = false) {
-  const msg = scope.querySelector('.checkout-msg');
-  if (!msg) return;
-  msg.textContent = text || '';
-  msg.setAttribute('role', isError ? 'alert' : 'status');
+function showMessage(scope, text, isError = false, textLang = '') {
+  const el = scope.querySelector('.checkout-msg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.setAttribute('role', isError ? 'alert' : 'status');
+  if (textLang && textLang !== pageLang()) el.setAttribute('lang', textLang);
+  else el.removeAttribute('lang');
 }
 
 async function saveBaseline() {
@@ -98,19 +104,19 @@ export async function startCheckout(btn) {
   const scope = scopeOf(btn);
   const parsed = checkoutItemFromButton(btn);
   if (!parsed) {
-    showMessage(scope, 'Could not start checkout.', true);
+    showMessage(scope, msg('checkout.error.generic'), true);
     return;
   }
   const waiver = scope.querySelector('.checkout-waiver');
   if (!(waiver instanceof HTMLInputElement) || !waiver.checked) {
-    showMessage(scope, 'Tick the box above first: it is needed before we can take payment.', true);
+    showMessage(scope, msg('checkout.error.tick'), true);
     waiver?.setAttribute('aria-invalid', 'true');
     waiver?.focus?.();
     return;
   }
   waiver.removeAttribute('aria-invalid');
   btn.disabled = true;
-  showMessage(scope, 'Starting checkout…');
+  showMessage(scope, msg('checkout.starting'));
   try {
     const auth = await fetch(api('/api/auth/status'), { credentials: credentials() })
       .then((r) => r.json())
@@ -134,9 +140,10 @@ export async function startCheckout(btn) {
       window.location.href = data.url;
       return;
     }
-    showMessage(scope, data.error || 'Could not start checkout.', true);
+    // A message from the server is still English: mark it so it is read correctly.
+    showMessage(scope, data.error || msg('checkout.error.generic'), true, data.error ? 'en' : '');
   } catch {
-    showMessage(scope, 'Could not start checkout. Check your connection and try again.', true);
+    showMessage(scope, msg('checkout.error.network'), true);
   } finally {
     if (btn.isConnected) btn.disabled = false;
   }
@@ -172,13 +179,13 @@ export async function resumeCheckout() {
 
   if (signedIn && consented && waiver instanceof HTMLInputElement) {
     waiver.checked = true;
-    showMessage(scope, 'Welcome back. Taking you to payment…');
+    showMessage(scope, msg('checkout.resume.welcome'));
     await startCheckout(btn);
     return;
   }
   // No recorded tick (or not signed in): show the card and let them decide.
   if (scope instanceof HTMLElement) scope.scrollIntoView({ block: 'center' });
-  showMessage(scope, signedIn ? 'Tick the box above, then choose your option again to continue to payment.' : '');
+  showMessage(scope, signedIn ? msg('checkout.resume.tick') : '');
   (waiver instanceof HTMLElement ? waiver : btn).focus();
 }
 

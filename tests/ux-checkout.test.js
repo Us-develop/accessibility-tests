@@ -121,9 +121,9 @@ describe('plans that cannot be bought', () => {
   it('shows a message with a contact link instead of dead buttons', () => {
     const pricing = read('web/src/pages/pricing.astro');
     assert.match(pricing, /\{proReady \? \(/);
-    assert.match(pricing, /Pro cannot be bought online yet\./);
+    assert.match(pricing, /tr\('pricing\.pro\.unavailable'\)/);
     assert.match(pricing, /\{anyPackReady \? \(/);
-    assert.match(pricing, /Token packs cannot be bought online yet\./);
+    assert.match(pricing, /tr\('pricing\.tokens\.unavailable'\)/);
   });
 });
 

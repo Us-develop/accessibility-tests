@@ -14,6 +14,7 @@ It combines [axe-core](https://github.com/dequelabs/axe-core), a set of custom c
 - [Signing in locally](#signing-in-locally)
 - [Running a scan](#running-a-scan)
 - [Tests](#tests)
+- [Languages](#languages)
 - [How the score works](#how-the-score-works)
 - [Benchmarks in the report](#benchmarks-in-the-report)
 - [How scans work, and their limits](#how-scans-work-and-their-limits)
@@ -174,6 +175,16 @@ npm test              # all unit tests
   ```
 - CI (`.github/workflows/test.yml`) runs both on every push and pull request.
 - `node scripts/self-scan.mjs` builds the app and scans its own public pages; it fails if they have serious accessibility problems.
+
+## Languages
+
+Dutch is the primary language and English the second. The texts live in `i18n/nl.mjs` and `i18n/en.mjs`, read through `i18n/index.mjs` by the Astro pages, the Svelte components, the browser scripts and the server.
+
+- **Adding or changing a text:** edit the same key in both files. `tests/i18n.test.js` fails when a key is missing from one of them, when the `{placeholders}` differ, or when a page uses a key that does not exist. Dutch addresses the reader as "u".
+- **Which language a visitor gets:** the `wcag_lang` cookie, set by the NL / EN switch in the header. Without a cookie it is Dutch. Set `WCAG_DEFAULT_LANG=en` on the server to make English the default, for example while a translation is still being reviewed.
+- **A page only claims a language it is written in.** A translated page calls `usePageLang(Astro)` in its frontmatter; the layout and header then follow the visitor's language. A page that is not translated yet stays English with `<html lang="en">`. A part that is still English inside a Dutch page (the sign-in dialog, messages from the server, the withdrawal waiver) carries `lang="en"` itself.
+- **Translated so far:** the header and footer, pricing, contact and the contact form, sign-up. Everything else is still English.
+- **Legal text:** English is the binding language. The withdrawal waiver is shown and recorded in English, with a Dutch translation beside it.
 
 ## How the score works
 

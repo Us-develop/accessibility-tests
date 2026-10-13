@@ -28,15 +28,17 @@ after(() => rmSync(tmp, { recursive: true, force: true }));
 describe('balance wording', () => {
   it('shows tokens only for an account without Pro', () => {
     const b = balanceFromUsage({ pro: false, tokens: { tokens: 12 }, pagesScanned: 4, pagesPerMonth: 300 });
-    assert.equal(balanceShort(b), '12 tokens');
-    assert.equal(balanceLong(b), '12 tokens left');
+    assert.equal(balanceShort(b, 'en'), '12 tokens');
+    assert.equal(balanceLong(b, 'en'), '12 tokens left');
+    assert.equal(balanceLong(b, 'nl'), '12 tokens over');
     assert.equal(balanceEmpty(b), false);
   });
 
   it('adds the Pro pages left this month', () => {
     const b = balanceFromUsage({ pro: true, tokens: { tokens: 1 }, pagesScanned: 60, pagesPerMonth: 300 });
-    assert.equal(balanceShort(b), '1 token · 240 Pro pages');
-    assert.equal(balanceLong(b), '240 of 300 Pro pages left this month · 1 token left');
+    assert.equal(balanceShort(b, 'en'), '1 token · 240 Pro pages');
+    assert.equal(balanceLong(b, 'en'), '240 of 300 Pro pages left this month · 1 token left');
+    assert.equal(balanceShort(b, 'nl'), "1 token · 240 Pro-pagina's");
   });
 
   it('knows when nothing is left', () => {
@@ -65,7 +67,7 @@ describe('usage API feeds the balance', () => {
       const fresh = await (await fetch(`${origin}/api/account/usage`, { headers: { cookie } })).json();
       assert.equal(fresh.pro, false);
       assert.equal(fresh.pagesLeft, 0);
-      assert.equal(balanceShort(balanceFromUsage(fresh)), '1 token');
+      assert.equal(balanceShort(balanceFromUsage(fresh), 'en'), '1 token');
 
       await applyStripeSubscription({
         id: 'sub_balance',
@@ -93,7 +95,7 @@ describe('getting around', () => {
   const home = read('web/src/pages/index.astro');
 
   it('has a Start new scan link and a balance link in the header', () => {
-    assert.match(header, /href="\/"[^>]*>Start new scan<\/a>/);
+    assert.match(header, /href="\/"[^>]*>\{tr\('header\.startScan'\)\}<\/a>/);
     assert.match(header, /id="wcag-header-balance"/);
     assert.match(header, /href="\/account#tokens"/);
     assert.match(header, /globalThis\.__wcagHeaderLoginBound/);

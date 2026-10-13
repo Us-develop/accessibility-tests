@@ -3,10 +3,15 @@ import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 import { NONE_PLAN_ID, PRO_PLAN_ID, TOKEN_PACKS, planFeatureList } from '../../../server/plan-catalog.mjs';
 import { billingPublicConfig } from '../../../server/stripe.mjs';
+import { usePageLang } from '../lib/page-lang.js';
 import { formatVatInclusivePrice } from '../../../server/vat-display.mjs';
 import { WITHDRAWAL_WAIVER_TEXT } from '../../../server/legal-versions.mjs';
 
 export const prerender = false;
+const tr = usePageLang(Astro);
+// The waiver is recorded in English, the binding language. Other languages get
+// the English sentence plus a note with a translation.
+const waiverNote = tr.lang === 'en' ? '' : tr('checkout.waiver.note');
 const canceled = Astro.url.searchParams.get('billing') === 'cancel';
 const pack10 = TOKEN_PACKS.find((p) => p.id === 'pack_10');
 const pack50 = TOKEN_PACKS.find((p) => p.id === 'pack_50');
@@ -68,8 +73,8 @@ const jsonLd = {
 };
 ---
 <Layout
-  title="Pricing · Us accessibility scanner"
-  description="Gratis snapshot, token packs, Pro subscription, and Us-diensten. Prices in EUR including VAT."
+  title={tr('pricing.title')}
+  description={tr('pricing.description')}
   noindex={false}
   authMode="guest-ok"
 >
@@ -77,110 +82,107 @@ const jsonLd = {
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
   </Fragment>
   <div class="app-shell">
-    <AppHeader crumb="Pricing" />
+    <AppHeader crumb={tr('pricing.crumb')} />
     <main id="main" class="app-main" tabindex="-1">
       <article class="container-narrow page-article">
-        <span class="eyebrow"><span class="dot"></span>Prices incl. VAT · EUR</span>
-        <h1>Gratis snapshot, tokens, Pro, or Us-diensten</h1>
-        <p class="muted p-large prose-width prose-lead">
-          Scan one public page for free. Buy tokens for occasional full reports, subscribe to Pro for monthly page-scans,
-          or ask Us for manual testing and remediation.
-        </p>
-        <p id="pricing-msg" class="muted" role="status" aria-live="polite">{canceled ? 'Checkout was cancelled. No charge was made.' : ''}</p>
+        <span class="eyebrow"><span class="dot"></span>{tr('pricing.eyebrow')}</span>
+        <h1>{tr('pricing.h1')}</h1>
+        <p class="muted p-large prose-width prose-lead">{tr('pricing.lead')}</p>
+        <p id="pricing-msg" class="muted" role="status" aria-live="polite">{canceled ? tr('pricing.canceled') : ''}</p>
 
         <div id="pricing-grid" class="pricing-grid">
           <section class="card pricing-card" id="gratis">
-            <h2>Gratis snapshot</h2>
+            <h2>{tr('pricing.free.h2')}</h2>
             <p class="pricing-price">€ 0</p>
-            <p class="muted">1 public URL. Score and the top 3 issues. One free snapshot per person — guest or signed in, not both. After that, buy tokens or subscribe.</p>
+            <p class="muted">{tr('pricing.free.body')}</p>
             <div class="pricing-cta">
-              <a class="btn btn-ghost" href="/">Scan this page for free</a>
+              <a class="btn btn-ghost" href="/">{tr('pricing.free.cta')}</a>
             </div>
           </section>
 
           <section class="card pricing-card" id="tokens" data-checkout-scope>
-            <h2>Tokens</h2>
-            <p class="pricing-price">{unitPrice} <span>per URL-scan</span></p>
-            <p class="muted">Pay per page, no subscription. 1 token = 1 URL. Minimum 10. Unused tokens expire after 12 months.</p>
+            <h2>{tr('pricing.tokens.h2')}</h2>
+            <p class="pricing-price">{unitPrice} <span>{tr('pricing.tokens.unit')}</span></p>
+            <p class="muted">{tr('pricing.tokens.body')}</p>
             <ul class="pricing-packs">
-              <li>10 tokens · {pack10Price}</li>
-              <li>50 tokens · {pack50Price} (−10%)</li>
-              <li>100 tokens · {pack100Price} (−20%)</li>
+              <li>{tr('pricing.tokens.pack', { n: 10, price: pack10Price })}</li>
+              <li>{tr('pricing.tokens.packDiscount', { n: 50, price: pack50Price, discount: '−10%' })}</li>
+              <li>{tr('pricing.tokens.packDiscount', { n: 100, price: pack100Price, discount: '−20%' })}</li>
             </ul>
-            <h3 style="font-size: 16px; margin: 16px 0 8px;">Each scan includes</h3>
+            <h3 style="font-size: 16px; margin: 16px 0 8px;">{tr('pricing.includes')}</h3>
             <ul class="pricing-packs" style="list-style: none; padding-left: 0;">
               {tokenFeatures.map((feature) => (
                 <li class={feature.included ? undefined : 'muted'}>
                   <span aria-hidden="true">{feature.included ? '✓' : '–'}</span>
-                  {feature.included ? feature.label : `${feature.label}: Pro only`}
+                  {feature.included ? tr(`feature.${feature.key}`) : tr('pricing.proOnly', { feature: tr(`feature.${feature.key}`) })}
                 </li>
               ))}
             </ul>
             {anyPackReady ? (
               <Fragment>
                 <label class="legal-check" style="margin-top: 16px;">
-                  <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver-tokens" name="withdrawalWaiver" value="true" />
-                  <span>{WITHDRAWAL_WAIVER_TEXT}</span>
+                  <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver-tokens" name="withdrawalWaiver" value="true" aria-describedby={waiverNote ? 'waiver-note-tokens' : undefined} />
+                  <span lang={tr.lang === 'en' ? undefined : 'en'}>{WITHDRAWAL_WAIVER_TEXT}</span>
                 </label>
+                {waiverNote ? <p id="waiver-note-tokens" class="muted" style="font-size: 12px;">{waiverNote}</p> : null}
                 <p class="checkout-msg muted" role="status" aria-live="polite"></p>
                 <div class="pricing-cta pricing-pack-actions">
-                  {packReady.pack_10 ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_10">Buy 10</button> : null}
-                  {packReady.pack_50 ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_50">Buy 50</button> : null}
-                  {packReady.pack_100 ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_100">Buy 100</button> : null}
+                  {packReady.pack_10 ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_10">{tr('pricing.tokens.buy', { n: 10 })}</button> : null}
+                  {packReady.pack_50 ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_50">{tr('pricing.tokens.buy', { n: 50 })}</button> : null}
+                  {packReady.pack_100 ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_100">{tr('pricing.tokens.buy', { n: 100 })}</button> : null}
                 </div>
               </Fragment>
             ) : (
               <p class="muted" role="status">
-                Token packs cannot be bought online yet. <a class="link" href="/contact?source=pricing">Contact Us</a> and we will set you up.
+                {tr('pricing.tokens.unavailable')} <a class="link" href="/contact?source=pricing">{tr('cta.contactUs')}</a> {tr('pricing.unavailable.contact')}
               </p>
             )}
           </section>
 
           <section class="card pricing-card" id="pro" data-checkout-scope>
-            <h2>Pro</h2>
-            <p class="pricing-price">{proMonth} <span>/ month</span></p>
-            <p class="muted">or {proYear} / year (2 months free). 300 page-scans a month, up to 50 URLs per run, one scan at a time, unlimited own projects, email support.</p>
-            <h3 style="font-size: 16px; margin: 16px 0 8px;">Each scan includes</h3>
+            <h2>{tr('pricing.pro.h2')}</h2>
+            <p class="pricing-price">{proMonth} <span>{tr('pricing.pro.perMonth')}</span></p>
+            <p class="muted">{tr('pricing.pro.body', { yearly: proYear })}</p>
+            <h3 style="font-size: 16px; margin: 16px 0 8px;">{tr('pricing.includes')}</h3>
             <ul class="pricing-packs" style="list-style: none; padding-left: 0;">
               {proFeatures.map((feature) => (
                 <li class={feature.included ? undefined : 'muted'}>
                   <span aria-hidden="true">{feature.included ? '✓' : '–'}</span>
-                  {feature.label}
+                  {tr(`feature.${feature.key}`)}
                 </li>
               ))}
             </ul>
             {proReady ? (
               <Fragment>
                 <label class="legal-check" style="margin-top: 16px;">
-                  <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver-pro" name="withdrawalWaiver" value="true" />
-                  <span>{WITHDRAWAL_WAIVER_TEXT}</span>
+                  <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver-pro" name="withdrawalWaiver" value="true" aria-describedby={waiverNote ? 'waiver-note-pro' : undefined} />
+                  <span lang={tr.lang === 'en' ? undefined : 'en'}>{WITHDRAWAL_WAIVER_TEXT}</span>
                 </label>
+                {waiverNote ? <p id="waiver-note-pro" class="muted" style="font-size: 12px;">{waiverNote}</p> : null}
                 <p class="checkout-msg muted" role="status" aria-live="polite"></p>
                 <div class="pricing-cta">
-                  {proMonthlyReady ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">Subscribe monthly</button> : null}
-                  {proYearlyReady ? <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">Subscribe yearly</button> : null}
+                  {proMonthlyReady ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">{tr('pricing.pro.monthly')}</button> : null}
+                  {proYearlyReady ? <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">{tr('pricing.pro.yearly')}</button> : null}
                 </div>
               </Fragment>
             ) : (
               <p class="muted" role="status">
-                Pro cannot be bought online yet. <a class="link" href="/contact?source=pricing">Contact Us</a> and we will set you up.
+                {tr('pricing.pro.unavailable')} <a class="link" href="/contact?source=pricing">{tr('cta.contactUs')}</a> {tr('pricing.unavailable.contact')}
               </p>
             )}
           </section>
 
           <section class="card pricing-card" id="us-diensten">
-            <h2>Us-diensten</h2>
-            <p class="pricing-price">Quote only</p>
-            <p class="muted">Manual AT testing, remediation, legally oriented statement, and training. No Stripe checkout — we scope this with you.</p>
+            <h2>{tr('pricing.services.h2')}</h2>
+            <p class="pricing-price">{tr('pricing.services.price')}</p>
+            <p class="muted">{tr('pricing.services.body')}</p>
             <div class="pricing-cta">
-              <a class="btn btn-secondary" href="/contact?source=pricing">Talk to a WCAG expert</a>
+              <a class="btn btn-secondary" href="/contact?source=pricing">{tr('cta.expert')}</a>
             </div>
           </section>
         </div>
 
-        <p class="muted" style="font-size: 13px; max-width: 640px; margin-top: 24px;">
-          Businesses outside Belgium with a valid EU VAT number are charged without VAT under the reverse-charge rule. Belgian businesses pay 21 % VAT. Prices shown include Belgian VAT; consumers in other EU countries see their local rate at checkout.
-        </p>
+        <p class="muted" style="font-size: 13px; max-width: 640px; margin-top: 24px;">{tr('pricing.vatNote')}</p>
       </article>
     </main>
   </div>

@@ -89,12 +89,13 @@ describe('own product accessibility markup', () => {
     assert.doesNotMatch(signupAstro, /for \(const field of \[email, password\]\)/);
   });
 
-  it('confirms email with a button instead of consuming the GET from a mail preview', () => {
+  it('confirms email with a button instead of consuming the GET from a mail preview', async () => {
     assert.match(verifyAstro, /id="verify-form"/);
     assert.match(verifyAstro, /method="post"/);
     assert.match(verifyAstro, /action="\/api\/auth\/verify"/);
     assert.match(verifyAstro, /id="verify-resend-form"/);
-    assert.match(signupAstro, /click Confirm email/);
+    assert.match(signupAstro, /tr\('signup\.check\.body'\)/);
+    assert.match((await import('../i18n/en.mjs')).default['signup.check.body'], /click Confirm email/);
   });
 
   it('does not hide custom checkboxes with display:none', () => {
@@ -146,10 +147,12 @@ describe('own product accessibility markup', () => {
     assert.match(layoutAstro, /wcagFillCsrfFields/);
   });
 
-  it('uses the reverse-charge VAT copy on pricing and terms', () => {
+  it('uses the reverse-charge VAT copy on pricing and terms', async () => {
     const copy =
       'Businesses outside Belgium with a valid EU VAT number are charged without VAT under the reverse-charge rule. Belgian businesses pay 21 % VAT. Prices shown include Belgian VAT; consumers in other EU countries see their local rate at checkout.';
-    assert.match(pricingAstro, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    // Pricing takes the sentence from the dictionary; terms still has it inline.
+    assert.match(pricingAstro, /tr\('pricing\.vatNote'\)/);
+    assert.equal((await import('../i18n/en.mjs')).default['pricing.vatNote'], copy);
     assert.match(termsAstro, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   });
 

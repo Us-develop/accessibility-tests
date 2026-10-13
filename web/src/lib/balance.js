@@ -6,6 +6,8 @@
  * Runs in the browser. The numbers come from GET /api/account/usage.
  */
 
+import { pageLang, t, tn } from '../../../i18n/index.mjs';
+
 function apiUrl(path) {
   return typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(path) : path;
 }
@@ -50,21 +52,19 @@ export async function fetchBalance() {
   }
 }
 
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-
-/** Short form for tight places, e.g. "12 tokens · 240 Pro pages". */
-export function balanceShort(balance) {
+/** Short form for tight places, e.g. "12 tokens · 240 Pro pages". Language of the page unless given. */
+export function balanceShort(balance, lang = pageLang()) {
   if (!balance) return '';
-  const tokens = plural(balance.tokens, 'token');
-  return balance.pro ? `${tokens} · ${plural(balance.pagesLeft, 'Pro page')}` : tokens;
+  const tokens = tn(lang, 'balance.tokens', balance.tokens);
+  return balance.pro ? `${tokens} · ${tn(lang, 'balance.proPages', balance.pagesLeft)}` : tokens;
 }
 
 /** Full sentence for screen readers and wider places. */
-export function balanceLong(balance) {
+export function balanceLong(balance, lang = pageLang()) {
   if (!balance) return '';
-  const tokens = `${plural(balance.tokens, 'token')} left`;
+  const tokens = tn(lang, 'balance.tokensLeft', balance.tokens);
   if (!balance.pro) return tokens;
-  return `${balance.pagesLeft} of ${balance.pagesPerMonth} Pro pages left this month · ${tokens}`;
+  return `${t(lang, 'balance.proLeft', { left: balance.pagesLeft, total: balance.pagesPerMonth })} · ${tokens}`;
 }
 
 /** Nothing left to scan with. */

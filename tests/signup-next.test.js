@@ -142,12 +142,15 @@ describe('signup next through verify', () => {
     assert.equal(body.next, '/account');
   });
 
-  it('uses pricing copy for next=/pricing and snapshot copy for guest tokens', () => {
+  it('uses pricing copy for next=/pricing and snapshot copy for guest tokens', async () => {
     const signup = readFileSync(join(repoRoot, 'web/src/pages/signup.astro'), 'utf8');
     assert.match(signup, /name="next"/);
     assert.match(signup, /id="signup-success"/);
-    assert.match(signup, /buy token packs or subscribe to Pro/);
-    assert.match(signup, /Save guest snapshots to your email/);
+    assert.match(signup, /tr\('signup\.lead\.pricing'\)/);
+    assert.match(signup, /tr\('signup\.lead\.guest'\)/);
+    const en = (await import('../i18n/en.mjs')).default;
+    assert.match(en['signup.lead.pricing'], /buy token packs or subscribe to Pro/);
+    assert.match(en['signup.lead.guest'], /Save guest snapshots to your email/);
     assert.match(signup, /check-email/);
     assert.doesNotMatch(signup, /msg\.textContent = 'Check your email to verify the account, then sign in\.'/);
     const cookies = readFileSync(join(repoRoot, 'web/src/pages/cookies.astro'), 'utf8');
