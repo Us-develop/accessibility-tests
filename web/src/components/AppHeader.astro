@@ -85,18 +85,14 @@ const onHome = Astro.url.pathname === '/';
         </svg>
       </summary>
       <div class="app-header-chrome">
-        {domain ? (
-          <a
-            class={`btn btn-sm btn-all-scans ${active === 'history' ? 'btn-cream' : 'btn-secondary'}`}
-            href={`/report/${encodeURIComponent(domain)}/history`}
-            aria-label={`All scans of ${domain}`}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-            All scans
-          </a>
-        ) : null}
+        {/* Every scan of the signed-in account. The site name in the crumbs leads to that site's history. */}
+        <a
+          class="btn btn-sm btn-secondary btn-all-scans wcag-header-account"
+          href="/audits"
+          aria-current={Astro.url.pathname === '/audits' ? 'page' : undefined}
+        >
+          All scans
+        </a>
         <a class="btn btn-primary btn-sm" href="/" aria-current={onHome ? 'page' : undefined}>Start new scan</a>
         <a
           class="btn btn-ghost btn-sm wcag-header-balance"
