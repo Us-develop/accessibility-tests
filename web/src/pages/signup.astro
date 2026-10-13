@@ -102,6 +102,8 @@ const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
   </div>
 </Layout>
 <script>
+  import { isSafeRelativePath } from '../../../server/safe-path.mjs';
+
   if (!globalThis.__wcagSignupDelegated) {
     globalThis.__wcagSignupDelegated = true;
     const SIGNUP_FIELD_IDS = {
@@ -149,7 +151,7 @@ const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
     }
     function safeClientNext(raw, fallback) {
       const t = String(raw || '').trim();
-      if (!t.startsWith('/') || t.startsWith('//') || t === '/login') return fallback;
+      if (!isSafeRelativePath(t) || t === '/login') return fallback;
       return t;
     }
     document.addEventListener('click', (event) => {

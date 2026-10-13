@@ -1,3 +1,5 @@
+import { isSafeRelativePath } from './safe-path.mjs';
+
 /** Post-login redirects that would loop the user back onto a login screen. */
 const LOGIN_LOOP_PATHS = new Set(['/login', '/auth/login', '/auth/staff', '/auth/logout']);
 
@@ -14,7 +16,7 @@ export function pathnameOfNext(raw) {
 }
 
 function pathnameFromCandidate(candidate) {
-  if (candidate.startsWith('/') && !candidate.startsWith('//')) {
+  if (isSafeRelativePath(candidate)) {
     return pathnameOfNext(candidate);
   }
   try {
@@ -36,8 +38,10 @@ export function safeNextAfterLogin(raw, fallback = '/') {
   const t = raw.trim();
   if (!t) return fallbackPath;
   let candidate = '';
-  if (t.startsWith('/') && !t.startsWith('//')) {
+  if (isSafeRelativePath(t)) {
     candidate = t.slice(0, 2048);
+  } else if (t.startsWith('/')) {
+    return fallbackPath;
   } else {
     const uiOrigin = String(process.env.ALLOWED_ORIGIN || '').trim();
     if (!uiOrigin || uiOrigin === '*') return fallbackPath;
