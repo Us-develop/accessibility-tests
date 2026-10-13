@@ -17,7 +17,8 @@ import {
   TOKEN_PACKS,
   tokenPackById,
 } from './plan-catalog.mjs';
-import { clawbackTokensForPaymentIntent, findTokenLotByCheckoutSession, grantTokenPack } from './tokens.mjs';
+import { applyRefundToTokenLot, findTokenLotByCheckoutSession, grantTokenPack } from './tokens.mjs';
+import { getUserById } from './users.mjs';
 import { companyInvoiceFooter } from './company.mjs';
 import { mergeConsentContext } from './consents.mjs';
 import { WITHDRAWAL_WAIVER_TEXT } from './legal-versions.mjs';
@@ -228,12 +229,30 @@ function localStatusFromStripe(status) {
   }
 }
 
+/**
+ * Local account a Stripe object belongs to, or null when there is none.
+ *
+ * The id in Stripe metadata outlives the account: events for a deleted user
+ * keep arriving (the final subscription.deleted, a late SEPA payment). Writing
+ * for an id that no longer exists fails on the foreign key, the webhook answers
+ * 500, and Stripe retries for days. Such events are acknowledged and dropped.
+ */
 async function resolveUserId({ userId, customerId, subscriptionId }) {
-  if (userId) return userId;
-  const byCustomer = await getSubscriptionByStripeCustomer(customerId);
-  if (byCustomer?.userId) return byCustomer.userId;
-  const bySub = await getSubscriptionByStripeSubscription(subscriptionId);
-  return bySub?.userId || null;
+  let id = userId || null;
+  if (!id) {
+    const byCustomer = await getSubscriptionByStripeCustomer(customerId);
+    id = byCustomer?.userId || null;
+  }
+  if (!id) {
+    const bySub = await getSubscriptionByStripeSubscription(subscriptionId);
+    id = bySub?.userId || null;
+  }
+  if (!id) return null;
+  if (!(await getUserById(id))) {
+    console.warn(`[stripe] ignoring event for account ${id}: it no longer exists`);
+    return null;
+  }
+  return id;
 }
 
 export async function applyStripeSubscription(stripeSub, { userId: knownUserId, customerId, eventCreated } = {}) {
@@ -368,7 +387,7 @@ export async function fulfillPaymentSession(session) {
   const packId = session.metadata?.packId || packIdFromPrice(session.metadata?.priceId);
   const pack = tokenPackById(packId);
   const tokens = Number(session.metadata?.tokens || pack?.tokens || 0);
-  const userId = session.metadata?.userId || session.client_reference_id;
+  const userId = await resolveUserId({ userId: session.metadata?.userId || session.client_reference_id });
   if (!userId || tokens <= 0) return null;
   const intentId =
     typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id || null;
@@ -443,11 +462,41 @@ async function claimStripeEvent(id, type) {
   return true;
 }
 
-async function clawbackCharge(object, paymentStatus) {
-  const intentId = paymentIntentIdFromCharge(object) || paymentIntentIdFromDispute(object);
+/** Share of a charge that has been refunded so far, 0..1. Stripe reports the running total. */
+function refundedFraction(charge) {
+  const amount = Number(charge?.amount) || 0;
+  const refunded = Number(charge?.amount_refunded) || 0;
+  if (amount <= 0) return charge?.refunded === true ? 1 : 0;
+  return Math.min(1, Math.max(0, refunded / amount));
+}
+
+/** A charge object as given, or fetched when the event only carries its id. */
+async function loadCharge(ref) {
+  if (ref && typeof ref === 'object') return ref;
+  if (typeof ref !== 'string' || !ref) return null;
+  return getStripe().charges.retrieve(ref);
+}
+
+/**
+ * Bring tokens and payment status in line with the refunds on a charge.
+ * Tokens are taken pro rata (see clawbackTargetFor). Driven by the charge's
+ * running totals, so repeated or out-of-order events land on the same result
+ * and a refund that later fails gives the tokens back.
+ */
+async function syncChargeRefund(charge) {
+  const intentId = paymentIntentIdFromCharge(charge);
   if (!intentId) return;
-  await clawbackTokensForPaymentIntent(intentId);
-  if (paymentStatus) await markPaymentStatus(intentId, paymentStatus);
+  const fraction = refundedFraction(charge);
+  await applyRefundToTokenLot(intentId, fraction);
+  await markPaymentStatus(intentId, fraction >= 1 ? 'refunded' : fraction > 0 ? 'partially_refunded' : 'paid');
+}
+
+/** A dispute freezes the whole pack until it is decided. */
+async function clawbackDisputedCharge(dispute) {
+  const intentId = paymentIntentIdFromDispute(dispute);
+  if (!intentId) return;
+  await applyRefundToTokenLot(intentId, 1);
+  await markPaymentStatus(intentId, 'disputed');
 }
 
 let jsonEventChain = Promise.resolve();
@@ -480,11 +529,20 @@ async function dispatchStripeEvent(event) {
       return { ok: true, type };
     }
     case 'charge.refunded':
+      await syncChargeRefund(object);
+      return { ok: true, type };
     case 'charge.refund.updated':
-      await clawbackCharge(object, 'refunded');
+      // The object is a Refund. Its own amount and status are one step of the
+      // story; the charge has the totals, including refunds that failed.
+      await syncChargeRefund(await loadCharge(object?.charge));
       return { ok: true, type };
     case 'charge.dispute.created':
-      await clawbackCharge(object, 'disputed');
+      await clawbackDisputedCharge(object);
+      return { ok: true, type };
+    case 'charge.dispute.closed':
+      // Won: the money stays, so the tokens come back (less any real refund).
+      // Lost: the pack stays clawed back.
+      if (object?.status === 'won') await syncChargeRefund(await loadCharge(object?.charge));
       return { ok: true, type };
     default:
       return { ok: true, ignored: true, type };
@@ -573,12 +631,27 @@ function assertAutomaticTaxForCheckout() {
   }
 }
 
+/**
+ * One Pro subscription per account. A second checkout would be billed by Stripe
+ * but ignored locally, because only one subscription id is stored per user.
+ */
+async function assertNoLiveProSubscription(userId) {
+  const current = await getSubscription(userId);
+  if (current?.stripeSubscriptionId && current.status !== 'canceled') {
+    throw Object.assign(
+      new Error('You already have a Pro subscription. Change or cancel it from your account page.'),
+      { status: 409, code: 'already_subscribed' }
+    );
+  }
+}
+
 export async function createCheckoutSession({ user, kind, packId, interval, consentId } = {}) {
+  const modeKind = String(kind || '').trim().toLowerCase();
+  if (modeKind === 'pro' || modeKind === 'subscription') await assertNoLiveProSubscription(user.id);
   assertAutomaticTaxForCheckout();
   const stripe = getStripe();
   const customerId = await ensureStripeCustomer(user);
   const base = publicAppBase();
-  const modeKind = String(kind || '').trim().toLowerCase();
   const consentMeta = consentId ? { consentId: String(consentId) } : {};
 
   if (modeKind === 'pack') {

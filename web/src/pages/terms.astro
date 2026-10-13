@@ -41,7 +41,7 @@ const company = companyIdentity();
           <p>
             Token packs are prepaid and expire 12 months after purchase. Pro is a subscription billed monthly or yearly.
             Cancel at period end through the billing portal. Unused Pro pages do not roll over.
-            If a pack payment is refunded, remaining tokens from that payment are clawed back (set to zero).
+            If a pack payment is refunded, tokens from that payment are removed in proportion to the amount refunded: a full refund removes all of them, a partial refund removes the same share of the pack, rounded down. Tokens already used are not charged back.
           </p>
 
           <h2>Price, VAT, and invoicing</h2>

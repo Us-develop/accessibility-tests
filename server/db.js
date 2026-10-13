@@ -394,6 +394,10 @@ export async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  // Refund bookkeeping: tokens the refunds take away in total, and how many of
+  // those were actually still there to remove.
+  await txQuery(`ALTER TABLE token_lots ADD COLUMN IF NOT EXISTS clawback_target INT NOT NULL DEFAULT 0`);
+  await txQuery(`ALTER TABLE token_lots ADD COLUMN IF NOT EXISTS tokens_clawed_back INT NOT NULL DEFAULT 0`);
   await txQuery(`CREATE INDEX IF NOT EXISTS token_lots_user_exp_idx ON token_lots (user_id, expires_at)`);
   await txQuery(
     `CREATE UNIQUE INDEX IF NOT EXISTS token_lots_checkout_uidx
@@ -1234,6 +1238,8 @@ function mapTokenLotRow(row) {
     packId: row.pack_id || null,
     tokensGranted: Number(row.tokens_granted || 0),
     tokensRemaining: Number(row.tokens_remaining || 0),
+    tokensClawedBack: Number(row.tokens_clawed_back || 0),
+    clawbackTarget: Number(row.clawback_target || 0),
     purchasedAt: isoOrNull(row.purchased_at),
     expiresAt: isoOrNull(row.expires_at),
     stripeCheckoutSessionId: row.stripe_checkout_session_id || null,
@@ -1350,14 +1356,34 @@ export async function dbConsumeTokens(userId, amount) {
   }
 }
 
-export async function dbClawbackTokenLotByPaymentIntent(intentId) {
+/**
+ * Recompute the lot bought with this payment for the refunded share of it.
+ * Same sum as settleTokenLot / clawbackTargetFor in tokens.mjs: the unspent
+ * tokens are `tokens_remaining + tokens_clawed_back`, the customer keeps what
+ * is left of those after the target, and the rest counts as clawed back.
+ */
+export async function dbApplyTokenLotClawback(intentId, refundedFraction) {
   if (!dbPool || !intentId) return null;
   const { rows } = await txQuery(
-    `UPDATE token_lots SET tokens_remaining = 0
-      WHERE stripe_payment_intent_id = $1
-      RETURNING id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
-                stripe_checkout_session_id, stripe_payment_intent_id, created_at`,
-    [intentId]
+    `WITH lot AS (
+       SELECT id,
+              tokens_remaining + tokens_clawed_back AS unspent,
+              CASE WHEN $2::numeric >= 1 THEN tokens_granted
+                   ELSE FLOOR(tokens_granted * $2::numeric)::int END AS target
+         FROM token_lots
+        WHERE stripe_payment_intent_id = $1
+        FOR UPDATE
+     )
+     UPDATE token_lots t
+        SET tokens_remaining = GREATEST(0, lot.unspent - lot.target),
+            tokens_clawed_back = lot.unspent - GREATEST(0, lot.unspent - lot.target),
+            clawback_target = lot.target
+       FROM lot
+      WHERE t.id = lot.id
+      RETURNING t.id, t.user_id, t.pack_id, t.tokens_granted, t.tokens_remaining, t.tokens_clawed_back,
+                t.clawback_target, t.purchased_at, t.expires_at, t.stripe_checkout_session_id,
+                t.stripe_payment_intent_id, t.created_at`,
+    [intentId, Math.min(1, Math.max(0, Number(refundedFraction) || 0))]
   );
   return mapTokenLotRow(rows[0]);
 }
@@ -1388,11 +1414,16 @@ export async function dbAddTokensToLot(lotId, amount) {
   if (!dbPool || !lotId) return null;
   const add = Number(amount) || 0;
   if (add <= 0) return dbSetTokenLotRemaining(lotId, 0);
+  // Returning tokens count as unspent again, but a refunded lot keeps its clawback
+  // target: see settleTokenLot in tokens.mjs.
   const { rows } = await txQuery(
-    `UPDATE token_lots SET tokens_remaining = tokens_remaining + $2
+    `UPDATE token_lots
+        SET tokens_remaining = GREATEST(0, tokens_remaining + tokens_clawed_back + $2 - clawback_target),
+            tokens_clawed_back = (tokens_remaining + tokens_clawed_back + $2)
+                               - GREATEST(0, tokens_remaining + tokens_clawed_back + $2 - clawback_target)
       WHERE id = $1
-      RETURNING id, user_id, pack_id, tokens_granted, tokens_remaining, purchased_at, expires_at,
-                stripe_checkout_session_id, stripe_payment_intent_id, created_at`,
+      RETURNING id, user_id, pack_id, tokens_granted, tokens_remaining, tokens_clawed_back, clawback_target,
+                purchased_at, expires_at, stripe_checkout_session_id, stripe_payment_intent_id, created_at`,
     [lotId, add]
   );
   return mapTokenLotRow(rows[0]);

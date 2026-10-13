@@ -2,7 +2,7 @@ import { randomBytes } from 'crypto';
 import {
   dbPool,
   dbAddTokensToLot,
-  dbClawbackTokenLotByPaymentIntent,
+  dbApplyTokenLotClawback,
   dbConsumeTokens,
   dbGetTokenLotByCheckoutSession,
   dbInsertTokenLot,
@@ -152,6 +152,41 @@ export async function consumeTokens(userId, amount) {
   return { consumed: needed, lots };
 }
 
+/**
+ * How many tokens of a lot a refund takes away. A full refund takes them all;
+ * a partial refund takes the same share of the pack, rounded down in the
+ * customer's favour (15% back on a 10 pack removes 1 token, not 2).
+ * @param {number} granted
+ * @param {number} refundedFraction refunded amount / charged amount, 0..1
+ */
+export function clawbackTargetFor(granted, refundedFraction) {
+  const total = Math.max(0, Number(granted) || 0);
+  const fraction = Math.min(1, Math.max(0, Number(refundedFraction) || 0));
+  return fraction >= 1 ? total : Math.floor(total * fraction);
+}
+
+/**
+ * Recompute a lot after its clawback target changed or tokens came back from a
+ * failed scan.
+ *
+ * `remaining + removed` is everything the customer has not spent. They keep
+ * what is left of that after the target is taken off; the rest is `removed`.
+ * Recomputing from those two numbers keeps the result right when refunds
+ * arrive in steps, when a refund is later reversed (the target goes down and
+ * tokens return), and when the customer had already spent more than they were
+ * left entitled to (remaining stops at 0 and never goes negative).
+ *
+ * The SQL in dbApplyTokenLotClawback and dbAddTokensToLot does the same sum.
+ * @param {{ remaining: number, removed: number }} lot
+ * @param {number} target tokens the refunds take away in total
+ * @param {number} [add] tokens returning from a failed scan
+ */
+export function settleTokenLot({ remaining, removed }, target, add = 0) {
+  const unspent = Math.max(0, Number(remaining) || 0) + Math.max(0, Number(removed) || 0) + Math.max(0, Number(add) || 0);
+  const nextRemaining = Math.max(0, unspent - Math.max(0, Number(target) || 0));
+  return { remaining: nextRemaining, removed: unspent - nextRemaining };
+}
+
 export async function restoreConsumedLots(lots) {
   if (!Array.isArray(lots) || !lots.length) return;
   for (const lot of lots) {
@@ -163,18 +198,39 @@ export async function restoreConsumedLots(lots) {
     }
     const rows = loadLots();
     const found = rows.find((row) => row.id === lot.id);
-    if (found) found.tokensRemaining = Number(found.tokensRemaining || 0) + amount;
+    if (found) {
+      // A refunded lot does not get tokens back just because a scan failed.
+      const next = settleTokenLot(
+        { remaining: found.tokensRemaining, removed: found.tokensClawedBack },
+        found.clawbackTarget,
+        amount
+      );
+      found.tokensRemaining = next.remaining;
+      found.tokensClawedBack = next.removed;
+    }
     saveLots(rows);
   }
 }
 
-export async function clawbackTokensForPaymentIntent(intentId) {
+/**
+ * Bring the token lot bought with this payment in line with how much of the
+ * payment has been refunded so far. Safe to call again with the same or a
+ * different fraction: the lot is recomputed, not decremented.
+ * @param {string} intentId Stripe payment intent of the pack purchase
+ * @param {number} refundedFraction refunded amount / charged amount, 0..1
+ */
+export async function applyRefundToTokenLot(intentId, refundedFraction) {
   if (!intentId) return null;
-  if (useDb()) return dbClawbackTokenLotByPaymentIntent(intentId);
+  const fraction = Math.min(1, Math.max(0, Number(refundedFraction) || 0));
+  if (useDb()) return dbApplyTokenLotClawback(intentId, fraction);
   const rows = loadLots();
   const lot = rows.find((row) => row.stripePaymentIntentId === intentId);
   if (!lot) return null;
-  lot.tokensRemaining = 0;
+  const target = clawbackTargetFor(lot.tokensGranted, fraction);
+  const next = settleTokenLot({ remaining: lot.tokensRemaining, removed: lot.tokensClawedBack }, target);
+  lot.tokensRemaining = next.remaining;
+  lot.tokensClawedBack = next.removed;
+  lot.clawbackTarget = target;
   saveLots(rows);
   return lot;
 }
