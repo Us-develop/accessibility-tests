@@ -337,12 +337,10 @@
     margin-top: 14px;
     margin-bottom: 18px;
   }
+  /* Solid colour: the pale gradient was about 1.5:1 against the cream background. */
   .loading-title em {
     font-style: normal;
-    background: var(--us-grad-iridescent);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: var(--us-lilac-text);
   }
   .loading-lead {
     max-width: 480px;

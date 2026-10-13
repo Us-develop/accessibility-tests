@@ -495,11 +495,10 @@
     margin-bottom: 22px;
     line-height: 0.98;
   }
+  /* Only used on the cream closing slide, where the pale gradient was far below 3:1. */
   .grad-text {
-    background: var(--us-grad-iridescent);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    font-style: normal;
+    color: var(--us-lilac-text);
   }
   .score-p {
     font-size: clamp(16px, 2.2vw, 22px);

@@ -344,7 +344,10 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       if (guestOk()) {
         const overlay = qs('wcag-login-modal');
         if (overlay && !overlay.hidden) {
-          unlockAppShell(false);
+          // The dialog is open: show the page behind it but keep it inert, or
+          // Tab would leave a modal dialog.
+          const main = getMain();
+          if (main) main.hidden = false;
           return;
         }
         if (errEl) {

@@ -630,12 +630,26 @@ export function createAccessibilityApp(repoRoot, options = {}) {
   });
 
   const loginIpLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyFn: clientKey, countFailures: true });
-  const loginUserLimit = rateLimit({
+  const loginName = (req) => String(req.body?.username || req.body?.email || '').trim().toLowerCase() || 'anon';
+  // Per account *and* address. Keyed on the account alone, anyone could keep a
+  // known login (the staff user, a customer's email) locked out by failing on
+  // purpose from one machine.
+  const loginUserIpLimit = rateLimit({
     windowMs: 60 * 60 * 1000,
     max: 20,
-    keyFn: (req) => String(req.body?.username || req.body?.email || '').trim().toLowerCase() || 'anon',
+    keyFn: (req) => `${loginName(req)}|${clientKey(req)}`,
     countFailures: true,
   });
+  // Backstop against guessing one account from many addresses. High enough
+  // that it takes a sustained, distributed effort to trip.
+  const loginUserGlobalLimit = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 300,
+    keyFn: loginName,
+    countFailures: true,
+  });
+  const loginUserLimit = (req, res, next) =>
+    loginUserIpLimit(req, res, (err) => (err ? next(err) : loginUserGlobalLimit(req, res, next)));
   const leadIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyFn: clientKey });
 
   function launchScanProcess(job) {

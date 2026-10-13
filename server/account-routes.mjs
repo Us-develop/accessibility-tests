@@ -1,4 +1,5 @@
 import {
+  emailVerificationRequired,
   createUser,
   deleteAccount,
   exportUserData,
@@ -201,7 +202,8 @@ export function registerAccountRoutes(app, ctx) {
   const forgotEmailLimit = rateLimit({
     windowMs: 60 * 60 * 1000,
     max: 3,
-    keyFn: (req) => String(req.body?.email || '').trim().toLowerCase() || 'anon',
+    // Per address as well, so a stranger cannot use up someone else's reset mails.
+    keyFn: (req) => `${String(req.body?.email || '').trim().toLowerCase() || 'anon'}|${clientIp(req)}`,
   });
   const resetIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyFn: clientKey });
   const verifyIpLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 20, keyFn: clientKey });
@@ -211,6 +213,21 @@ export function registerAccountRoutes(app, ctx) {
     max: 3,
     keyFn: (req) => String(req.body?.email || '').trim().toLowerCase() || 'anon',
   });
+
+  /**
+   * Send an account mail without letting a mail failure change the outcome.
+   * The account or reset token already exists by the time we send; turning an
+   * SMTP error into a failed request would leave the visitor with an account
+   * they cannot confirm and would leak the mail server's error text.
+   */
+  async function sendAccountEmailSafely(message) {
+    try {
+      return await sendAccountEmail(message);
+    } catch (err) {
+      console.error(`[mail] ${message.kind} mail could not be sent:`, err?.message || err);
+      return { emailed: false };
+    }
+  }
 
   app.post('/api/auth/signup', signupIpLimit, asyncHandler(async (req, res) => {
     try {
@@ -270,7 +287,7 @@ export function registerAccountRoutes(app, ctx) {
           await ensureFreebieLot(user.id, { guestFreebieUsed: true });
         }
         const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(verifyToken)}`;
-        await sendAccountEmail({
+        await sendAccountEmailSafely({
           kind: 'verify',
           to: user.email,
           subject: 'Verify your Us accessibility account',
@@ -287,11 +304,36 @@ export function registerAccountRoutes(app, ctx) {
       return formOrJson(req, res, next, 200, {
         ok: true,
         needsVerification: Boolean(verifyToken),
-        user,
+        // No account details while the address is unconfirmed: the answer must
+        // look the same whether or not the address was already registered.
+        ...(verifyToken ? {} : { user }),
         next: pendingNext,
       });
     } catch (err) {
       const status = Number(err.status) || 400;
+      // Where addresses must be confirmed, do not reveal that this one already
+      // has an account. Answer as for a new signup and tell the owner by mail.
+      if (status === 409 && err.field === 'email' && emailVerificationRequired()) {
+        if (typeof req.recordRateLimitHit === 'function') req.recordRateLimitHit();
+        const email = String(req.body?.email || '').trim().toLowerCase();
+        void sendAccountEmailSafely({
+          kind: 'signup-existing',
+          to: email,
+          subject: 'You already have a Us accessibility account',
+          text:
+            `Someone, probably you, tried to create an account with this email address, but it already has one.\n\n` +
+            `Sign in: ${publicBase()}/login\n` +
+            `Forgot your password? Reset it: ${publicBase()}/forgot\n\n` +
+            `If this was not you, you can ignore this message. Nothing has changed.\n`,
+        });
+        const pendingNext = rememberPendingNext(req, res);
+        const guestToken = String(req.body?.guestToken || '').trim();
+        return formOrJson(req, res, signupCheckEmailPath(pendingNext, guestToken), 200, {
+          ok: true,
+          needsVerification: true,
+          next: pendingNext,
+        });
+      }
       if (status === 409 && typeof req.recordRateLimitHit === 'function') {
         req.recordRateLimitHit();
       }
@@ -338,7 +380,7 @@ export function registerAccountRoutes(app, ctx) {
     const started = await restartEmailVerification(req.body?.email);
     if (started) {
       const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(started.token)}`;
-      await sendAccountEmail({
+      await sendAccountEmailSafely({
         kind: 'verify',
         to: started.user.email,
         subject: 'Verify your Us accessibility account',
@@ -352,7 +394,9 @@ export function registerAccountRoutes(app, ctx) {
     const started = await startPasswordReset(req.body?.email);
     if (started) {
       const link = `${publicBase()}/reset?token=${encodeURIComponent(started.token)}`;
-      await sendAccountEmail({
+      // Not awaited: waiting for the mail server only when the account exists
+      // would let response time reveal which addresses are registered.
+      void sendAccountEmailSafely({
         kind: 'reset',
         to: started.user.email,
         subject: 'Reset your Us accessibility password',
