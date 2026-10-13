@@ -13,9 +13,18 @@ const pack100Label = formatVatInclusivePrice(8000);
   <div class="app-shell">
     <AppHeader crumb="Account" />
     <main id="main" class="app-main" tabindex="-1">
-      <article class="container-narrow page-article">
+      <article class="container page-article">
         <h1>Account</h1>
         <p id="account-status" class="muted mt-1">Loading…</p>
+
+        <div class="account-actions" style="margin-top: 16px;">
+          <a class="btn btn-primary" href="/">Scan a page</a>
+          <a class="btn btn-secondary" href="/audits">All scans</a>
+          <a class="btn btn-ghost" href="/api/account/export">Export JSON</a>
+          <a class="btn btn-ghost" href="/api/account/export?format=csv">Export CSV</a>
+        </div>
+
+        <p id="account-msg" class="muted" role="status" style="margin-top: 16px;"></p>
 
         <section id="billing-success" class="card stack-form account-section" role="status" tabindex="-1" hidden>
           <h2>Payment received, thank you</h2>
@@ -25,148 +34,216 @@ const pack100Label = formatVatInclusivePrice(8000);
           </div>
         </section>
 
-        <section id="usage-card" class="card stack-form account-section" hidden>
-          <h2>Subscription</h2>
-          <p id="plan-name" class="muted"></p>
-          <p id="plan-status" class="muted"></p>
-          <div class="usage-bar" aria-hidden="true"><span id="usage-fill"></span></div>
-          <p id="usage-label" class="muted"></p>
-          <div id="billing-actions" class="guest-cta-row">
-            <button type="button" class="btn btn-ghost" id="manage-billing-btn">Manage billing</button>
+        <div class="account-layout">
+          <nav class="account-nav card stack-form" aria-label="Account sections">
+            <p id="account-nav-balance" class="account-nav-balance" hidden></p>
+            <ul>
+              <li><a class="link" href="#projects">Projects</a></li>
+              <li><a class="link" href="#scan-history">Scan history</a></li>
+              <li data-customer-only hidden><a class="link" href="#subscription">Subscription</a></li>
+              <li data-customer-only hidden><a class="link" href="#tokens">Tokens</a></li>
+              <li><a class="link" href="#payments">Payment history</a></li>
+              <li data-customer-only hidden><a class="link" href="#personal">Personal information</a></li>
+            </ul>
+          </nav>
+
+          <div class="account-main">
+            <section id="projects-card" class="card stack-form account-section">
+              <h2 id="projects" tabindex="-1">Projects</h2>
+              <div id="account-projects"><p class="muted">Loading…</p></div>
+            </section>
+
+            <section id="scans-card" class="card stack-form account-section" hidden>
+              <h2 id="scan-history" tabindex="-1">Scan history</h2>
+              <div class="table-wrap">
+                <table class="account-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Project</th>
+                      <th scope="col">Date</th>
+                      <th scope="col">Pages</th>
+                      <th scope="col">Score</th>
+                      <th scope="col">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="scans-body"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="usage-card" class="card stack-form account-section" hidden>
+              <h2 id="subscription" tabindex="-1">Subscription</h2>
+              <p id="plan-name" class="muted"></p>
+              <p id="plan-status" class="muted"></p>
+              <div class="usage-bar" aria-hidden="true"><span id="usage-fill"></span></div>
+              <p id="usage-label" class="muted"></p>
+              <div id="billing-actions" class="guest-cta-row">
+                <button type="button" class="btn btn-ghost" id="manage-billing-btn">Manage billing</button>
+              </div>
+              <p id="billing-portal-msg" class="muted" role="status"></p>
+              <p class="muted" style="font-size: 13px;">Cancel at the end of the billing period through Manage billing. You keep Pro until that date.</p>
+            </section>
+
+            <section id="tokens-card" class="card stack-form account-section" data-checkout-scope hidden>
+              <h2 id="tokens" tabindex="-1">Tokens</h2>
+              <p id="token-balance" class="muted"></p>
+              <p class="muted" style="font-size: 13px;">Buy extra tokens for occasional scans or to continue after this month’s Pro pages. Packs expire after 12 months. The box below also covers Subscribe on this page.</p>
+              <label class="legal-check">
+                <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver" name="withdrawalWaiver" value="true" />
+                <span>{WITHDRAWAL_WAIVER_TEXT}</span>
+              </label>
+              <p id="account-billing-msg" class="checkout-msg muted" role="status" aria-live="polite"></p>
+              <div id="subscribe-actions" class="guest-cta-row">
+                <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">Subscribe monthly</button>
+                <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">Subscribe yearly</button>
+              </div>
+              <div class="guest-cta-row">
+                <button type="button" class="btn btn-primary token-buy" data-pack="pack_10">Buy 10 · {pack10Label}</button>
+                <button type="button" class="btn btn-primary token-buy" data-pack="pack_50">Buy 50 · {pack50Label}</button>
+                <button type="button" class="btn btn-primary token-buy" data-pack="pack_100">Buy 100 · {pack100Label}</button>
+                <a class="btn btn-secondary" href="/contact?source=account">Talk to a WCAG expert</a>
+              </div>
+            </section>
+
+            <section id="payments-card" class="card stack-form account-section" hidden>
+              <h2 id="payments" tabindex="-1">Payment history</h2>
+              <p id="payments-empty" class="muted">No payments yet.</p>
+              <div class="table-wrap" id="payments-table-wrap" hidden>
+                <table class="account-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Date</th>
+                      <th scope="col">Description</th>
+                      <th scope="col">Amount</th>
+                      <th scope="col">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="payments-body"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="contact-card" class="card stack-form account-section" hidden>
+              <h2 id="personal" tabindex="-1">Personal information</h2>
+              <form id="contact-form" class="account-form" method="post" action="/account" data-astro-reload>
+                <label>Name <input id="account-name" name="name" type="text" autocomplete="name" /></label>
+                <label class="legal-check">
+                  <input type="checkbox" id="buying-for-business" name="buyingForBusiness" value="true" />
+                  <span>I'm buying for a business</span>
+                </label>
+                <div id="business-fields" hidden>
+                  <label>Company <input name="company" type="text" autocomplete="organization" /></label>
+                  <label>VAT number <input name="vatNumber" type="text" /></label>
+                </div>
+                <label>Phone <input name="phone" type="tel" autocomplete="tel" /></label>
+                <label>
+                  Address
+                  <input name="addressLine1" type="text" autocomplete="address-line1" />
+                </label>
+                <label>
+                  Address line 2
+                  <input name="addressLine2" type="text" autocomplete="address-line2" />
+                </label>
+                <div class="account-form-row">
+                  <label>City <input name="city" type="text" autocomplete="address-level2" /></label>
+                  <label>Postal code <input name="postalCode" type="text" autocomplete="postal-code" /></label>
+                </div>
+                <label>Country <input name="country" type="text" autocomplete="country-name" /></label>
+                <p id="contact-msg" class="muted" role="status"></p>
+                <button type="submit" class="btn btn-primary">Save details</button>
+              </form>
+            </section>
+
+            <section id="password-card" class="card stack-form account-section" hidden>
+              <h2>Change password</h2>
+              <form id="password-form" class="account-form" method="post" action="/account" data-astro-reload>
+                <label>Current password <input id="account-current-password" name="currentPassword" type="password" autocomplete="current-password" required /></label>
+                <label>New password <input id="account-new-password" name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
+                <p id="password-msg" class="muted" role="status"></p>
+                <button type="submit" class="btn btn-ghost">Update password</button>
+              </form>
+            </section>
+
+            <section id="email-card" class="card stack-form account-section" hidden>
+              <h2>Change email</h2>
+              <form id="email-form" class="account-form" method="post" action="/api/account/email" data-astro-reload>
+                <input type="hidden" name="csrfToken" class="wcag-csrf-field" value="" />
+                <label>New email <input id="account-new-email" name="email" type="email" autocomplete="email" required /></label>
+                <label>Current password <input id="email-password" name="password" type="password" autocomplete="current-password" required /></label>
+                <p id="email-msg" class="muted" role="status"></p>
+                <button type="submit" class="btn btn-ghost">Send confirmation</button>
+              </form>
+            </section>
+
+            <p id="delete-open-row" class="muted" style="font-size: 13px; margin-top: 28px;" hidden>
+              <button type="button" class="linklike" id="delete-open" aria-expanded="false" aria-controls="delete-card">Delete my account</button>
+            </p>
+            <section id="delete-card" class="card stack-form account-section" hidden>
+              <h2 id="delete-title" tabindex="-1">Delete your account?</h2>
+              <form id="delete-form" class="account-form" method="post" action="/api/account/delete" data-astro-reload>
+                <input type="hidden" name="csrfToken" class="wcag-csrf-field" value="" />
+                <p class="muted">
+                  This removes your account, your scans and reports, and any unused tokens, and cancels a Pro subscription. It cannot be undone. Enter your current password to confirm.
+                </p>
+                <label>Current password <input id="delete-password" name="password" type="password" autocomplete="current-password" required /></label>
+                <p id="delete-msg" class="muted" role="status"></p>
+                <div class="guest-cta-row">
+                  <button type="submit" class="btn btn-ghost" id="delete-btn">Yes, delete my account</button>
+                  <button type="button" class="btn btn-primary" id="delete-cancel">Keep my account</button>
+                </div>
+              </form>
+            </section>
           </div>
-          <p class="muted" style="font-size: 13px;">Cancel at the end of the billing period through Manage billing. You keep Pro until that date.</p>
-        </section>
-
-        <section id="tokens-card" class="card stack-form account-section" data-checkout-scope hidden>
-          <h2 id="tokens">Tokens</h2>
-          <p id="token-balance" class="muted"></p>
-          <p class="muted" style="font-size: 13px;">Buy extra tokens for occasional scans or to continue after this month’s Pro pages. Packs expire after 12 months. Tick the immediate-delivery box first — it also covers Subscribe on this page.</p>
-          <label class="legal-check">
-            <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver" name="withdrawalWaiver" value="true" />
-            <span>{WITHDRAWAL_WAIVER_TEXT}</span>
-          </label>
-          <p id="account-billing-msg" class="checkout-msg muted" role="status" aria-live="polite"></p>
-          <div id="subscribe-actions" class="guest-cta-row">
-            <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">Subscribe monthly</button>
-            <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">Subscribe yearly</button>
-          </div>
-          <div class="guest-cta-row">
-            <button type="button" class="btn btn-primary token-buy" data-pack="pack_10">Buy 10 · {pack10Label}</button>
-            <button type="button" class="btn btn-primary token-buy" data-pack="pack_50">Buy 50 · {pack50Label}</button>
-            <button type="button" class="btn btn-primary token-buy" data-pack="pack_100">Buy 100 · {pack100Label}</button>
-            <a class="btn btn-secondary" href="/contact?source=account">Talk to a WCAG expert</a>
-          </div>
-        </section>
-
-        <section id="contact-card" class="card stack-form account-section" hidden>
-          <h2>Contact details</h2>
-          <form id="contact-form" class="account-form" method="post" action="/account" data-astro-reload>
-            <label>Name <input id="account-name" name="name" type="text" autocomplete="name" /></label>
-            <label class="legal-check">
-              <input type="checkbox" id="buying-for-business" name="buyingForBusiness" value="true" />
-              <span>I'm buying for a business</span>
-            </label>
-            <div id="business-fields" hidden>
-              <label>Company <input name="company" type="text" autocomplete="organization" /></label>
-              <label>VAT number <input name="vatNumber" type="text" /></label>
-            </div>
-            <label>Phone <input name="phone" type="tel" autocomplete="tel" /></label>
-            <label>
-              Address
-              <input name="addressLine1" type="text" autocomplete="address-line1" />
-            </label>
-            <label>
-              Address line 2
-              <input name="addressLine2" type="text" autocomplete="address-line2" />
-            </label>
-            <div class="account-form-row">
-              <label>City <input name="city" type="text" autocomplete="address-level2" /></label>
-              <label>Postal code <input name="postalCode" type="text" autocomplete="postal-code" /></label>
-            </div>
-            <label>Country <input name="country" type="text" autocomplete="country-name" /></label>
-            <button type="submit" class="btn btn-primary">Save details</button>
-          </form>
-        </section>
-
-        <section id="password-card" class="card stack-form account-section" hidden>
-          <h2>Change password</h2>
-          <form id="password-form" class="account-form" method="post" action="/account" data-astro-reload>
-            <label>Current password <input id="account-current-password" name="currentPassword" type="password" autocomplete="current-password" required /></label>
-            <label>New password <input id="account-new-password" name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
-            <button type="submit" class="btn btn-ghost">Update password</button>
-          </form>
-        </section>
-
-        <section id="email-card" class="card stack-form account-section" hidden>
-          <h2>Change email</h2>
-          <form id="email-form" class="account-form" method="post" action="/api/account/email" data-astro-reload>
-            <input type="hidden" name="csrfToken" class="wcag-csrf-field" value="" />
-            <label>New email <input id="account-new-email" name="email" type="email" autocomplete="email" required /></label>
-            <label>Current password <input id="email-password" name="password" type="password" autocomplete="current-password" required /></label>
-            <button type="submit" class="btn btn-ghost">Send confirmation</button>
-          </form>
-        </section>
-
-        <div id="account-projects" class="card stack-form account-section" hidden></div>
-
-        <section id="scans-card" class="card stack-form account-section" hidden>
-          <h2>Scan history</h2>
-          <div class="table-wrap">
-            <table class="account-table">
-              <thead>
-                <tr>
-                  <th scope="col">Project</th>
-                  <th scope="col">Date</th>
-                  <th scope="col">Pages</th>
-                  <th scope="col">Score</th>
-                  <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody id="scans-body"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section id="payments-card" class="card stack-form account-section" hidden>
-          <h2>Payment history</h2>
-          <p id="payments-empty" class="muted">No payments yet.</p>
-          <div class="table-wrap" id="payments-table-wrap" hidden>
-            <table class="account-table">
-              <thead>
-                <tr>
-                  <th scope="col">Date</th>
-                  <th scope="col">Description</th>
-                  <th scope="col">Amount</th>
-                  <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody id="payments-body"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section id="delete-card" class="card stack-form account-section" hidden>
-          <h2>Delete account</h2>
-          <form id="delete-form" class="account-form" method="post" action="/api/account/delete" data-astro-reload>
-            <input type="hidden" name="csrfToken" class="wcag-csrf-field" value="" />
-            <p class="muted">This cannot be undone. Enter your current password to confirm.</p>
-            <label>Current password <input id="delete-password" name="password" type="password" autocomplete="current-password" required /></label>
-            <button type="submit" class="btn btn-ghost" id="delete-btn">Delete account</button>
-          </form>
-        </section>
-
-        <div class="account-actions">
-          <a class="btn btn-primary" href="/">Scan a page</a>
-          <a class="btn btn-ghost" href="/api/account/export">Export JSON</a>
-          <a class="btn btn-ghost" href="/api/account/export?format=csv">Export CSV</a>
         </div>
-        <p id="account-msg" class="muted" role="status"></p>
       </article>
     </main>
   </div>
 </Layout>
+<style>
+  /* .stack-form sets display, which would otherwise beat the hidden attribute:
+     sections meant to be hidden (customer-only cards for staff, the payment
+     panel, the delete step) were shown regardless. */
+  .account-section[hidden] {
+    display: none;
+  }
+  /* Structure only: a sidebar beside the sections, stacked on narrow screens. */
+  .account-layout {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+    margin-top: 8px;
+  }
+  .account-nav {
+    position: sticky;
+    top: 88px;
+    margin-top: 20px;
+  }
+  .account-nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .account-nav-balance {
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  .account-main h2 {
+    scroll-margin-top: 96px;
+  }
+  @media (max-width: 760px) {
+    .account-layout {
+      grid-template-columns: 1fr;
+    }
+    .account-nav {
+      position: static;
+    }
+  }
+</style>
 <script>
-  import { announceBalanceChanged, balanceLong } from '../lib/balance.js';
+  import { announceBalanceChanged, balanceFromUsage, balanceLong } from '../lib/balance.js';
   import { bindCheckout, watchPaymentLanding } from '../lib/checkout.js';
 
   bindCheckout();
@@ -176,16 +253,16 @@ const pack100Label = formatVatInclusivePrice(8000);
   const headers = () =>
     typeof globalThis.wcagHeaders === 'function' ? globalThis.wcagHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' };
 
-  function setMsg(text, isError = false) {
-    const billing = document.getElementById('account-billing-msg');
-    const msg = billing || document.getElementById('account-msg');
+  /**
+   * Show a message in the element that belongs to the action that caused it,
+   * so a confirmation appears where the person is looking. `targetId` defaults
+   * to the general line under the page title.
+   */
+  function setMsg(text, isError = false, targetId = 'account-msg') {
+    const msg = document.getElementById(targetId) || document.getElementById('account-msg');
     if (!msg) return;
     msg.textContent = text || '';
     msg.setAttribute('role', isError ? 'alert' : 'status');
-    if (billing && billing !== document.getElementById('account-msg')) {
-      const fallback = document.getElementById('account-msg');
-      if (fallback && fallback !== billing) fallback.textContent = '';
-    }
   }
 
   function escapeHtml(s) {
@@ -252,14 +329,18 @@ const pack100Label = formatVatInclusivePrice(8000);
       const contactCard = document.getElementById('contact-card');
       const passwordCard = document.getElementById('password-card');
       const emailCard = document.getElementById('email-card');
-      const deleteCard = document.getElementById('delete-card');
+      const deleteRow = document.getElementById('delete-open-row');
       if (data.role === 'customer') {
         if (usageCard) usageCard.hidden = false;
         if (tokensCard) tokensCard.hidden = false;
         if (contactCard) contactCard.hidden = false;
         if (passwordCard) passwordCard.hidden = false;
         if (emailCard) emailCard.hidden = false;
-        if (deleteCard) deleteCard.hidden = false;
+        // Deleting is a small link at the bottom; its form opens on request.
+        if (deleteRow) deleteRow.hidden = false;
+        document.querySelectorAll('.account-nav [data-customer-only]').forEach((el) => {
+          el.hidden = false;
+        });
         fillForm(document.getElementById('contact-form'), data.user);
         const planName = document.getElementById('plan-name');
         const planStatus = document.getElementById('plan-status');
@@ -291,22 +372,27 @@ const pack100Label = formatVatInclusivePrice(8000);
             : 'Pro pages apply after you subscribe.';
         }
         const tokenBalance = document.getElementById('token-balance');
-        const tokensLeft = Number(data.tokens?.tokens || 0);
+        // Same wording and sums as the header (web/src/lib/balance.js).
+        const balance = balanceFromUsage({ pro: isPro, tokens: data.tokens, pagesScanned: used, pagesPerMonth: max });
         const expires = data.tokens?.nextExpiresAt
           ? ` Next lot expires ${new Date(data.tokens.nextExpiresAt).toLocaleDateString()}.`
           : '';
-        if (tokenBalance) tokenBalance.textContent = `${tokensLeft} token${tokensLeft === 1 ? '' : 's'} left.${expires}`;
+        if (tokenBalance) tokenBalance.textContent = `${balance.tokens} token${balance.tokens === 1 ? '' : 's'} left.${expires}`;
+        const navBalance = document.getElementById('account-nav-balance');
+        if (navBalance) {
+          navBalance.textContent = balanceLong(balance);
+          navBalance.hidden = false;
+        }
         const subscribeActions = document.getElementById('subscribe-actions');
         if (subscribeActions) subscribeActions.hidden = isPro;
       }
 
     const projects = Array.isArray(data.projects) ? data.projects : [];
     if (list) {
-      list.hidden = false;
       if (!projects.length) {
-        list.innerHTML = '<h2>Projects</h2><p class="muted">No saved projects yet. Run a scan or attach a guest snapshot after signup. Each domain is one project; a subdomain is a new project.</p>';
+        list.innerHTML = '<p class="muted">No saved projects yet. Run a scan or attach a guest snapshot after signup. Each domain is one project; a subdomain is a new project.</p>';
       } else {
-        list.innerHTML = `<h2>Projects</h2>${projects
+        list.innerHTML = `${projects
           .map((p) => {
             const href = `/report/${encodeURIComponent(p.domain)}/history`;
             return `<p><a class="link" href="${href}">${escapeHtml(p.domain)}</a> · ${escapeHtml(String(p.runIds?.length || 0))} run(s)</p>`;
@@ -373,13 +459,13 @@ const pack100Label = formatVatInclusivePrice(8000);
     }
   }
 
-  function markInvalid(ids, isError) {
+  function markInvalid(ids, isError, msgId = 'account-msg') {
     for (const id of ids) {
       const field = document.getElementById(id);
       if (!field) continue;
       if (isError) {
         field.setAttribute('aria-invalid', 'true');
-        field.setAttribute('aria-describedby', 'account-msg');
+        field.setAttribute('aria-describedby', msgId);
       } else {
         field.removeAttribute('aria-invalid');
         field.removeAttribute('aria-describedby');
@@ -393,14 +479,18 @@ const pack100Label = formatVatInclusivePrice(8000);
     const params = new URLSearchParams(window.location.search);
     const err = params.get('error');
     if (err === 'csrf') {
-      setMsg('Could not confirm this request. Refresh the page and try Delete account again.', true);
+      openDeleteConfirm(false);
+      setMsg('Could not confirm this request. Refresh the page and try again.', true, 'delete-msg');
     } else if (err === 'delete') {
-      setMsg('Password is incorrect.', true);
-      markInvalid(['delete-password'], true);
+      openDeleteConfirm(false);
+      setMsg('Password is incorrect.', true, 'delete-msg');
+      markInvalid(['delete-password'], true, 'delete-msg');
     }
     const billingFlag = params.get('billing');
     if (billingFlag === 'success') showPaymentReceived();
-    if (billingFlag === 'portal') setMsg('Back from billing. Subscription changes apply when Stripe confirms them.');
+    if (billingFlag === 'portal') {
+      setMsg('Back from billing. Subscription changes apply when Stripe confirms them.', false, 'billing-portal-msg');
+    }
     attachGuestIfPresent().finally(load);
   }
 
@@ -433,8 +523,48 @@ const pack100Label = formatVatInclusivePrice(8000);
     });
   }
 
+  /** Show or hide the "delete your account?" step. Opening moves focus to it. */
+  function openDeleteConfirm(moveFocus = true) {
+    const card = document.getElementById('delete-card');
+    const opener = document.getElementById('delete-open');
+    if (!card) return;
+    card.hidden = false;
+    opener?.setAttribute('aria-expanded', 'true');
+    if (moveFocus) document.getElementById('delete-title')?.focus();
+  }
+
+  function closeDeleteConfirm() {
+    const card = document.getElementById('delete-card');
+    const opener = document.getElementById('delete-open');
+    if (!card) return;
+    card.hidden = true;
+    const form = document.getElementById('delete-form');
+    if (form instanceof HTMLFormElement) form.reset();
+    setMsg('', false, 'delete-msg');
+    opener?.setAttribute('aria-expanded', 'false');
+    opener?.focus();
+  }
+
   if (!globalThis.__wcagAccountDelegated) {
     globalThis.__wcagAccountDelegated = true;
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('#delete-open')) {
+        openDeleteConfirm();
+        return;
+      }
+      if (target.closest('#delete-cancel')) {
+        closeDeleteConfirm();
+        return;
+      }
+      // Sidebar links: move focus to the section heading as well as scrolling.
+      const anchor = target.closest('.account-nav a[href^="#"]');
+      if (anchor) {
+        const heading = document.getElementById(anchor.getAttribute('href').slice(1));
+        if (heading) setTimeout(() => heading.focus({ preventScroll: true }), 0);
+      }
+    });
     document.addEventListener('change', (event) => {
       const target = event.target;
       if (!(target instanceof HTMLInputElement) || target.id !== 'buying-for-business') return;
@@ -460,8 +590,8 @@ const pack100Label = formatVatInclusivePrice(8000);
             body: JSON.stringify(body),
           });
           const data = await res.json().catch(() => ({}));
-          setMsg(res.ok ? 'Details saved.' : data.error || 'Could not save details.', !res.ok);
-          markInvalid(['account-name'], !res.ok);
+          setMsg(res.ok ? 'Details saved.' : data.error || 'Could not save details.', !res.ok, 'contact-msg');
+          markInvalid(['account-name'], !res.ok, 'contact-msg');
           return;
         }
         if (form.id === 'password-form') {
@@ -475,8 +605,8 @@ const pack100Label = formatVatInclusivePrice(8000);
             body: JSON.stringify(body),
           });
           const data = await res.json().catch(() => ({}));
-          setMsg(res.ok ? 'Password updated.' : data.error || 'Could not update password.', !res.ok);
-          markInvalid(['account-current-password', 'account-new-password'], !res.ok);
+          setMsg(res.ok ? 'Password updated.' : data.error || 'Could not update password.', !res.ok, 'password-msg');
+          markInvalid(['account-current-password', 'account-new-password'], !res.ok, 'password-msg');
           if (res.ok) form.reset();
           return;
         }
@@ -491,8 +621,8 @@ const pack100Label = formatVatInclusivePrice(8000);
             body: JSON.stringify(body),
           });
           const data = await res.json().catch(() => ({}));
-          setMsg(res.ok ? 'Confirmation sent to the new address.' : data.error || 'Could not change email.', !res.ok);
-          markInvalid(['account-new-email', 'email-password'], !res.ok);
+          setMsg(res.ok ? 'Confirmation sent to the new address.' : data.error || 'Could not change email.', !res.ok, 'email-msg');
+          markInvalid(['account-new-email', 'email-password'], !res.ok, 'email-msg');
           if (res.ok) form.reset();
           return;
         }
@@ -511,8 +641,8 @@ const pack100Label = formatVatInclusivePrice(8000);
             window.location.href = '/';
             return;
           }
-          setMsg(data.error || 'Could not delete account.', true);
-          markInvalid(['delete-password'], true);
+          setMsg(data.error || 'Could not delete account.', true, 'delete-msg');
+          markInvalid(['delete-password'], true, 'delete-msg');
         }
       },
       true
@@ -528,9 +658,9 @@ const pack100Label = formatVatInclusivePrice(8000);
           window.location.href = data.url;
           return;
         }
-        setMsg(data.error || 'Could not open the billing portal.', true);
+        setMsg(data.error || 'Could not open the billing portal.', true, 'billing-portal-msg');
       } catch {
-        setMsg('Could not open the billing portal. Check your connection and try again.', true);
+        setMsg('Could not open the billing portal. Check your connection and try again.', true, 'billing-portal-msg');
       }
     });
     document.addEventListener('astro:page-load', bootAccount);

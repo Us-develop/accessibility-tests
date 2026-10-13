@@ -2,9 +2,9 @@
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 ---
-<Layout title="All domain audits · Us" description="Staff list of domain accessibility audits.">
+<Layout title="All scans · Us" description="Every site you have scanned, with its latest report and its history.">
   <div class="app-shell">
-    <AppHeader crumb="All audits" />
+    <AppHeader crumb="All scans" />
     <main id="main" class="app-main" tabindex="-1">
       <div data-screen-label="All audits" style="background: var(--us-cream); min-height: calc(100dvh - 65px); min-height: calc(100vh - 65px); position: relative; overflow: hidden;">
         <div aria-hidden="true" class="motion-drift" style="position: absolute; top: -180px; right: -120px; width: 520px; height: 520px; border-radius: 50%; background: var(--us-grad-iridescent); opacity: 0.35; filter: blur(60px); animation: drift 24s ease-in-out infinite; pointer-events: none;"></div>
@@ -12,47 +12,46 @@ import AppHeader from '../components/AppHeader.astro';
         <div class="container" style="padding: clamp(32px, 5vw, 56px) 0 clamp(48px, 8vw, 96px); position: relative;">
           <div class="audits-head">
             <div>
-              <span class="eyebrow"><span class="dot"></span>Audits archive</span>
-              <h1 class="audits-title">All domain audits</h1>
+              <span class="eyebrow"><span class="dot"></span>Your scans</span>
+              <h1 class="audits-title">All scans</h1>
               <p class="p-large muted" style="max-width: 680px;">
-                One row per domain — open the latest report or browse the full history of runs.
+                One row per site. Open the latest report, or the history to see every scan and how the score moved.
               </p>
             </div>
             <a class="btn btn-primary btn-lg" href="/">
-              Run new audit
+              Start new scan
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
             </a>
           </div>
 
           <div class="card-flat" style="padding: 22px; margin-bottom: 24px;">
             <p class="muted" style="font-size: 14px; margin: 0 0 12px;">
-              This list shows the audits your account may see. You can also{' '}
-              <a class="link" href="/auth/staff?next=/audits">open full-page staff sign in</a>.
+              This list shows the scans in your account. A scan that is still running appears here when it is done.
             </p>
-            <button type="button" class="btn btn-primary" id="refresh-audits">Refresh list</button>
-            <div id="audits-msg" style="margin-top: 10px; font-size: 14px; color: var(--us-peach-text); min-height: 20px;"></div>
+            <button type="button" class="btn btn-secondary" id="refresh-audits">Refresh list</button>
+            <div id="audits-msg" role="status" style="margin-top: 10px; font-size: 14px; color: var(--us-peach-text); min-height: 20px;"></div>
           </div>
 
           <div class="card-flat" style="padding: 0;" id="list-wrap">
             <div class="list-row audits-row head">
-              <span>Domain</span>
-              <span>Latest run</span>
+              <span>Site</span>
+              <span>Latest scan</span>
               <span>Status</span>
               <span>Pages</span>
               <span>Issues</span>
-              <span>Runs</span>
+              <span>Scans</span>
               <span>Updated</span>
               <span></span>
             </div>
             <div id="rows">
               <div class="list-row audits-row" style="grid-template-columns: 1fr;">
-                <span class="muted" style="text-align: center; padding: 8px 0;">Loading the archive…</span>
+                <span class="muted" style="text-align: center; padding: 8px 0;">Loading your scans…</span>
               </div>
             </div>
           </div>
 
-          <p class="muted" style="font-size: 12px; margin-top: 18px; text-align: center;">
-            Every domain has a permanent URL: <span class="mono">/report/&lt;domain&gt;/history</span>. Each run lives at <span class="mono">/report/&lt;domain&gt;/&lt;runId&gt;/</span>.
+          <p class="muted" style="font-size: 13px; margin-top: 18px; text-align: center;">
+            Want help reading a report or fixing what it found? <a class="link" href="/contact?source=history">Talk to a WCAG expert</a>.
           </p>
         </div>
       </div>
@@ -61,9 +60,6 @@ import AppHeader from '../components/AppHeader.astro';
 </Layout>
 
 <script>
-  const rowsEl = document.getElementById('rows') as HTMLDivElement | null;
-  const msgEl = document.getElementById('audits-msg') as HTMLDivElement | null;
-  const refreshBtn = document.getElementById('refresh-audits') as HTMLButtonElement | null;
 
   function escapeHtml(s: unknown): string {
     return String(s ?? '')
@@ -93,6 +89,9 @@ import AppHeader from '../components/AppHeader.astro';
   }
 
   async function loadAudits() {
+    // Looked up on every call: after a view transition the old elements are gone.
+    const rowsEl = document.getElementById('rows');
+    const msgEl = document.getElementById('audits-msg');
     if (!rowsEl) return;
     if (msgEl) msgEl.textContent = '';
     const abs = typeof globalThis.wcagApiUrl === 'function' ? (p) => globalThis.wcagApiUrl(p) : (p) => p;
@@ -106,9 +105,9 @@ import AppHeader from '../components/AppHeader.astro';
       const data = await res.json().catch(() => ({}));
       if (res.status === 401) {
         document.dispatchEvent(new CustomEvent('wcag:login-required'));
-        if (msgEl) msgEl.textContent = 'Sign in to load audits.';
+        if (msgEl) msgEl.textContent = 'Sign in to see your scans.';
         rowsEl.innerHTML =
-          '<div class="list-row audits-row" style="grid-template-columns: 1fr;"><span class="muted" style="text-align: center; padding: 8px 0;">Sign in to view the archive.</span></div>';
+          '<div class="list-row audits-row" style="grid-template-columns: 1fr;"><span class="muted" style="text-align: center; padding: 8px 0;">Sign in to see your scans.</span></div>';
         return;
       }
       if (!res.ok) {
@@ -128,7 +127,7 @@ import AppHeader from '../components/AppHeader.astro';
       }>;
       if (!audits.length) {
         rowsEl.innerHTML =
-          '<div class="list-row audits-row" style="grid-template-columns: 1fr;"><span class="muted" style="text-align: center; padding: 8px 0;">No audits yet — start your first run from the home page.</span></div>';
+          '<div class="list-row audits-row" style="grid-template-columns: 1fr;"><span class="muted" style="text-align: center; padding: 8px 0;">No scans yet. Start your first one from the home page.</span></div>';
         return;
       }
       rowsEl.innerHTML = audits
@@ -158,14 +157,22 @@ import AppHeader from '../components/AppHeader.astro';
         })
         .join('');
     } catch {
-      if (msgEl) msgEl.textContent = 'Network error';
+      if (msgEl) msgEl.textContent = 'We could not reach the server. Check your connection and try again.';
       rowsEl.innerHTML = '';
     }
   }
 
-  refreshBtn?.addEventListener('click', () => loadAudits());
-  document.addEventListener('DOMContentLoaded', () => loadAudits());
-  document.addEventListener('wcag:logged-in', () => loadAudits());
+  // Bound once on the document: this page is also reached by view transition,
+  // where DOMContentLoaded has long since fired and the old button is detached.
+  if (!globalThis.__wcagAuditsBound) {
+    globalThis.__wcagAuditsBound = true;
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('#refresh-audits')) loadAudits();
+    });
+    document.addEventListener('astro:page-load', () => loadAudits());
+    document.addEventListener('wcag:logged-in', () => loadAudits());
+  }
 </script>
 
 <style>
