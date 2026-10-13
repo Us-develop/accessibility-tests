@@ -150,11 +150,11 @@
           <div class="slide-pad score-grid">
             <div>
               <span class="eyebrow"><span class="dot"></span>The bottom line</span>
-              <h2 class="score-h2">Two scores.</h2>
+              <h2 class="score-h2">One score, three parts.</h2>
               <p class="score-p">
-                Without the checklist: <strong>{scoreClamp}/100</strong> (100 after a re-scan with no automated errors or warnings).
-                With {manualChecked}/{manualTotal} manual items verified: <strong>{combinedScore}/100</strong>
-                (100 only if the automated score is already 100 and every item is ticked).
+                Overall: <strong>{combinedScore}/100</strong>. It combines automated errors (60%), findings to
+                review (15%) and the manual checks (25%), and reaches 100 only when all three are complete.
+                Errors score: <strong>{scoreClamp}/100</strong>. Manual checks: {manualChecked}/{manualTotal} ticked.
                 {#if delta != null}
                   Automated score is <strong>{delta >= 0 ? `+${delta}` : delta}</strong> {delta >= 0 ? 'from' : 'below'} your last scan.
                 {/if}

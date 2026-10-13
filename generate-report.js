@@ -326,7 +326,7 @@ export function generateReport(reportData, options = {}) {
   const complianceHeadline = 'Automated findings — not a WCAG or EAA conformance claim';
   const complianceNote = score == null
     ? 'No automated score is available because no pages were loaded. This is not a WCAG or EAA conformance claim.'
-    : `Automated score ${scoreClamp}/100 is the share of applicable machine checks that passed on this run. It is not Level A or AA compliance. A human audit is still required.`;
+    : `${scoreClamp}/100 is the errors score: automated failures weighted by severity, each rule counted once per page and averaged over the pages scanned. The overall score in the dashboard also counts findings to review and the manual checks. It is not Level A or AA compliance. A human audit is still required.`;
   const categoryStats = computeCategoryStats(fixOrderItems);
   const categoryMax = Math.max(1, ...categoryStats.map((c) => c.count));
   const topCategoryCards = [...categoryStats].sort((a, b) => b.count - a.count).slice(0, 3);
@@ -592,7 +592,7 @@ export function generateReport(reportData, options = {}) {
       <h2 class="audit-domain">${escapeHtml(primaryHost)}</h2>
       <p class="audit-meta">Scanned ${totalPages} page${totalPages === 1 ? '' : 's'} · ${auditedDate} · automated WCAG 2.2 AA checks</p>
       <div class="kpi-grid" aria-label="Top metrics">
-        <div class="kpi"><div class="label">Overall score</div><div class="value warn">${escapeHtml(scoreLabel)}</div></div>
+        <div class="kpi"><div class="label">Errors score</div><div class="value warn">${escapeHtml(scoreLabel)}</div></div>
         <div class="kpi"><div class="label">Total issues</div><div class="value">${totalIssues}</div></div>
         <div class="kpi"><div class="label">Critical issues</div><div class="value fail">${criticalIssues}</div></div>
         <div class="kpi"><div class="label">Pages affected</div><div class="value">${issueMetrics.pagesAffected} / ${Math.max(1, totalPages)}</div></div>
@@ -964,7 +964,7 @@ export function generateReport(reportData, options = {}) {
 
     <div class="bottom-insights">
       <h3>After the fixes</h3>
-      <div class="insight-green">Re-run the scan after fixes to compare automated scores. Score change is not proof of WCAG conformance.</div>
+      <div class="insight-green">Re-run the scan after fixes to compare errors scores. Score change is not proof of WCAG conformance.</div>
 
       <div class="impact-box">
         <h3>Who these findings tend to affect</h3>

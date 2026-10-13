@@ -56,8 +56,9 @@ const sampleReport = {
 describe('scoreFromReport', () => {
   it('does not count vacuous passes and does not treat incomplete as pass', () => {
     const score = scoreFromReport(sampleReport);
-    // pass: html-lang (1); fail: img-alt (1); warn: form-labels (1); axe viol: 1 → 1/4 = 25
-    assert.equal(score, 25);
+    // Home: html-lang passed (7); img-alt (7) and color-contrast (7) failed -> 7/21 = 33.
+    // About has only a warning, which is not an error, so it has nothing to score.
+    assert.equal(score, 33);
   });
 
   it('returns null when nothing scored', () => {
@@ -85,25 +86,26 @@ describe('scoreFromReport', () => {
 });
 
 describe('combinedScoreWithManual', () => {
-  it('keeps the automated score when there are no manual items', () => {
+  // Overall = errors x 0.60 + to review x 0.15 + manual x 0.25 (see score-model.js).
+  it('counts an empty manual list and an empty review list as done', () => {
     const breakdown = scoreBreakdownFromReport(sampleReport);
-    assert.equal(combinedScoreWithManual(breakdown, 0, 0), 25);
+    assert.equal(combinedScoreWithManual(breakdown, 0, 0), 60); // 33*0.6 + 15 + 25
   });
 
-  it('treats unticked manual items as extra applicable checks', () => {
+  it('holds back the manual share until items are ticked', () => {
     const breakdown = scoreBreakdownFromReport(sampleReport);
-    // 1 passed / (4 automated + 23 manual) = 4
-    assert.equal(combinedScoreWithManual(breakdown, 0, 23), 4);
+    assert.equal(combinedScoreWithManual(breakdown, 0, 23), 35); // 33*0.6 + 15 + 0
+    assert.equal(combinedScoreWithManual(breakdown, 23, 23), 60);
   });
 
-  it('raises the combined score as manual items are verified', () => {
+  it('holds back the review share until warnings are reviewed', () => {
     const breakdown = scoreBreakdownFromReport(sampleReport);
-    // (1 + 23) / (4 + 23) = 89
-    assert.equal(combinedScoreWithManual(breakdown, 23, 23), 89);
+    assert.equal(combinedScoreWithManual(breakdown, 23, 23, { reviewDone: 0, reviewTotal: 1 }), 45);
+    assert.equal(combinedScoreWithManual(breakdown, 23, 23, { reviewDone: 1, reviewTotal: 1 }), 60);
   });
 
   it('does not invent a score from the manual list when no automated checks ran', () => {
-    assert.equal(combinedScoreWithManual({ passed: 0, applicable: 0 }, 0, 23), null);
+    assert.equal(combinedScoreWithManual({ passed: 0, applicable: 0, score: null }, 0, 23), null);
   });
 });
 

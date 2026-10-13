@@ -147,13 +147,15 @@ async function runAxeScan(page, url) {
     'wcag22a',
     'wcag22aa',
   ]);
-  const includeAxePasses = parseBooleanEnv('ENABLE_AXE_PASSES', false);
-  if (!includeAxePasses) {
-    builder.options({
-      resultTypes: ['violations', 'incomplete'],
-    });
-  }
+  // Full node detail only for violations and incomplete results. axe still
+  // reports which rules passed, which is all the score needs from them.
+  builder.options({
+    resultTypes: ['violations', 'incomplete'],
+  });
   const results = await builder.analyze();
+  // The score weighs passed rules against failed ones, so passes are always
+  // kept, but only as a slim record: no nodes, no HTML.
+  const passes = (results.passes || []).map((p) => ({ id: p.id, tags: p.tags || [], help: p.help || '' }));
 
   const byChapter = {};
   Object.keys(CHECKLIST_CHAPTERS).forEach((ch) => {
@@ -168,19 +170,17 @@ async function runAxeScan(page, url) {
     const ch = getPrimaryChapterForAxeViolation(v);
     if (byChapter[ch]) byChapter[ch].incomplete.push(v);
   });
-  if (includeAxePasses) {
-    (results.passes || []).forEach((v) => {
-      const ch = getPrimaryChapterForAxeViolation(v);
-      if (byChapter[ch]) byChapter[ch].passes.push(v);
-    });
-  }
+  passes.forEach((v) => {
+    const ch = getPrimaryChapterForAxeViolation(v);
+    if (byChapter[ch]) byChapter[ch].passes.push(v);
+  });
 
   return {
     url,
     timestamp: new Date().toISOString(),
     violations: results.violations,
     incomplete: results.incomplete,
-    passes: includeAxePasses ? results.passes : [],
+    passes,
     byChapter,
   };
 }

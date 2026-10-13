@@ -2,6 +2,7 @@
  * Builds view-model + HTML fragments for the Astro main report.
  * Kept separate from generate-report.js so the Astro SSR bundle does not load generate-deliverables.
  */
+import { reviewItems, reviewKey, ruleGains, ruleKey } from './scoring.js';
 import {
   getRemediation,
   fixOrderScore,
@@ -123,6 +124,8 @@ export function buildAstroMainReportPayload(reportData) {
   }
 
   const occIndex = buildOccurrenceIndex(reportData);
+  // Overall points gained by fixing a rule on every page where it fails.
+  const gains = ruleGains(reportData);
 
   /**
    * Wrap the raw remediation/result into the shape the dashboard consumes.
@@ -131,8 +134,13 @@ export function buildAstroMainReportPayload(reportData) {
   function makeFixItem(base) {
     const occKey = base.type === 'violation' ? `axe:${base.id}` : `custom:${base.id}`;
     const occ = occIndex[occKey] || { total: 0, byUrl: {}, pages: new Set() };
+    const isWarning = base.status === 'warn';
     return {
       ...base,
+      // Errors carry the points fixing them is worth; warnings carry the key
+      // under which a person marks them as reviewed.
+      scoreGain: isWarning ? 0 : gains.get(ruleKey(base.type, base.id)) || 0,
+      reviewKey: isWarning && base.url ? reviewKey(base.id, base.url) : null,
       pages: [...occ.pages],
       occurrencesTotal: occ.total,
       occurrencesOnPage: base.url ? occ.byUrl[base.url] || 0 : 0,
@@ -352,6 +360,13 @@ export function buildAstroMainReportPayload(reportData) {
     scoreClamp,
     scoreBreakdown,
     scoreAvailable: score != null,
+    // Inputs of the three-part score (score-model.js). The dashboard combines
+    // them with the reviewed and manual ticks it holds.
+    scoreModel: {
+      errors: score,
+      hasCritical: Boolean(scoreBreakdown.hasCritical),
+      reviewKeys: reviewItems(reportData).map((item) => item.key),
+    },
     pagesLoaded,
     loadFailures,
     principles,

@@ -12,6 +12,7 @@ import { listVisibleRunsForDomain, viewerFromAstro } from '../../../../../../ser
 import { dbPool } from '../../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../../server/paths.js';
 import { combinedScoreWithManual } from '../../../../../../report-buckets.js';
+import { readReviewed } from '../../../../../../server/reviewed.mjs';
 import { MANUAL_TODO_GROUPS, normalizeManualProgress } from '../../../../../../manual-checklist.js';
 
 export const prerender = false;
@@ -45,7 +46,10 @@ if (existsSync(manualProgressPath)) {
 }
 const manualTotal = MANUAL_TODO_GROUPS.reduce((s, g) => s + g.items.length, 0);
 const combinedScore =
-  combinedScoreWithManual(payload.scoreBreakdown, manualChecked.length, manualTotal) ?? payload.scoreClamp;
+  combinedScoreWithManual(payload.scoreBreakdown, manualChecked.length, manualTotal, {
+    reviewTotal: payload.scoreModel.reviewKeys.length,
+    reviewDone: readReviewed(domain, runId).length,
+  }) ?? payload.scoreClamp;
 
 const statementMetaPath = join(reportDir, 'statement-meta.json');
 let statementMeta: any = null;
