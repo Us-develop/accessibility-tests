@@ -65,7 +65,11 @@ export async function runImageChecks(page) {
   }
 
   const svgChecks = await pageCollect(page, function collector(describeEls, limit) {
-    const svgs = Array.from(document.querySelectorAll('svg'));
+    // Decorative SVGs (hidden from assistive technology, or marked presentational) need neither.
+    const svgs = Array.from(document.querySelectorAll('svg')).filter(
+      (svg) =>
+        !svg.closest('[aria-hidden="true"]') && !/^(presentation|none)$/i.test(svg.getAttribute('role') || '')
+    );
     const noRole = [];
     const noAccessibleName = [];
     svgs.forEach((svg) => {
@@ -145,7 +149,7 @@ export async function runImageChecks(page) {
     const areaNoAlt = [];
     imgWithMap.forEach((img) => {
       const mapName = img.getAttribute('usemap')?.replace('#', '');
-      const mapEl = document.querySelector(`map[name="${mapName}"]`);
+      const mapEl = mapName ? document.querySelector(`map[name="${CSS.escape(mapName)}"]`) : null;
       if (mapEl) {
         mapEl.querySelectorAll('area').forEach((area) => {
           const alt = area.getAttribute('alt');

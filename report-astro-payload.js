@@ -105,7 +105,10 @@ function buildOccurrenceIndex(reportData) {
       idx[key].pages.add(url);
     }
   }
-  (reportData.customResults || []).forEach((r) => bump(`custom:${r.id}`, r.url, 1));
+  // Only findings count as occurrences; a rule that passed on a page is not one.
+  (reportData.customResults || [])
+    .filter((r) => r.status === 'fail' || r.status === 'warn')
+    .forEach((r) => bump(`custom:${r.id}`, r.url, 1));
   Object.entries(reportData.axeResults || {}).forEach(([url, data]) => {
     (data.violations || []).forEach((v) => {
       bump(`axe:${v.id}`, url, Math.max(1, (v.nodes || []).length || 1));

@@ -10,7 +10,9 @@ export async function runMultimediaChecks(page) {
   const results = [];
 
   const videoChecks = await pageCollect(page, function collector(describeEls, limit) {
-    const videos = Array.from(document.querySelectorAll('video'));
+    const allVideos = Array.from(document.querySelectorAll('video'));
+    // A muted video the user cannot unmute has no audio to caption (background loops).
+    const videos = allVideos.filter((video) => !(video.muted && !video.controls));
     const noCaptions = [];
     const autoplay = [];
     videos.forEach((video) => {
@@ -19,10 +21,13 @@ export async function runMultimediaChecks(page) {
         /captions|subtitles/i.test(t.getAttribute('kind') || '')
       );
       if (!hasCaptions) noCaptions.push(video);
+    });
+    allVideos.forEach((video) => {
       if (video.autoplay) autoplay.push(video);
     });
     return {
-      total: videos.length,
+      total: allVideos.length,
+      captionable: videos.length,
       noCaptions: noCaptions.length,
       autoplay: autoplay.length,
       captionOccurrences: describeEls(noCaptions, limit),
@@ -31,17 +36,21 @@ export async function runMultimediaChecks(page) {
   });
 
   if (videoChecks.total > 0) {
-    results.push({
-      id: 'video-captions',
-      rule: 'Prerecorded video MUST include synchronized captions',
-      status: videoChecks.noCaptions === 0 ? 'pass' : 'fail',
-      message:
-        videoChecks.noCaptions > 0
-          ? `${videoChecks.noCaptions} video(s) without caption track`
-          : 'All videos have caption tracks',
-      chapter: chapterId,
-      occurrences: videoChecks.noCaptions > 0 ? videoChecks.captionOccurrences : [],
-    });
+    if (videoChecks.captionable > 0) {
+      // A warning, not a failure: captions can be burned in or supplied by the
+      // player, and a video may have no speech. Only a person can confirm.
+      results.push({
+        id: 'video-captions',
+        rule: 'Prerecorded video MUST include synchronized captions',
+        status: videoChecks.noCaptions === 0 ? 'pass' : 'warn',
+        message:
+          videoChecks.noCaptions > 0
+            ? `${videoChecks.noCaptions} video(s) without a caption track - check that captions are provided another way`
+            : 'All videos have caption tracks',
+        chapter: chapterId,
+        occurrences: videoChecks.noCaptions > 0 ? videoChecks.captionOccurrences : [],
+      });
+    }
     if (videoChecks.autoplay > 0) {
       results.push({
         id: 'video-autoplay',

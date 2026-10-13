@@ -9,8 +9,19 @@ export const chapterId = 'responsive';
 export async function runResponsiveChecks(page, viewport = { width: 320, height: 568 }) {
   const results = [];
 
-  // Test at 320px width (WCAG 2.1 reflow requirement)
+  // Test at 320px width (WCAG 2.1 reflow requirement). The page is shared with
+  // the chapters that run after this one, so the original size goes back afterwards.
+  const originalViewport = page.viewportSize();
   await page.setViewportSize(viewport);
+  try {
+    await collectResponsiveResults(page, results);
+  } finally {
+    if (originalViewport) await page.setViewportSize(originalViewport);
+  }
+  return results;
+}
+
+async function collectResponsiveResults(page, results) {
 
   const overflowChecks = await pageCollect(page, function collector(describeEls, limit) {
     const body = document.body;
@@ -50,7 +61,7 @@ export async function runResponsiveChecks(page, viewport = { width: 320, height:
     const meta = document.querySelector('meta[name="viewport"]');
     if (!meta) return { present: false, content: null };
     const content = meta.getAttribute('content') || '';
-    const userScalable = !/user-scalable\s*=\s*no/i.test(content);
+    const userScalable = !/user-scalable\s*=\s*(no|0)\b/i.test(content);
     const maxScale = content.match(/maximum-scale\s*=\s*([\d.]+)/i);
     const allowsZoom = userScalable && (!maxScale || parseFloat(maxScale[1]) >= 2);
     return { present: true, content, allowsZoom };
@@ -68,6 +79,4 @@ export async function runResponsiveChecks(page, viewport = { width: 320, height:
     chapter: chapterId,
     occurrences: viewportMeta.present && viewportMeta.allowsZoom ? [] : [{ tag: 'meta', id: '', className: '' }],
   });
-
-  return results;
 }

@@ -12,7 +12,7 @@ export async function runFormChecks(page) {
   const formChecks = await pageCollect(page, function collector(describeEls, limit) {
     const inputs = Array.from(
       document.querySelectorAll(
-        'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="image"]), textarea, select'
+        'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]), textarea, select'
       )
     );
     const missingLabel = [];
@@ -25,11 +25,12 @@ export async function runFormChecks(page) {
       const placeholder = input.getAttribute('placeholder');
       const byFor = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
       const label = byFor || input.closest('label');
-      const hasLabel = !!(label?.textContent?.trim() || ariaLabel || ariaLabelledby);
-      if (!hasLabel) missingLabel.push(input);
-      if (hasLabel && !label?.textContent?.trim() && !ariaLabel && !ariaLabelledby && placeholder) {
-        placeholderOnly.push(input);
-      }
+      const title = input.getAttribute('title');
+      const hasLabel = !!(label?.textContent?.trim() || ariaLabel || ariaLabelledby || title?.trim());
+      // Each unlabelled input is reported once: under the placeholder rule when a
+      // placeholder is standing in for the label, otherwise as a missing label.
+      if (!hasLabel && placeholder?.trim()) placeholderOnly.push(input);
+      else if (!hasLabel) missingLabel.push(input);
     });
 
     return {
@@ -60,7 +61,7 @@ export async function runFormChecks(page) {
       status: formChecks.placeholderOnly === 0 ? 'pass' : 'fail',
       message:
         formChecks.placeholderOnly > 0
-          ? `${formChecks.placeholderOnly} input(s) may use placeholder as only label`
+          ? `${formChecks.placeholderOnly} input(s) use a placeholder as their only label`
           : 'No placeholder-only labels',
       chapter: chapterId,
       occurrences: formChecks.placeholderOnly > 0 ? formChecks.placeholderOccurrences : [],

@@ -139,7 +139,8 @@ export async function runSemanticChecks(page) {
           else if (ch.nodeType === 1) {
             const tag = ch.nodeName;
             if (tag === 'IMG') s += ch.getAttribute('alt') || '';
-            else if (tag === 'SVG' || ch.getAttribute('role') === 'img') {
+            // nodeName is lower-case for inline SVG and upper-case for HTML elements.
+            else if (tag.toLowerCase() === 'svg' || ch.getAttribute('role') === 'img') {
               s += ch.getAttribute('aria-label') || '';
               const t0 = ch.querySelector && ch.querySelector('title');
               if (t0 && t0.textContent) s += t0.textContent;
@@ -191,9 +192,22 @@ export async function runSemanticChecks(page) {
   }
 
   // Skip link
+  // A skip link is one of the first links on the page and points at an element
+  // that exists on the same page. Matching on words in the href is not enough:
+  // "/wp-content/…" contains "content".
   const skipLink = await page.evaluate(() => {
-    const firstFocusable = document.querySelector('a[href="#main"], a[href="#content"], a[href*="main"], a[href*="content"]');
-    return !!firstFocusable;
+    const firstLinks = Array.from(document.querySelectorAll('a[href]')).slice(0, 3);
+    return firstLinks.some((a) => {
+      const href = a.getAttribute('href') || '';
+      if (!href.startsWith('#') || href.length < 2) return false;
+      let id = href.slice(1);
+      try {
+        id = decodeURIComponent(id);
+      } catch {
+        /* keep the raw fragment */
+      }
+      return Boolean(document.getElementById(id) || document.getElementsByName(id)[0]);
+    });
   });
   results.push({
     id: 'skip-link',
@@ -205,7 +219,10 @@ export async function runSemanticChecks(page) {
 
   // Tables
   const tableChecks = await pageCollect(page, function collector(describeEls, limit) {
-    const tables = Array.from(document.querySelectorAll('table'));
+    // Layout tables (role="presentation" / "none") are not data tables.
+    const tables = Array.from(document.querySelectorAll('table')).filter(
+      (table) => !/^(presentation|none)$/i.test(table.getAttribute('role') || '')
+    );
     const noTh = tables.filter((table) => !table.querySelector('th'));
     const noCaption = tables.filter(
       (table) =>
@@ -232,7 +249,7 @@ export async function runSemanticChecks(page) {
   // Lists
   const listChecks = await pageCollect(page, function collector(describeEls, limit) {
     const listItems = document.querySelectorAll('li');
-    const orphanLi = Array.from(document.querySelectorAll('li:not(ul li):not(ol li)'));
+    const orphanLi = Array.from(document.querySelectorAll('li:not(ul li):not(ol li):not(menu li)'));
     return { total: listItems.length, orphanLi: orphanLi.length, occurrences: describeEls(orphanLi, limit) };
   });
   if (listChecks.orphanLi > 0) {
@@ -268,16 +285,17 @@ export async function runSemanticChecks(page) {
 
   // Duplicate IDs (with occurrence details: tag, id, class only)
   const duplicateIdData = await page.evaluate(() => {
-    const byId = {};
+    // A Map, not an object: ids such as "constructor" or "toString" exist on every object.
+    const byId = new Map();
     document.querySelectorAll('[id]').forEach((el) => {
       const id = el.id;
-      if (!byId[id]) byId[id] = [];
-      byId[id].push(el);
+      if (!byId.has(id)) byId.set(id, []);
+      byId.get(id).push(el);
     });
-    const duplicateIds = Object.keys(byId).filter((id) => byId[id].length > 1);
+    const duplicateIds = Array.from(byId.keys()).filter((id) => byId.get(id).length > 1);
     const occurrences = [];
     duplicateIds.forEach((id) => {
-      const elements = byId[id];
+      const elements = byId.get(id);
       elements.forEach((el, idx) => {
         const tag = (el.tagName || '').toLowerCase();
         const className = (typeof el.className === 'string' ? el.className : '').trim().split(/\s+/).filter(Boolean).join('.');

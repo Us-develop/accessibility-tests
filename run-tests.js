@@ -204,11 +204,14 @@ async function runCustomChecks(page, url, options = {}) {
       const results = await fn(page);
       allResults.push(...results.map((r) => ({ ...r, url })));
     } catch (err) {
+      // The tool failed here, not the page. `info` keeps it visible in the report
+      // without counting it as an accessibility failure in the score.
+      console.error(`  ${chapterId} checks could not run: ${err.message}`);
       allResults.push({
         id: `${chapterId}-error`,
         rule: `${chapterId} checks`,
-        status: 'fail',
-        message: err.message,
+        status: 'info',
+        message: 'These checks could not be completed on this page, so their results are missing.',
         chapter: chapterId,
         url,
       });
