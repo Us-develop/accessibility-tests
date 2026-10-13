@@ -53,6 +53,7 @@ import {
   looksLikeUrlCandidate,
   setUrlGuardLookup,
 } from './url-guard.mjs';
+import { scanProcessTimeoutMs, tailForLog } from './scan-child.mjs';
 import { buildTeaserPayload } from './teaser-payload.mjs';
 import {
   clearSessionCookies,
@@ -572,19 +573,19 @@ export function createAccessibilityApp(repoRoot, options = {}) {
       userId: job.userId || null,
       tier: job.tier || null,
     });
-    const urlsArg = (Array.isArray(urls) ? urls : []).join('\n');
+    const scanUrls = Array.isArray(urls) ? urls : [];
     return new Promise((resolve) => {
       const child = spawnImpl(
         process.execPath,
         [
           join(repoRoot, 'run-tests.js'),
           '--report',
-          `--urls=${urlsArg}`,
+          '--urls-stdin',
           `--output-id=${domain}/${runId}`,
         ],
         {
           cwd: repoRoot,
-          stdio: ['ignore', 'pipe', 'pipe'],
+          stdio: ['pipe', 'pipe', 'pipe'],
           env: {
             ...buildScanProcessEnv(process.env),
             ...(job.hostResolverRules ? { SCANNER_HOST_RESOLVER_RULES: job.hostResolverRules } : {}),
@@ -592,10 +593,28 @@ export function createAccessibilityApp(repoRoot, options = {}) {
         }
       );
 
+      // JSON on stdin: argv would cap the list size, and a comma is legal inside a URL.
+      child.stdin?.on('error', () => {});
+      child.stdin?.end(JSON.stringify(scanUrls));
+
+      let timedOut = false;
+      let forceKillTimer = null;
+      const killTimer = setTimeout(() => {
+        timedOut = true;
+        child.kill?.('SIGTERM');
+        forceKillTimer = setTimeout(() => child.kill?.('SIGKILL'), 10_000);
+        forceKillTimer.unref?.();
+      }, scanProcessTimeoutMs(scanUrls.length));
+      killTimer.unref?.();
+      const clearKillTimers = () => {
+        clearTimeout(killTimer);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
+      };
+
       let stderr = '';
       let stdoutBuf = '';
       child.stderr?.on('data', (d) => {
-        stderr += d.toString();
+        stderr = (stderr + d.toString()).slice(-16_000);
       });
       child.stdout?.on('data', (d) => {
         stdoutBuf += d.toString();
@@ -619,8 +638,13 @@ export function createAccessibilityApp(repoRoot, options = {}) {
       });
 
       const finish = () => resolve();
+      // A failed spawn emits both `error` and `close`; only the first one counts.
+      let settled = false;
 
       child.on('close', (code) => {
+        if (settled) return;
+        settled = true;
+        clearKillTimers();
         const cur = runStatus.get(key);
         if (cur?.tier === 'guest' && cur.guestIp) {
           trackGuestRunEnd(cur.guestIp);
@@ -755,12 +779,19 @@ export function createAccessibilityApp(repoRoot, options = {}) {
           processedUrls,
           requestedUrls,
           truncated,
-          error: stderr || `Process exited with code ${code}`,
+          // stderr holds stack traces and server paths: log it, never send it to the client.
+          error: timedOut ? 'The scan took too long and was stopped.' : 'The scan could not be completed.',
         });
+        console.error(
+          `[scan] ${domain}/${runId} ${timedOut ? 'timed out' : `exited with code ${code}`}${stderr ? `\n${tailForLog(stderr)}` : ''}`
+        );
         finish();
       });
 
       child.on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        clearKillTimers();
         const cur = runStatus.get(key);
         if (cur?.tier === 'guest' && cur.guestIp) {
           trackGuestRunEnd(cur.guestIp);
@@ -772,8 +803,9 @@ export function createAccessibilityApp(repoRoot, options = {}) {
           processedUrls,
           requestedUrls,
           truncated,
-          error: err.message,
+          error: 'The scan could not be started.',
         });
+        console.error(`[scan] ${domain}/${runId} failed to start: ${err.message}`);
         finish();
       });
     });

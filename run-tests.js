@@ -4,7 +4,8 @@
  * Usage:
  *   node run-tests.js [--report] [--urls "url1,url2,..."] [--output-id <id>]
  *   node run-tests.js [--report] [--urls="url1,url2,..."] [--output-id=<id>]
- * URLs can also be loaded from urls.config.js when --urls is not provided.
+ *   node run-tests.js [--report] --urls-stdin [--output-id=<id>]   (JSON array on stdin; used by the server)
+ * URLs can also be loaded from urls.config.js when neither is provided.
  */
 
 import { chromium } from 'playwright';
@@ -22,6 +23,14 @@ import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { scannerUserAgent, assertPublicHttpUrl } from './server/url-guard.mjs';
+import {
+  createRedirectWatch,
+  pageScanTimeoutMs,
+  parseCliUrlList,
+  parseUrlsJson,
+  readStream,
+  withDeadline,
+} from './server/scan-child.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPORTS_BASE = process.env.REPORTS_BASE?.trim() || join(__dirname, 'reports');
@@ -52,42 +61,23 @@ function originOf(raw) {
   }
 }
 
-async function requestChainLeavesAllowlist(request, pageOrigin) {
-  let current = request;
-  const seen = new Set();
+/**
+ * True when a request may not be sent. Called for first requests from the route
+ * handler and for redirect hops from the redirect watch.
+ */
+async function requestUrlIsBlocked(raw, pageOrigin) {
+  // Self-scan of the product on loopback (scripts/self-scan.mjs) may allow that origin.
+  // Production children never get SELF_SCAN_ALLOW_LOOPBACK — pin DNS with host-resolver-rules instead.
   const allowPageOrigin = String(process.env.SELF_SCAN_ALLOW_LOOPBACK || '').trim() === '1';
-  while (current && !seen.has(current)) {
-    seen.add(current);
-    const raw = current.url();
-    // Self-scan of the product on loopback (scripts/self-scan.mjs) may allow that origin.
-    // Production children never get SELF_SCAN_ALLOW_LOOPBACK — pin DNS with host-resolver-rules instead.
-    if (allowPageOrigin && pageOrigin && originOf(raw) === pageOrigin) {
-      current = current.redirectedFrom();
-      continue;
-    }
-    if (await httpUrlIsBlocked(raw)) return true;
-    current = current.redirectedFrom();
-  }
-  return false;
+  if (allowPageOrigin && pageOrigin && originOf(raw) === pageOrigin) return false;
+  return httpUrlIsBlocked(raw);
 }
 
 function parseUrlsFromArgs() {
   const urlsArg = process.argv.find((a) => a.startsWith('--urls='));
-  if (urlsArg) {
-    const value = urlsArg.replace('--urls=', '').trim();
-    return value
-      .split(/[\n,\s]+/)
-      .map((u) => u.trim())
-      .filter((u) => u && u.startsWith('http'));
-  }
+  if (urlsArg) return parseCliUrlList(urlsArg.replace('--urls=', ''));
   const idx = process.argv.indexOf('--urls');
-  if (idx !== -1 && process.argv[idx + 1]) {
-    const value = String(process.argv[idx + 1]).trim();
-    return value
-      .split(/[\n,\s]+/)
-      .map((u) => u.trim())
-      .filter((u) => u && u.startsWith('http'));
-  }
+  if (idx !== -1 && process.argv[idx + 1]) return parseCliUrlList(process.argv[idx + 1]);
   return null;
 }
 
@@ -134,6 +124,7 @@ function parseIntEnv(name, defaultValue, min, max) {
 }
 
 async function getUrls() {
+  if (process.argv.includes('--urls-stdin')) return parseUrlsJson(await readStream(process.stdin));
   const fromArgs = parseUrlsFromArgs();
   if (fromArgs && fromArgs.length > 0) return fromArgs;
   try {
@@ -251,6 +242,7 @@ async function main() {
   const enableContrastChecks = parseBooleanEnv('ENABLE_CONTRAST_CHECKS', true);
   const blockMediaRequests = parseBooleanEnv('BLOCK_MEDIA_REQUESTS', true);
   const pageGotoTimeoutMs = parseIntEnv('PAGE_GOTO_TIMEOUT_MS', 90000, 30000, 300000);
+  const pageScanBudgetMs = pageScanTimeoutMs();
   const autoDisableContrastOnLargeDom = parseBooleanEnv('AUTO_DISABLE_CONTRAST_ON_LARGE_DOM', true);
   const largeDomThreshold = parseIntEnv('LARGE_DOM_THRESHOLD', 6000, 1000, 100000);
 
@@ -271,6 +263,7 @@ async function main() {
   console.log(`Contrast checks: ${enableContrastChecks ? 'enabled' : 'disabled'}`);
   console.log(`Block media requests: ${blockMediaRequests ? 'enabled' : 'disabled'}`);
   console.log(`Page goto timeout: ${pageGotoTimeoutMs}ms`);
+  console.log(`Page scan budget: ${pageScanBudgetMs}ms`);
   console.log(`Auto-disable contrast on large DOM: ${autoDisableContrastOnLargeDom ? `enabled (>${largeDomThreshold} nodes)` : 'disabled'}`);
 
   const report = {
@@ -317,33 +310,39 @@ async function main() {
   try {
     await runWithConcurrency(urls, urlConcurrency, async (url) => {
       console.log(`\nTesting: ${url}`);
-      const context = await browser.newContext({
-        userAgent: scannerUserAgent(),
-        viewport,
-        serviceWorkers: 'block',
-      });
-      const page = await context.newPage();
-      await page.emulateMedia({ reducedMotion: 'reduce' });
-      await page.route('**/*', async (route) => {
-        const request = route.request();
-        if (await requestChainLeavesAllowlist(request, originOf(url))) {
-          return route.abort('blockedbyclient');
-        }
-        if (blockMediaRequests && request.resourceType() === 'media') {
-          return route.abort();
-        }
-        return route.continue();
-      });
+      const pageOrigin = originOf(url);
+      const redirectWatch = createRedirectWatch((raw) => requestUrlIsBlocked(raw, pageOrigin));
+      let context = null;
 
-      try {
+      const scanPage = async () => {
+        context = await browser.newContext({
+          userAgent: scannerUserAgent(),
+          viewport,
+          serviceWorkers: 'block',
+        });
+        // On the context, not the page, so popups and new tabs are covered too.
+        await context.route('**/*', async (route) => {
+          const request = route.request();
+          if (await requestUrlIsBlocked(request.url(), pageOrigin)) {
+            return route.abort('blockedbyclient');
+          }
+          if (blockMediaRequests && request.resourceType() === 'media') {
+            return route.abort();
+          }
+          return route.continue();
+        });
+        context.on('request', (request) => redirectWatch.onRequest(request));
+        const page = await context.newPage();
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageGotoTimeoutMs });
         if (waitForNetworkIdle) {
           await page.waitForLoadState('networkidle', { timeout: 7000 }).catch(() => {});
         }
+        await redirectWatch.assertClean();
 
         const axeData = await runAxeScan(page, url);
-        report.axeResults[url] = axeData;
-        if (!report.urls.includes(url)) report.urls.push(url);
+        const customData = [];
 
         let contrastChecksEnabledForPage = enableContrastChecks;
         if (autoDisableContrastOnLargeDom && enableContrastChecks) {
@@ -353,7 +352,7 @@ async function main() {
             console.warn(
               `  Large DOM detected (${domNodeCount} nodes); skipping custom contrast (axe color-contrast still runs).`
             );
-            report.customResults.push({
+            customData.push({
               id: 'contrast-not-run',
               rule: 'Custom contrast checks skipped on a large DOM',
               status: 'info',
@@ -361,11 +360,24 @@ async function main() {
               chapter: 'visualDesign',
               url,
             });
-            report.summary.info++;
           }
         }
 
-        const customData = await runCustomChecks(page, url, { enableContrastChecks: contrastChecksEnabledForPage });
+        customData.push(...(await runCustomChecks(page, url, { enableContrastChecks: contrastChecksEnabledForPage })));
+        // Frames and late requests may have redirected while the checks ran.
+        await redirectWatch.assertClean();
+        return { axeData, customData };
+      };
+
+      try {
+        // Nothing reaches the report until the whole page finished inside its budget.
+        const { axeData, customData } = await withDeadline(
+          scanPage(),
+          pageScanBudgetMs,
+          `This page did not finish within ${Math.round(pageScanBudgetMs / 1000)} seconds and was stopped.`
+        );
+        report.axeResults[url] = axeData;
+        if (!report.urls.includes(url)) report.urls.push(url);
         report.customResults.push(...customData);
 
         customData.forEach((r) => {
@@ -388,8 +400,8 @@ async function main() {
       } finally {
         completed += 1;
         console.log(JSON.stringify({ type: 'progress', done: completed, total: urls.length, url }));
-        await page.close().catch(() => {});
-        await context.close();
+        // A page stuck in a script loop can make close() hang; the final browser.close() still reaps it.
+        if (context) await withDeadline(context.close(), 15000, 'context close timed out').catch(() => {});
       }
     });
   } finally {

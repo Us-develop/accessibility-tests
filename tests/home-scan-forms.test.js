@@ -121,7 +121,7 @@ describe('own product accessibility markup', () => {
   it('lets run-tests.js load the page origin on loopback only when SELF_SCAN_ALLOW_LOOPBACK=1', () => {
     assert.match(runTestsJs, /originOf\(raw\) === pageOrigin/);
     assert.match(runTestsJs, /SELF_SCAN_ALLOW_LOOPBACK/);
-    assert.match(runTestsJs, /requestChainLeavesAllowlist\(request, originOf\(url\)\)/);
+    assert.match(runTestsJs, /requestUrlIsBlocked\(request\.url\(\), pageOrigin\)/);
     assert.match(runTestsJs, /serviceWorkers:\s*'block'/);
   });
 
