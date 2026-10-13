@@ -101,13 +101,18 @@ export const prerender = false;
           </div>
         </form>
 
-        <p class="muted guest-only" hidden={ssrSignedIn} style="font-size: 13px; margin-top: 16px; text-align: center;">
-          <a class="link" href="/pricing">Buy tokens or subscribe to Pro</a>
-          ·
-          <a class="link" href="https://about-us.be/contact/">Talk to a WCAG expert</a>
-          ·
-          <a class="link" href="/signup">Create an account</a>
-        </p>
+        <div class="guest-only" hidden={ssrSignedIn} style="margin-top: 24px; text-align: center;">
+          <p class="muted" style="font-size: 14px; margin-bottom: 12px;">Need more than one page, or the full report?</p>
+          <div class="guest-cta-row" style="justify-content: center;">
+            <a class="btn btn-secondary" href="/pricing#tokens">Buy tokens</a>
+            <a class="btn btn-secondary" href="/pricing#pro">Subscribe to Pro</a>
+          </div>
+          <p class="muted" style="font-size: 13px; margin-top: 16px;">
+            <a class="link" href="https://about-us.be/contact/">Talk to a WCAG expert</a>
+            ·
+            <a class="link" href="/signup">Create an account</a>
+          </p>
+        </div>
 
         <div class="fade-up customer-only" hidden={!ssrCustomer} style="text-align: left; margin-bottom: 40px;">
           <span class="eyebrow"><span class="dot"></span>Your account · Pro pages or tokens</span>
@@ -332,6 +337,8 @@ export const prerender = false;
 </Layout>
 
 <script>
+  import { balanceEmpty, balanceFromUsage, balanceLong } from '../lib/balance.js';
+
   function wcUrl(path) {
     return typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(path) : path;
   }
@@ -507,17 +514,10 @@ export const prerender = false;
         el.textContent = '';
         return;
       }
-      const data = await res.json().catch(() => ({}));
-      const used = Number(data.pagesScanned || data.scansUsed || 0);
-      const tokensLeft = Number(data.tokens?.tokens || 0);
-      const isPro = data.plan?.id === 'pro' && ['active', 'trialing', 'past_due'].includes(data.subscription?.status);
-      if (isPro) {
-        el.textContent = `Pro · ${used}/300 pages this month · ${tokensLeft} token${tokensLeft === 1 ? '' : 's'}`;
-      } else if (tokensLeft > 0) {
-        el.textContent = `No Pro · ${tokensLeft} token${tokensLeft === 1 ? '' : 's'} left`;
-      } else {
-        el.textContent = 'No Pro · 0 tokens — buy a pack, subscribe, or request Us services.';
-      }
+      const balance = balanceFromUsage(await res.json().catch(() => ({})));
+      el.textContent = balanceEmpty(balance)
+        ? `${balanceLong(balance)}. Buy tokens or subscribe to Pro to scan again.`
+        : `${balance.pro ? 'Pro' : 'No Pro'} · ${balanceLong(balance)}`;
     } catch {
       el.textContent = '';
     }

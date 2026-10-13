@@ -483,6 +483,10 @@ export function registerAccountRoutes(app, ctx) {
       period,
       scansUsed: usage.scansUsed,
       pagesScanned: usage.pagesScanned,
+      // Decided here so every screen shows the same balance (web/src/lib/balance.js).
+      pro,
+      pagesPerMonth: PRO_PAGES_PER_MONTH,
+      pagesLeft: pro ? Math.max(0, PRO_PAGES_PER_MONTH - Number(usage.pagesScanned || 0)) : 0,
       plan,
       subscription,
       tokens,
