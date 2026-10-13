@@ -12,6 +12,7 @@ Single deploy story: **Node on the OVH VPS behind Caddy**, managed by **systemd*
 - Reverse proxy: Caddy on 80/443 → `localhost:3000`
 - Env file: `/etc/accessibility.env` (`chmod 600`)
 - Never run `npm` as `debian` (EACCES on `node_modules`)
+- Node.js **22.12 or newer** on the VPS (Astro 7 will not build or start on Node 20). Check with `node -v` before the first deploy after the Astro upgrade, and upgrade Node first if needed.
 - Never `pm2`
 
 The Node process listens on **port 3000**. Set `PORT=3000` in `/etc/accessibility.env`. Caddy serves 80/443. In `ss` the process name is **`MainThread`**, not `node`, so `grep node` is empty even when the app is healthy.
