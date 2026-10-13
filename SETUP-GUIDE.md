@@ -8,7 +8,7 @@ Full detail lives in [README.md](README.md).
 
 ## Prerequisites
 
-- **Node.js** 20 or newer (`node -v`)
+- **Node.js** 22.12 or newer (`node -v`)
 - **npm**
 
 ---

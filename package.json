@@ -24,11 +24,11 @@
   "author": "",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "@axe-core/playwright": "^4.10.2",
-    "basic-ftp": "^5.0.4",
+    "basic-ftp": "^6.2.3",
     "dotenv": "^17.4.2",
     "express": "^4.21.0",
     "multer": "^2.0.2",

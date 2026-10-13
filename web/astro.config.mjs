@@ -21,6 +21,10 @@ export default defineConfig({
   // mode's handler is (req, res) only and drops that 4th-argument locals object.
   adapter: node({ mode: 'middleware' }),
   integrations: [svelte()],
+  // Astro 7 defaults to JSX-style whitespace handling, which drops the space
+  // between inline elements written on separate lines. The templates were
+  // written for the HTML rules, so keep those.
+  compressHTML: true,
   vite: {
     server: {
       proxy: {
