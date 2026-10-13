@@ -1,6 +1,10 @@
 [Unit]
 Description=Accessibility tests (Astro SSR + Express API)
-After=network.target
+# The process exits at startup when it cannot reach Postgres, so start after it.
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+# Keep retrying for ever; see Restart= below.
+StartLimitIntervalSec=0
 
 [Service]
 User=deploy
@@ -10,12 +14,34 @@ Environment=NODE_ENV=production
 EnvironmentFile=/etc/accessibility.env
 KillMode=control-group
 TimeoutStopSec=30
-Restart=on-failure
+# Come back after any exit, five seconds apart. Scans that were running are
+# re-queued on start.
+Restart=always
+RestartSec=5
+
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/srv/accessibility-tests
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+
+# The scanner opens pages chosen by visitors. The app already refuses private
+# addresses and drops pages that redirect to one; this stops the request itself
+# at the network level for everything in this unit, Chromium included.
+# Loopback stays open: Postgres and Caddy talk to the app over it.
+# Before enabling, check the machine's DNS resolver is not in one of these
+# ranges (see deploy/README.md), or every scan will fail to resolve names.
+IPAddressDeny=169.254.0.0/16 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7 fe80::/10
+
+# Chromium is the memory risk. Uncomment and set to about three quarters of the
+# machine's RAM so a runaway scan is stopped before the whole machine swaps.
+#MemoryMax=3G
 
 [Install]
 WantedBy=multi-user.target

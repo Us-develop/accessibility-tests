@@ -184,7 +184,7 @@
       </button>
     {:else}
       <p class="muted" style="font-size: 12px; margin-top: 12px;">
-        Set <code>ANTHROPIC_API_KEY</code> on the server to generate a written analysis. The matrix below is always computed locally.
+        A written analysis is not available for this report. The matrix below is always computed from the scan.
       </p>
     {/if}
   </section>

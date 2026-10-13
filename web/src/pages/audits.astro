@@ -12,7 +12,7 @@ import AppHeader from '../components/AppHeader.astro';
         <div class="container" style="padding: clamp(32px, 5vw, 56px) 0 clamp(48px, 8vw, 96px); position: relative;">
           <div class="audits-head">
             <div>
-              <span class="eyebrow"><span class="dot"></span>Audits archive · /audits</span>
+              <span class="eyebrow"><span class="dot"></span>Audits archive</span>
               <h1 class="audits-title">All domain audits</h1>
               <p class="p-large muted" style="max-width: 680px;">
                 One row per domain — open the latest report or browse the full history of runs.
@@ -26,7 +26,7 @@ import AppHeader from '../components/AppHeader.astro';
 
           <div class="card-flat" style="padding: 22px; margin-bottom: 24px;">
             <p class="muted" style="font-size: 14px; margin: 0 0 12px;">
-              Audits use your signed-in session (glass sign-in on load). You can also{' '}
+              This list shows the audits your account may see. You can also{' '}
               <a class="link" href="/auth/staff?next=/audits">open full-page staff sign in</a>.
             </p>
             <button type="button" class="btn btn-primary" id="refresh-audits">Refresh list</button>

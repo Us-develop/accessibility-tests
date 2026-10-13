@@ -370,7 +370,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       lockAppShell();
       openModal();
       if (errEl) {
-        errEl.textContent = 'Could not verify sign-in (is the API running?).';
+        errEl.textContent = 'We could not check your sign-in. Check your connection and try again.';
         errEl.hidden = false;
       }
     }
@@ -514,7 +514,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       }
     } catch {
       if (errEl) {
-        errEl.textContent = 'Network error — is the server running?';
+        errEl.textContent = 'We could not reach the server. Check your connection and try again.';
         errEl.hidden = false;
       }
     }

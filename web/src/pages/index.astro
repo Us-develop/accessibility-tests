@@ -615,7 +615,7 @@ export const prerender = false;
         if (res.status === 403) {
           showFormError(
             data.error ||
-              'The server refused this request (403). If the response body mentions cross-site POST, you may be hitting Astro’s standalone listener: ensure `cd web && npm start` (run-server.mjs sets ASTRO_NODE_AUTOSTART), or open http://127.0.0.1:PORT instead of localhost. Otherwise: run the API on 3456, use the full stack build, and set PUBLIC_DEV_API_URL + RELAX_CORS_LOCALHOST for astro dev, or fix PUBLIC_APP_BASE.',
+              'This request was refused. Reload the page and try again.',
             null,
             'urls'
           );
@@ -626,7 +626,7 @@ export const prerender = false;
       }
       if (!goToRun(data)) showFormError('Could not start the audit.', null, 'urls');
     } catch {
-      showFormError('Network error — is the API running? For dev, start legacy server on port 3456.', null, 'urls');
+      showFormError('We could not reach the server. Check your connection and try again.', null, 'urls');
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -669,7 +669,7 @@ export const prerender = false;
       }
       if (!goToRun(data, { guestFallback: true })) showFormError('Could not start the free scan.', null, 'guest-url');
     } catch {
-      showFormError('Network error — is the API running?', null, 'guest-url');
+      showFormError('We could not reach the server. Check your connection and try again.', null, 'guest-url');
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -704,7 +704,7 @@ export const prerender = false;
       }
       if (!goToRun(data, { guestFallback: true })) showFormError('Could not start the scan.', null, 'customer-url');
     } catch {
-      showFormError('Network error — is the API running?', null, 'customer-url');
+      showFormError('We could not reach the server. Check your connection and try again.', null, 'customer-url');
     } finally {
       if (btn) btn.disabled = false;
     }

@@ -3,6 +3,13 @@ wcag.about-us.be {
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
 	}
-	reverse_proxy localhost:3000
+	# The largest legitimate request is a 1 MB sitemap upload. Refuse bigger
+	# bodies here, before they reach Node.
+	request_body {
+		max_size 2MB
+	}
+	# The app listens on loopback only in production.
+	reverse_proxy 127.0.0.1:3000
 }

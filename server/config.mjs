@@ -24,6 +24,19 @@ export function assertProductionPublicBaseUrl() {
 /**
  * Production persistence is Postgres. JSON-store fallback is for local/tests only.
  */
+/**
+ * Interface to listen on. In production the app sits behind Caddy on the same
+ * machine and must not be reachable directly: a client that can reach the port
+ * can set X-Forwarded-For itself and walk past every per-IP limit. Locally it
+ * listens on all interfaces, as before. HOST overrides both.
+ * @returns {string | undefined}
+ */
+export function listenHost(env = process.env) {
+  const explicit = String(env.HOST || '').trim();
+  if (explicit) return explicit;
+  return env.NODE_ENV === 'production' ? '127.0.0.1' : undefined;
+}
+
 export function assertProductionDatabaseUrl() {
   if (process.env.NODE_ENV !== 'production') return;
   if (!String(process.env.DATABASE_URL || '').trim()) {
