@@ -157,7 +157,6 @@
     { key: 'pages', label: 'By page', count: pagesTable.length },
     { key: 'rules', label: 'Rules' },
     { key: 'manual', label: 'Manual checks', count: `${manualChecked}/${manualTotal}` },
-    ...(!locked && hasLoadedPages ? [{ key: 'coverage', label: 'WCAG coverage' }] : []),
   ]);
   const variants = [
     { key: 'detailed', label: 'Detailed' },
@@ -349,10 +348,6 @@
     else if (event.key === 'End') next = tabs.length - 1;
     const dest = tabs[next];
     if (!dest) return;
-    if (dest.key === 'coverage') {
-      gotoCoverage();
-      return;
-    }
     tab = dest.key;
     requestAnimationFrame(() => document.getElementById(`results-tab-${dest.key}`)?.focus());
   }
@@ -534,7 +529,10 @@
     {/if}
     <!-- Tabs + density switcher (only on Overview/Issues) -->
     <div class="tabs-row">
-      <div class="tabs tabs-scroll" style="margin-bottom: 0; border: 0;" role="tablist" aria-label="Report sections" onkeydown={onTabListKeydown}>
+      <!-- The tablist holds only real tabs. "WCAG coverage" is another page, so it
+           is a link beside the tabs: as a tab, arrow keys navigated away. -->
+      <div class="tabs tabs-scroll" style="margin-bottom: 0; border: 0;">
+      <div role="tablist" aria-label="Report sections" style="display: flex; gap: 4px;" onkeydown={onTabListKeydown}>
         {#each tabs as t (t.key)}
           <button
             type="button"
@@ -545,7 +543,7 @@
             aria-selected={tab === t.key}
             aria-controls="results-tabpanel"
             tabindex={tab === t.key ? 0 : -1}
-            onclick={() => (t.key === 'coverage' ? gotoCoverage() : (tab = t.key))}
+            onclick={() => (tab = t.key)}
           >
             {t.label}
             {#if t.count != null}<span class="count">{t.count}</span>{/if}
@@ -557,6 +555,10 @@
             {/if}
           </button>
         {/each}
+      </div>
+      {#if !locked && hasLoadedPages}
+        <a class="tab" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/coverage`}>WCAG coverage</a>
+      {/if}
       </div>
       {#if showDensitySwitcher}
         <div class="variant-switcher" role="group" aria-label="Density">
