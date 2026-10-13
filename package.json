@@ -4,9 +4,10 @@
   "description": "Automated accessibility testing based on Deque University checklists for client reports",
   "type": "module",
   "scripts": {
-    "test": "node run-tests.js",
+    "test": "node --test tests/*.test.js",
     "test:unit": "node --test tests/*.test.js",
-    "test:report": "node run-tests.js --report",
+    "scan": "node run-tests.js",
+    "scan:report": "node run-tests.js --report",
     "report": "node generate-report.js",
     "start": "node server.js",
     "serve": "node web/run-server.mjs",

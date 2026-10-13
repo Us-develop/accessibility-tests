@@ -732,11 +732,11 @@ export function generateReport(reportData, options = {}) {
       <ul style="margin: 12px 0 0 20px;">
         ${loadErrors.map((e) => `<li><strong>${escapeHtml(e.url)}</strong>: ${escapeHtml(e.message)}</li>`).join('')}
       </ul>
-      <p style="margin: 12px 0 0;">Fix these issues and re-run <code>npm run test:report</code></p>
+      <p style="margin: 12px 0 0;">Check that these addresses open in a normal browser, then start a new scan.</p>
     </div>
     ` : !pagesLoaded ? `
     <div class="alert alert-warning">
-      <strong>No pages were tested.</strong> Add URLs to <code>urls.config.js</code> and run <code>npm run test:report</code>
+      <strong>No pages were tested.</strong> Start a new scan with at least one public address.
     </div>
     ` : ''}
 
@@ -1227,6 +1227,7 @@ export function generateReport(reportData, options = {}) {
 
 const isMain = process.argv[1] && process.argv[1].endsWith('generate-report.js');
 if (isMain) {
-  const out = generateReport();
+  // `npm run report`: rebuild from the command-line scanner's output folder.
+  const out = generateReport(null, { outputDir: join(DEFAULT_OUTPUT_DIR, 'latest') });
   console.log(`Report saved to ${out}`);
 }
