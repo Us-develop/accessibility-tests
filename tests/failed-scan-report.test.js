@@ -77,7 +77,8 @@ describe('failed scan hostname and completeness', () => {
     const dashboard = readFileSync(join(repoRoot, 'web/src/components/ResultsDashboard.svelte'), 'utf8');
     assert.match(dashboard, /load-fail-banner/);
     assert.match(dashboard, /\{#if !locked && hasLoadedPages\}/);
-    assert.match(dashboard, /Three deliverables, ready/);
+    // 'Three' with the sales report (Pro), 'Two' without it.
+    assert.match(dashboard, /deliverables, ready\./);
     assert.doesNotMatch(dashboard, /\{#if !locked\}\s*\n\s*<!-- Footer CTAs -->/);
   });
 });

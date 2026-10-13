@@ -3,9 +3,10 @@
  * Tokens are AES-256-GCM encrypted with a key derived from SESSION_SECRET.
  */
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs';
+import { dirname, join } from 'path';
 import { isValidDomain, domainDir } from './run-ids.js';
+import { REPORTS_BASE } from './paths.js';
 import { sessionSecret } from './session.mjs';
 
 export const JIRA_OAUTH_STATE_MAX = 100;
@@ -14,11 +15,35 @@ const HKDF_SALT = 'wcag-jira-oauth';
 const HKDF_INFO = 'jira-oauth.json v1';
 const ALG = 'aes-256-gcm';
 
-/** @type {Map<string, { domain: string, expiresAt: number }>} */
+/** @type {Map<string, { domain: string, owner: string | null, expiresAt: number }>} */
 export const jiraOauthState = new Map();
 
-export function jiraOAuthFile(domain) {
+/**
+ * Where a Jira connection is stored.
+ *
+ * Staff connections belong to the site: reports/<domain>/jira-oauth.json.
+ * A customer's connection belongs to that customer:
+ * reports/_saas/jira/<userId>/<domain>.json. Two customers who scan the same
+ * site must never share a Jira connection, or one could create tickets in the
+ * other's Jira.
+ *
+ * @param {string} domain
+ * @param {string | null} [owner] customer user id, or null for staff
+ */
+export function jiraOAuthFile(domain, owner = null) {
+  if (owner) return join(REPORTS_BASE, '_saas', 'jira', owner, `${domain}.json`);
   return join(domainDir(domain), 'jira-oauth.json');
+}
+
+/** A customer id that is safe to use as a folder name. */
+function isValidOwner(owner) {
+  return owner == null || /^[A-Za-z0-9_-]{1,64}$/.test(String(owner));
+}
+
+/** Remove every Jira connection of a customer (account deletion). */
+export function deleteJiraOAuthForOwner(owner) {
+  if (!owner || !isValidOwner(owner)) return;
+  rmSync(join(REPORTS_BASE, '_saas', 'jira', owner), { recursive: true, force: true });
 }
 
 function deriveJiraOAuthKey() {
@@ -81,10 +106,10 @@ export function pruneJiraOauthState(map, now = Date.now(), max = JIRA_OAUTH_STAT
   }
 }
 
-export function newOauthState(domain) {
+export function newOauthState(domain, owner = null) {
   pruneJiraOauthState(jiraOauthState);
   const state = randomBytes(24).toString('hex');
-  jiraOauthState.set(state, { domain, expiresAt: Date.now() + JIRA_OAUTH_STATE_TTL_MS });
+  jiraOauthState.set(state, { domain, owner: owner || null, expiresAt: Date.now() + JIRA_OAUTH_STATE_TTL_MS });
   return state;
 }
 
@@ -96,9 +121,9 @@ export function consumeOauthState(state) {
   return row;
 }
 
-export function readJiraOAuth(domain) {
-  if (!isValidDomain(domain)) return null;
-  const p = jiraOAuthFile(domain);
+export function readJiraOAuth(domain, owner = null) {
+  if (!isValidDomain(domain) || !isValidOwner(owner)) return null;
+  const p = jiraOAuthFile(domain, owner);
   if (!existsSync(p)) return null;
   try {
     const parsed = JSON.parse(readFileSync(p, 'utf8'));
@@ -106,18 +131,18 @@ export function readJiraOAuth(domain) {
       return decryptJiraOAuth(parsed);
     }
     // Plaintext leftover: migrate on first read.
-    writeJiraOAuth(domain, parsed);
+    writeJiraOAuth(domain, parsed, owner);
     return parsed;
   } catch {
     return null;
   }
 }
 
-export function writeJiraOAuth(domain, data) {
-  if (!isValidDomain(domain)) return;
-  const dir = domainDir(domain);
+export function writeJiraOAuth(domain, data, owner = null) {
+  if (!isValidDomain(domain) || !isValidOwner(owner)) return;
+  const file = jiraOAuthFile(domain, owner);
+  const dir = dirname(file);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const file = jiraOAuthFile(domain);
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify(encryptJiraOAuth(data), null, 2), 'utf8');
   renameSync(tmp, file);

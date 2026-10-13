@@ -55,6 +55,7 @@ import {
 } from './url-guard.mjs';
 import { scanProcessTimeoutMs, tailForLog } from './scan-child.mjs';
 import { carryReviewedForward, readReviewed, writeReviewed } from './reviewed.mjs';
+import { accessAllows } from './entitlements.mjs';
 import { buildTeaserPayload } from './teaser-payload.mjs';
 import {
   clearSessionCookies,
@@ -305,9 +306,10 @@ async function atlassianAccessibleResources(accessToken) {
   return out;
 }
 
-async function getValidJiraAccess(domain) {
+/** @param {string} domain @param {string | null} [owner] customer id, null for staff */
+async function getValidJiraAccess(domain, owner = null) {
   const cfg = getJiraConfig();
-  const saved = readJiraOAuth(domain);
+  const saved = readJiraOAuth(domain, owner);
   if (!saved?.refreshToken) return null;
   const now = Date.now();
   if (saved.accessToken && Number(saved.expiresAt || 0) > now + 60 * 1000) {
@@ -324,8 +326,29 @@ async function getValidJiraAccess(domain) {
     expiresAt: Date.now() + Number(refreshed.expires_in || 3600) * 1000,
     updatedAt: new Date().toISOString(),
   };
-  writeJiraOAuth(domain, next);
+  writeJiraOAuth(domain, next, owner);
   return next;
+}
+
+/**
+ * Who may use the Jira export for a site: staff, or a customer with active Pro
+ * who owns scans of that site (and the run, when one is named).
+ * Returns the owner under which the Jira connection is stored: null for staff,
+ * the user id for a customer.
+ * @returns {Promise<{ ok: true, owner: string | null } | { ok: false, status: number, error: string, code?: string }>}
+ */
+async function jiraAccessFor(req, domain, runId = '') {
+  const access = req.access;
+  if (access?.role === 'staff') return { ok: true, owner: null };
+  if (access?.role !== 'customer' || !access.userId) {
+    return { ok: false, status: 401, error: 'Sign in first.' };
+  }
+  if (!(await accessAllows(access, 'jira'))) {
+    return { ok: false, status: 403, error: 'Jira export is part of Pro.', code: 'pro_required' };
+  }
+  const owns = runId && isValidRunId(runId) ? await canAccessRun(access, domain, runId) : await canAccessDomain(access, domain);
+  if (!owns) return { ok: false, status: 403, error: 'You do not have access to this project.' };
+  return { ok: true, owner: access.userId };
 }
 
 const RECONCILE_FIRST_RUN_MS = 60 * 1000;
@@ -1303,6 +1326,7 @@ app.get('/auth/jira/callback', async (req, res) => {
     const resources = await atlassianAccessibleResources(tok.access_token);
     const jiraSite = resources.find((r) => Array.isArray(r.scopes) && r.scopes.some((s) => s.includes('jira')));
     if (!jiraSite?.id) throw new Error('No Jira site granted for this account.');
+    // Stored for whoever started the connection: the site (staff) or that customer.
     writeJiraOAuth(fromState.domain, {
       domain: fromState.domain,
       cloudId: jiraSite.id,
@@ -1313,7 +1337,7 @@ app.get('/auth/jira/callback', async (req, res) => {
       expiresAt: Date.now() + Number(tok.expires_in || 3600) * 1000,
       connectedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    });
+    }, fromState.owner || null);
     return res
       .status(200)
       .type('html')
@@ -1514,16 +1538,18 @@ registerAccountRoutes(app, {
 registerStripeRoutes(app);
 registerRetentionRoutes(app);
 
-app.get('/auth/jira/connect', requireStaff, (req, res) => {
+app.get('/auth/jira/connect', async (req, res) => {
   const cfg = getJiraConfig();
   const domain = String(req.query?.domain || '').trim().toLowerCase();
-  if (!cfg.clientId || !cfg.clientSecret || !cfg.redirectUri) {
-    return res.status(501).send('Atlassian OAuth not configured on server.');
-  }
   if (!isValidDomain(domain)) {
-    return res.status(400).send('Invalid domain.');
+    return res.status(400).type('txt').send('Invalid domain.');
   }
-  const state = newOauthState(domain);
+  const allowed = await jiraAccessFor(req, domain);
+  if (!allowed.ok) return res.status(allowed.status).json({ error: allowed.error, code: allowed.code });
+  if (!cfg.clientId || !cfg.clientSecret || !cfg.redirectUri) {
+    return res.status(501).type('txt').send('Jira is not set up on this server yet.');
+  }
+  const state = newOauthState(domain, allowed.owner);
   const u = new URL('https://auth.atlassian.com/authorize');
   u.searchParams.set('audience', 'api.atlassian.com');
   u.searchParams.set('client_id', cfg.clientId);
@@ -2091,11 +2117,13 @@ app.get('/api/health/db', requireStaff, async (req, res) => {
   }
 });
 
-app.get('/api/jira/oauth/status', requireStaff, async (req, res) => {
+app.get('/api/jira/oauth/status', async (req, res) => {
   const domain = String(req.query?.domain || '').trim().toLowerCase();
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
+  const allowed = await jiraAccessFor(req, domain);
+  if (!allowed.ok) return res.status(allowed.status).json({ error: allowed.error, code: allowed.code });
   try {
-    const token = await getValidJiraAccess(domain);
+    const token = await getValidJiraAccess(domain, allowed.owner);
     if (!token) return res.json({ connected: false });
     return res.json({
       connected: true,
@@ -2109,11 +2137,13 @@ app.get('/api/jira/oauth/status', requireStaff, async (req, res) => {
   }
 });
 
-app.get('/api/jira/projects', requireStaff, async (req, res) => {
+app.get('/api/jira/projects', async (req, res) => {
   const domain = String(req.query?.domain || '').trim().toLowerCase();
   if (!isValidDomain(domain)) return res.status(400).json({ error: 'Invalid domain' });
+  const allowed = await jiraAccessFor(req, domain);
+  if (!allowed.ok) return res.status(allowed.status).json({ error: allowed.error, code: allowed.code });
   try {
-    const token = await getValidJiraAccess(domain);
+    const token = await getValidJiraAccess(domain, allowed.owner);
     if (!token?.accessToken || !token?.cloudId) {
       return res.status(401).json({ error: 'Jira not connected for this domain' });
     }
@@ -2133,7 +2163,7 @@ app.get('/api/jira/projects', requireStaff, async (req, res) => {
   }
 });
 
-app.post('/api/jira/sprint', requireStaff, async (req, res) => {
+app.post('/api/jira/sprint', async (req, res) => {
   const projectKey = String(req.body?.projectKey || '').trim().toUpperCase();
   const tickets = Array.isArray(req.body?.tickets) ? req.body.tickets : [];
   const domain = String(req.body?.domain || '').trim().toLowerCase();
@@ -2148,10 +2178,12 @@ app.post('/api/jira/sprint', requireStaff, async (req, res) => {
   if (!tickets.length) {
     return res.status(400).json({ error: 'No tickets provided.' });
   }
+  const allowed = await jiraAccessFor(req, domain, runId);
+  if (!allowed.ok) return res.status(allowed.status).json({ error: allowed.error, code: allowed.code });
 
   let token;
   try {
-    token = await getValidJiraAccess(domain);
+    token = await getValidJiraAccess(domain, allowed.owner);
   } catch (err) {
     return res.status(502).json({ error: `Jira token refresh failed: ${err?.message || err}` });
   }
@@ -2855,8 +2887,23 @@ app.get('/report/:domain/:runId/', (req, res, next) => {
   return next();
 });
 
-app.get('/report/:domain/:runId/sales', (req, res, next) => next());
-app.get('/report/:domain/:runId/sales/', (req, res, next) => next());
+/**
+ * The sales report (and its PDF export, which prints the same page) is part of
+ * Pro. Checked here, in front of the Astro page, for staff and Pro customers.
+ */
+async function requireSalesReport(req, res, next) {
+  if (await accessAllows(req.access, 'salesReport')) return next();
+  const { domain, runId } = req.params;
+  const reportHref = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`;
+  return res
+    .status(403)
+    .type('html')
+    .send(
+      `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Sales report · Pro only</title><link rel="stylesheet" href="/styles/tokens.css"/><link rel="stylesheet" href="/styles/app.css"/></head><body><main class="container" style="padding:64px 32px;"><h1>The sales report is part of Pro</h1><p class="muted">Your plan includes the full report, the developer fix list and the accessibility statement. The sales report and its PDF export come with a Pro subscription.</p><p style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap;"><a class="btn btn-primary" href="/pricing#pro">See Pro</a> <a class="btn btn-secondary" href="${reportHref}">Back to the report</a></p></main></body></html>`
+    );
+}
+app.get('/report/:domain/:runId/sales', requireSalesReport, (req, res, next) => next());
+app.get('/report/:domain/:runId/sales/', requireSalesReport, (req, res, next) => next());
 app.get('/report/:domain/:runId/statement', (req, res, next) => next());
 app.get('/report/:domain/:runId/statement/', (req, res, next) => next());
 

@@ -12,6 +12,7 @@ import { dbPool } from '../../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../../server/paths.js';
 import { MANUAL_TODO_GROUPS, normalizeManualProgress } from '../../../../../../manual-checklist.js';
 import { readReviewed } from '../../../../../../server/reviewed.mjs';
+import { entitlementsFor } from '../../../../../../server/entitlements.mjs';
 
 export const prerender = false;
 
@@ -113,6 +114,8 @@ const dashboardProps = {
   manualTotal,
   scoreModel: payload.scoreModel,
   reviewedInitial: readReviewed(domain, runId),
+  // What this viewer's plan includes. Shown or hidden here; enforced on the server.
+  entitlements: await entitlementsFor(Astro.locals.access),
   coveredScCount: payload.coveredScCount ?? 0,
   wcagAaCount: payload.wcagAaCount ?? 56,
 };

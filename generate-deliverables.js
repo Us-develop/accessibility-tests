@@ -275,6 +275,10 @@ export function generateDeveloperAdvice(data, outputDir) {
       font-weight: 700; font-size: 12px;
     }
 
+    .header-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+    .header-actions [hidden] { display: none; }
+    .jira-hint { font-size: 13px; color: var(--fg-3); max-width: 260px; text-align: right; margin: 0; }
+    @media (max-width: 720px) { .header-actions { align-items: flex-start; } .jira-hint { text-align: left; } }
     .footer-foot { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border-subtle); font-size: 13px; color: var(--fg-3); }
   </style>
 </head>
@@ -287,12 +291,19 @@ export function generateDeveloperAdvice(data, outputDir) {
         <h1>Here's what to fix, in what order.</h1>
         <p class="lead">${tickets.length} ticket${tickets.length === 1 ? '' : 's'} · ${totalPoints} story points · ~2 weeks. Each ticket includes the rule, an example fix, and the WCAG criterion.</p>
       </div>
-      <button class="btn btn-grad btn-lg" id="add-to-jira-btn" type="button">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M11.5 2L2 11.5l3 3L11.5 8 18 14.5l-3 3 3 3 9.5-9.5L11.5 2z" opacity="0.95"/>
-        </svg>
-        Add sprint to Jira
-      </button>
+      <div class="header-actions">
+        <!-- Hidden until the server confirms this viewer may use the Jira export
+             (staff, or the owner with Pro). The guide is one static file for
+             every viewer, so it asks; the server checks again on every call. -->
+        <button class="btn btn-grad btn-lg" id="add-to-jira-btn" type="button" hidden>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M11.5 2L2 11.5l3 3L11.5 8 18 14.5l-3 3 3 3 9.5-9.5L11.5 2z" opacity="0.95"/>
+          </svg>
+          Add sprint to Jira
+        </button>
+        <a class="btn btn-secondary btn-lg" href="/contact?source=developer-guide">Let Us fix this</a>
+        <p class="jira-hint" id="jira-pro-hint" hidden>Exporting these tickets to Jira is part of Pro. <a href="/pricing#pro">See Pro</a></p>
+      </div>
     </header>
 
     <section class="stat-grid">
@@ -438,6 +449,31 @@ export function generateDeveloperAdvice(data, outputDir) {
       }
 
       openBtn?.addEventListener('click', openModal);
+      // The app's CSRF cookie is readable by design (double-submit); state-changing
+      // calls must echo it in a header.
+      function csrfToken() {
+        var m = document.cookie.match(/(?:^|; )wcag_csrf=([^;]*)/);
+        return m ? decodeURIComponent(m[1]) : '';
+      }
+
+      // Show the Jira button only to viewers the server allows. Anyone else sees
+      // the contact button, and a signed-in customer without Pro also sees why.
+      (async function revealJira() {
+        if (!domain || !openBtn) return;
+        try {
+          var res = await fetch('/api/jira/oauth/status?domain=' + encodeURIComponent(domain), { credentials: 'same-origin' });
+          if (res.ok) {
+            openBtn.hidden = false;
+            return;
+          }
+          var data = await res.json().catch(function () { return {}; });
+          var hint = document.getElementById('jira-pro-hint');
+          if (res.status === 403 && data.code === 'pro_required' && hint) hint.hidden = false;
+        } catch (e) {
+          /* offline or opened as a file: the button stays hidden */
+        }
+      })();
+
       openBtn?.addEventListener('click', refreshJiraState);
       modal.addEventListener('click', function (e) {
         if (e.target === modal) closeModal();
@@ -469,7 +505,7 @@ export function generateDeveloperAdvice(data, outputDir) {
         try {
           var res = await fetch('/api/jira/sprint', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
             credentials: 'same-origin',
             body: JSON.stringify({ projectKey: selected, tickets: tickets, domain: domain, runId: runId }),
           });
