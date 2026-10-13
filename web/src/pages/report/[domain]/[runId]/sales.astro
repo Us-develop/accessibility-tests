@@ -13,6 +13,7 @@ import { dbPool } from '../../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../../server/paths.js';
 import { combinedScoreWithManual } from '../../../../../../report-buckets.js';
 import { readReviewed } from '../../../../../../server/reviewed.mjs';
+import { accessAllows } from '../../../../../../server/entitlements.mjs';
 import { MANUAL_TODO_GROUPS, normalizeManualProgress } from '../../../../../../manual-checklist.js';
 
 export const prerender = false;
@@ -24,6 +25,12 @@ const runId = typeof rawRunId === 'string' ? rawRunId : String(rawRunId);
 
 if (!isValidReportId(domain) || !isValidRunId(runId)) {
   return new Response('Invalid run id', { status: 400 });
+}
+
+// Pro only. The Express app in front already refuses; this covers `astro dev`,
+// where pages are served without it.
+if (!(await accessAllows(Astro.locals.access, 'salesReport'))) {
+  return new Response('The sales report is part of Pro.', { status: 403 });
 }
 
 const reportDir = runDir(domain, runId);

@@ -231,7 +231,7 @@ describe('staff-only jira and debug HTTP', () => {
     assert.equal(res.status, 200, data.error || 'signup failed');
   });
 
-  it('returns 403 JSON for a customer on all five staff jira/debug routes', async () => {
+  it('returns 403 JSON for a customer without Pro on all five jira/debug routes', async () => {
     for (const route of STAFF_JIRA_ROUTES) {
       const res = await fetch(`${origin}${route.path}`, {
         method: route.method,
@@ -244,7 +244,10 @@ describe('staff-only jira and debug HTTP', () => {
       });
       const body = await res.json();
       assert.equal(res.status, 403, `${route.method} ${route.path} status`);
-      assert.equal(body.error, 'Staff only.', `${route.method} ${route.path} body`);
+      // Jira is open to Pro customers now, so a token-tier account is told why;
+      // the debug route stays staff only.
+      const expected = route.path.includes('/debug/') ? 'Staff only.' : 'Jira export is part of Pro.';
+      assert.equal(body.error, expected, `${route.method} ${route.path} body`);
     }
   });
 

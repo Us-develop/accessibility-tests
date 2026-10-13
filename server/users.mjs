@@ -18,6 +18,7 @@ import { ensureCustomerSubscription, ensureFreeSubscription, getSubscription } f
 import { invalidateSessionUserCache } from './session.mjs';
 import { cancelAndDeleteStripeCustomer } from './stripe.mjs';
 import { ftpRemoveRunArtifacts } from './ftp.js';
+import { deleteJiraOAuthForOwner } from './jira-oauth.mjs';
 import {
   deleteGuestBindingsForRuns,
   deleteLeadsByEmail,
@@ -565,6 +566,7 @@ export async function deleteAccount(userId) {
   await deleteConsentsForAccount({ userId, email: user.email });
   await recordDeletionTombstone(user.email);
   await deleteProjectsForUser(userId);
+  deleteJiraOAuthForOwner(userId);
   await purgeUserSidecarStores(userId);
   await deleteUser(userId);
   console.info('[account] deleted user', userId);

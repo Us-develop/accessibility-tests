@@ -69,6 +69,7 @@
    *   manualTotal: number,
    *   scoreModel?: { errors: number | null, hasCritical: boolean, reviewKeys: string[] },
    *   reviewedInitial?: string[],
+   *   entitlements?: { salesReport?: boolean, jira?: boolean },
    *   coveredScCount?: number,
    *   wcagAaCount?: number,
    *   scoreAvailable?: boolean,
@@ -111,6 +112,7 @@
     manualTotal,
     scoreModel = { errors: null, hasCritical: false, reviewKeys: [] },
     reviewedInitial = [],
+    entitlements = { salesReport: true, jira: true },
     coveredScCount = 0,
     wcagAaCount = 56,
     scoreAvailable = true,
@@ -495,7 +497,7 @@
           {/if}
         </p>
       </div>
-      {#if !locked && hasLoadedPages}
+      {#if !locked && hasLoadedPages && entitlements.salesReport}
         <div style="display: flex; gap: 8px;">
           <button class="btn btn-ghost btn-sm hero-btn" onclick={exportSalesPdf}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -949,13 +951,21 @@
     <!-- Footer CTAs -->
     <div class="footer-cta">
       <div>
-        <div style="font-family: var(--font-display); font-size: 22px; font-weight: 700;">Three deliverables, ready.</div>
+        <div style="font-family: var(--font-display); font-size: 22px; font-weight: 700;">{entitlements.salesReport ? 'Three' : 'Two'} deliverables, ready.</div>
         <div style="opacity: 0.65; font-size: 14px; margin-top: 4px;">One link to share with each audience.</div>
       </div>
-      <button class="btn btn-cream" onclick={gotoSales}>Sales report</button>
+      {#if entitlements.salesReport}
+        <button class="btn btn-cream" onclick={gotoSales}>Sales report</button>
+      {/if}
       <button class="btn btn-cream" onclick={gotoStatement}>Accessibility statement</button>
       <button class="btn btn-grad" onclick={gotoDeveloper}>Developer fix list</button>
     </div>
+    {#if !entitlements.salesReport}
+      <p class="muted" style="font-size: 14px; margin-top: 12px;">
+        The sales report and its PDF export are part of Pro, as is exporting fixes to Jira.
+        <a class="link" href="/pricing#pro">See what Pro includes</a>
+      </p>
+    {/if}
     <!-- What next: scan again with what is left, or let Us do the work. -->
     <div class="card-flat next-steps">
       <div>

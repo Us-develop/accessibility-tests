@@ -163,6 +163,19 @@ export function isActiveProSubscription(subscription) {
   return status === 'active' || status === 'trialing' || status === 'past_due';
 }
 
+/**
+ * Whether a subscription includes a feature (a key of the plan's `features`,
+ * for example 'salesReport' or 'jira'). An account without active Pro is on
+ * the token tier. This is the one rule both the pricing page and the server
+ * checks are built on.
+ * @param {object | null | undefined} subscription
+ * @param {string} feature
+ */
+export function planAllows(subscription, feature) {
+  const planId = isActiveProSubscription(subscription) ? PRO_PLAN_ID : NONE_PLAN_ID;
+  return DEFAULT_PLANS.find((plan) => plan.id === planId)?.features?.[feature] === true;
+}
+
 export function entitlementError(message, { status = 429, code = 'plan_scan_limit' } = {}) {
   return Object.assign(new Error(message), {
     status,
