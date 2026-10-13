@@ -10,6 +10,9 @@ const {
   dbListUnrefundedErrorRunIds,
   dbClaimStripeEvent,
   dbClaimRunRefund,
+  dbAddTokensToLot,
+  dbApplyTokenLotClawback,
+  dbInsertTokenLot,
   withUserLedgerLock,
 } = await import('../server/db.js');
 
@@ -77,6 +80,51 @@ describe('postgres-backed paths', { skip: !haveDb }, () => {
     const second = await dbClaimRunRefund(runId);
     assert.ok(first?.refundedAt);
     assert.equal(second, null);
+  });
+
+  it('claws a token lot back pro rata and settles on the running refund total', async () => {
+    await initDb();
+    const stamp = Date.now().toString(16);
+    const intent = `pi_claw_${stamp}`;
+    // token_lots.user_id references users, so the lot needs a real account.
+    const { createUser } = await import('../server/users.mjs');
+    const { user } = await createUser({ email: `claw-${stamp}@example.com`, password: 'longenough1' });
+    const userId = user.id;
+    const lot = await dbInsertTokenLot({
+      id: `lot-${stamp}`,
+      userId,
+      packId: 'pack_10',
+      tokensGranted: 10,
+      tokensRemaining: 7, // 3 already spent
+      purchasedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      stripeCheckoutSessionId: `cs_claw_${stamp}`,
+      stripePaymentIntentId: intent,
+    });
+    assert.ok(lot?.id);
+
+    const half = await dbApplyTokenLotClawback(intent, 0.5);
+    assert.equal(half.clawbackTarget, 5);
+    assert.equal(half.tokensRemaining, 2);
+    assert.equal(half.tokensClawedBack, 5);
+
+    const again = await dbApplyTokenLotClawback(intent, 0.5);
+    assert.equal(again.tokensRemaining, 2);
+
+    const full = await dbApplyTokenLotClawback(intent, 1);
+    assert.equal(full.clawbackTarget, 10);
+    assert.equal(full.tokensRemaining, 0);
+    assert.equal(full.tokensClawedBack, 7);
+
+    // A failed scan returns 3 tokens: they stay removed on a refunded lot.
+    const restored = await dbAddTokensToLot(lot.id, 3);
+    assert.equal(restored.tokensRemaining, 0);
+    assert.equal(restored.tokensClawedBack, 10);
+
+    // The refund is reversed: everything unspent comes back.
+    const reversed = await dbApplyTokenLotClawback(intent, 0);
+    assert.equal(reversed.tokensRemaining, 10);
+    assert.equal(reversed.tokensClawedBack, 0);
   });
 
   it('leaves a freshly touched run alone when the sweep has a minimum age', async () => {

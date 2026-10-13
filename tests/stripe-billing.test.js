@@ -259,7 +259,7 @@ describe('stripe fulfillment', () => {
 
     await handleStripeEvent({
       type: 'charge.refunded',
-      data: { object: { payment_intent: 'pi_pack' } },
+      data: { object: { payment_intent: 'pi_pack', amount: 1000, amount_refunded: 1000, refunded: true } },
     });
     assert.equal((await getTokenBalance(user.id)).tokens, 1);
   });
