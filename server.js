@@ -10,7 +10,7 @@ import { loadAllAppEnv } from './server/load-env.mjs';
 import { initDb, dbPool } from './server/db.js';
 import { createAccessibilityApp } from './server/create-app.mjs';
 import { installProcessGuards } from './server/http-utils.mjs';
-import { assertProductionDatabaseUrl } from './server/config.mjs';
+import { assertProductionDatabaseUrl, listenHost } from './server/config.mjs';
 
 installProcessGuards();
 
@@ -36,10 +36,12 @@ initDb()
     } else {
       console.log('Postgres persistence disabled (DATABASE_URL not set).');
     }
-    app.listen(PORT, () => {
-      console.log(`Accessibility API at http://localhost:${PORT} (signed-in home redirects to /audits).`);
-      console.log(`Full UI with Astro: cd web && npm run build && npm start`);
-    });
+    const onListening = () => {
+      console.log(`Accessibility API at http://localhost:${PORT} (no pages: use npm run serve for the full app).`);
+    };
+    const host = listenHost();
+    if (host) app.listen(PORT, host, onListening);
+    else app.listen(PORT, onListening);
   })
   .catch((err) => {
     console.error('Failed to initialize database:', err.message);

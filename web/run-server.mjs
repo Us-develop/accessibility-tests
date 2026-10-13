@@ -12,7 +12,7 @@ import { createAccessibilityApp } from '../server/create-app.mjs';
 import { installProcessGuards } from '../server/http-utils.mjs';
 import { startRetentionJob } from '../server/retention.mjs';
 import { setStaticAssetHeaders } from '../server/static-cache.mjs';
-import { assertProductionDatabaseUrl } from '../server/config.mjs';
+import { assertProductionDatabaseUrl, listenHost } from '../server/config.mjs';
 
 installProcessGuards();
 
@@ -65,6 +65,9 @@ if (dbPool) {
   console.log('Postgres persistence disabled (DATABASE_URL not set).');
 }
 startRetentionJob();
-app.listen(PORT, () => {
-  console.log(`Accessibility app (Astro + API) at http://localhost:${PORT}`);
-});
+const HOST = listenHost();
+const onListening = () => {
+  console.log(`Accessibility app (Astro + API) at http://${HOST || 'localhost'}:${PORT}`);
+};
+if (HOST) app.listen(PORT, HOST, onListening);
+else app.listen(PORT, onListening);

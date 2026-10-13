@@ -223,7 +223,7 @@ const PUBLIC_GET_PATHS = new Set([
   '/robots.txt',
   '/sitemap.xml',
   '/favicon.ico',
-  '/api/__test/throw',
+  '/api/health',
 ]);
 
 function canonicalPublicPath(req) {
@@ -2038,6 +2038,15 @@ app.get('/api/admin/leads', async (req, res) => {
   }
 });
 
+/**
+ * Liveness for uptime monitors: the process is up and answering. Public and
+ * detail-free on purpose. Database health is `/api/health/db`, staff only.
+ */
+app.get('/api/health', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true });
+});
+
 app.get('/api/health/db', requireStaff, async (req, res) => {
   if (!dbPool) {
     return res.json({ ok: true, db: 'disabled' });
@@ -2826,6 +2835,7 @@ app.get('/report/:domain/:runId/statement/', (req, res, next) => next());
   app.get('/', (req, res, next) => next());
 
   if (process.env.NODE_ENV !== 'production') {
+    PUBLIC_GET_PATHS.add('/api/__test/throw');
     app.get('/api/__test/throw', async () => {
       throw new Error('test-throw');
     });
