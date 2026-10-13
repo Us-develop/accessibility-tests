@@ -253,7 +253,7 @@ describe('staff-only jira and debug HTTP', () => {
     assert.ok(res.status === 401 || res.status === 302, `expected 401 or 302, got ${res.status}`);
     if (res.status === 302) {
       const loc = res.headers.get('location') || '';
-      assert.match(loc, /\/auth\/login/);
+      assert.match(loc, /^\/login\?next=/);
     }
   });
 
