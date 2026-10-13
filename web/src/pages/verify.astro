@@ -48,6 +48,8 @@ const nextPath = customerLoginNext(Astro.url.searchParams.get('next') || '');
   </div>
 </Layout>
 <script>
+  import { isSafeRelativePath } from '../../../server/safe-path.mjs';
+
   if (!globalThis.__wcagVerifyDelegated) {
     globalThis.__wcagVerifyDelegated = true;
     document.addEventListener('click', (event) => {
@@ -74,7 +76,7 @@ const nextPath = customerLoginNext(Astro.url.searchParams.get('next') || '');
         if (res.ok) {
           const data = await res.json().catch(() => ({}));
           const dest = String(data.next || next || '/account');
-          window.location.href = dest.startsWith('/') && !dest.startsWith('//') ? dest : '/account';
+          window.location.href = isSafeRelativePath(dest) ? dest : '/account';
           return;
         }
         window.location.href = '/verify?error=invalid';

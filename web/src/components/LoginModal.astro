@@ -181,6 +181,8 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
 </div>
 
 <script>
+  import { isSafeRelativePath } from '../../../server/safe-path.mjs';
+
   function qs(id) {
     return document.getElementById(id);
   }
@@ -395,7 +397,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     if (!input) return;
     try {
       const next = new URLSearchParams(window.location.search).get('next') || '';
-      if (next.startsWith('/') && !next.startsWith('//') && next !== '/login') {
+      if (isSafeRelativePath(next) && next !== '/login') {
         input.value = next;
       }
     } catch {
@@ -503,7 +505,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       try { sessionStorage.setItem('wcagStaff', '1'); } catch {}
       document.dispatchEvent(new CustomEvent('wcag:logged-in', { detail: { role } }));
       const nextRaw = String(data.next || fd.get('next') || '').trim();
-      if (nextRaw.startsWith('/') && !nextRaw.startsWith('//') && nextRaw !== '/login') {
+      if (isSafeRelativePath(nextRaw) && nextRaw !== '/login') {
         window.location.assign(nextRaw);
         return;
       }

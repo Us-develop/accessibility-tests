@@ -36,6 +36,16 @@ function listen(app) {
 }
 
 describe('safeNextAfterLogin', () => {
+  it('rejects paths a browser would resolve to another site', () => {
+    assert.equal(safeNextAfterLogin('/\\evil.com'), '/');
+    assert.equal(safeNextAfterLogin('/\\/evil.com'), '/');
+    assert.equal(safeNextAfterLogin('/\t/evil.com'), '/');
+    assert.equal(safeNextAfterLogin('/\n/evil.com'), '/');
+    assert.equal(safeNextAfterLogin('/account\\..\\x'), '/');
+    assert.equal(safeNextAfterLogin('//evil.com'), '/');
+    assert.equal(customerLoginNext('/\\evil.com'), '/account');
+  });
+
   it('rejects login self-loops', () => {
     assert.equal(safeNextAfterLogin('/login'), '/');
     assert.equal(safeNextAfterLogin('/login?next=/account'), '/');
@@ -92,6 +102,9 @@ describe('customer login HTTP', () => {
     assert.match(html, /name="next" value="\/account"/);
     assert.doesNotMatch(html, /reports and APIs/);
     assert.doesNotMatch(html, /Email or staff username/);
+
+    const offsite = await fetch(`${origin}/login?next=%2F%5Cevil.com`);
+    assert.match(await offsite.text(), /name="next" value="\/account"/);
 
     const loop = await fetch(`${origin}/login?next=%2Flogin`);
     const loopHtml = await loop.text();
