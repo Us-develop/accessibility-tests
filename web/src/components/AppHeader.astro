@@ -42,6 +42,8 @@ function stepHref(stepKey: Step['key']): string | null {
 const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
 const access = Astro.locals?.access;
 const sessionHint = access?.role === 'staff' || access?.role === 'customer';
+const isCustomer = access?.role === 'customer';
+const onHome = Astro.url.pathname === '/';
 ---
 
 <header class="app-header" data-screen-label="App header">
@@ -95,6 +97,14 @@ const sessionHint = access?.role === 'staff' || access?.role === 'customer';
             All scans
           </a>
         ) : null}
+        <a class="btn btn-primary btn-sm" href="/" aria-current={onHome ? 'page' : undefined}>Start new scan</a>
+        <a
+          class="btn btn-ghost btn-sm wcag-header-balance"
+          id="wcag-header-balance"
+          href="/account#tokens"
+          data-customer={isCustomer ? '1' : undefined}
+          hidden
+        ></a>
         <a class="btn btn-ghost btn-sm wcag-header-account" href="/account">Account</a>
         <a class="btn btn-ghost btn-sm" href="/pricing">Pricing</a>
         <span class="muted" style="font-size: 13px;">WCAG 2.2 AA aligned</span>
@@ -113,6 +123,27 @@ const sessionHint = access?.role === 'staff' || access?.role === 'customer';
 </header>
 
 <script>
+  import { balanceLong, balanceShort, fetchBalance } from '../lib/balance.js';
+
+  /** Fill the balance link for a signed-in customer; keep it hidden for everyone else. */
+  async function refreshHeaderBalance(force = false) {
+    const el = document.getElementById('wcag-header-balance');
+    if (!el) return;
+    if (!force && el.dataset.customer !== '1') {
+      el.hidden = true;
+      return;
+    }
+    const balance = await fetchBalance();
+    if (!balance) {
+      el.hidden = true;
+      return;
+    }
+    el.dataset.customer = '1';
+    el.textContent = balanceShort(balance);
+    el.setAttribute('aria-label', `Your balance: ${balanceLong(balance)}. Open your account.`);
+    el.hidden = false;
+  }
+
   function syncHeaderNav() {
     document.querySelectorAll('details.app-header-nav').forEach((el) => {
       if (!(el instanceof HTMLDetailsElement)) return;
@@ -129,7 +160,14 @@ const sessionHint = access?.role === 'staff' || access?.role === 'customer';
       }
     });
     window.addEventListener('resize', syncHeaderNav);
-    document.addEventListener('astro:page-load', syncHeaderNav);
+    document.addEventListener('astro:page-load', () => {
+      syncHeaderNav();
+      refreshHeaderBalance();
+    });
+    document.addEventListener('wcag:logged-in', (event) => {
+      if (event.detail?.role === 'customer') refreshHeaderBalance(true);
+    });
+    document.addEventListener('wcag:balance-changed', () => refreshHeaderBalance(true));
   }
   syncHeaderNav();
 </script>
@@ -142,6 +180,10 @@ const sessionHint = access?.role === 'staff' || access?.role === 'customer';
     display: none;
   }
   :global(body:not(.is-staff):not(.is-customer)) .wcag-header-account {
+    display: none;
+  }
+  /* .btn sets display, which would otherwise beat the hidden attribute. */
+  .wcag-header-balance[hidden] {
     display: none;
   }
   .btn-all-scans {
