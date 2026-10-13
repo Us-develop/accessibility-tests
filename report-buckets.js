@@ -4,15 +4,10 @@
  */
 import { getRemediation } from './remediation-data.js';
 
-/** Passes that are true on almost every modern page and must not inflate the score. */
-export const VACUOUS_PASS_IDS = new Set([
-  'no-auto-refresh',
-  'tabindex-positive',
-  'flash-alternative',
-]);
+import { errorsBreakdown, PAGE_LOAD_CHECK_ID, VACUOUS_PASS_IDS } from './scoring.js';
+import { overallScore } from './score-model.js';
 
-/** Infrastructure failure recorded when Playwright cannot open a URL. Not a WCAG check. */
-export const PAGE_LOAD_CHECK_ID = 'page-load';
+export { PAGE_LOAD_CHECK_ID, VACUOUS_PASS_IDS };
 
 function hostnameFromUrl(raw) {
   try {
@@ -308,44 +303,28 @@ export function effortToPoints(effort) {
 }
 
 /**
- * Passed / applicable counts for the automated score (same rules as scoreFromReport).
+ * The Errors part of the score (see scoring.js), in the shape older callers use.
+ * `passed` and `applicable` are severity weights, not counts of checks.
  * @param {object} reportData
- * @returns {{ passed: number, applicable: number, score: number | null }}
+ * @returns {{ passed: number, applicable: number, score: number | null, hasCritical: boolean }}
  */
 export function scoreBreakdownFromReport(reportData) {
   if (!reportData || typeof reportData !== 'object') {
-    return { passed: 0, applicable: 0, score: null };
+    return { passed: 0, applicable: 0, score: null, hasCritical: false };
   }
-  let pass = 0;
-  let fail = 0;
-  let warn = 0;
-  for (const row of reportData.customResults || []) {
-    if (row.status === 'info') continue;
-    if (row.id === PAGE_LOAD_CHECK_ID) continue;
-    if (row.status === 'pass' && VACUOUS_PASS_IDS.has(row.id)) continue;
-    if (row.status === 'pass') pass += 1;
-    else if (row.status === 'fail') fail += 1;
-    else if (row.status === 'warn') warn += 1;
-  }
-  let axeViolations = 0;
-  let axePasses = 0;
-  for (const data of Object.values(reportData.axeResults || {})) {
-    axeViolations += Number((data && data.violations && data.violations.length) || 0);
-    axePasses += Number((data && data.passes && data.passes.length) || 0);
-  }
-  const passed = pass + axePasses;
-  const applicable = pass + fail + warn + axeViolations + axePasses;
-  if (applicable === 0) return { passed: 0, applicable: 0, score: null };
+  const errors = errorsBreakdown(reportData);
   return {
-    passed,
-    applicable,
-    score: Math.max(0, Math.min(100, Math.round((passed / applicable) * 100))),
+    passed: errors.passedWeight,
+    applicable: errors.applicableWeight,
+    score: errors.score,
+    hasCritical: errors.hasCritical,
   };
 }
 
 /**
- * Automated score 0–100, or null when nothing scored.
- * Excludes info rows and vacuous passes. Axe incomplete is not treated as a pass.
+ * Errors score 0–100: automated failures weighted by severity, averaged over
+ * pages. Null when no page was scored. This is the headline for a guest and
+ * one of three parts of the overall score for a customer.
  * @param {object} reportData
  * @returns {number | null}
  */
@@ -354,22 +333,24 @@ export function scoreFromReport(reportData) {
 }
 
 /**
- * Score that treats each manual checklist item as an extra applicable check.
- * Ticked items count as passed; unticked items stay in the denominator.
- * @param {{ passed?: number, applicable?: number } | null | undefined} breakdown
+ * Overall score with no "to review" items counted as reviewed.
+ * Kept for server-rendered pages that only know the manual tick count.
+ * @param {{ score?: number | null, hasCritical?: boolean } | null | undefined} breakdown
  * @param {number} manualChecked
  * @param {number} manualTotal
+ * @param {{ reviewDone?: number, reviewTotal?: number }} [review]
  * @returns {number | null}
  */
-export function combinedScoreWithManual(breakdown, manualChecked, manualTotal) {
-  const autoPassed = Number(breakdown?.passed) || 0;
-  const autoApplicable = Number(breakdown?.applicable) || 0;
-  if (autoApplicable === 0) return null;
-  const total = Math.max(0, Number(manualTotal) || 0);
-  const checked = Math.max(0, Math.min(Number(manualChecked) || 0, total));
-  const applicable = autoApplicable + total;
-  if (applicable === 0) return null;
-  return Math.max(0, Math.min(100, Math.round(((autoPassed + checked) / applicable) * 100)));
+export function combinedScoreWithManual(breakdown, manualChecked, manualTotal, review = {}) {
+  const result = overallScore({
+    errors: breakdown?.score ?? null,
+    hasCritical: Boolean(breakdown?.hasCritical),
+    manualDone: manualChecked,
+    manualTotal,
+    reviewDone: review.reviewDone || 0,
+    reviewTotal: review.reviewTotal || 0,
+  });
+  return result ? result.overall : null;
 }
 
 export function countAxeIncomplete(reportData) {

@@ -45,7 +45,9 @@ if (existsSync(manualProgressPath)) {
 }
 const manualTotal = MANUAL_TODO_GROUPS.reduce((s, g) => s + g.items.length, 0);
 const combinedScore =
-  combinedScoreWithManual(payload.scoreBreakdown, manualChecked.length, manualTotal) ?? payload.scoreClamp;
+  combinedScoreWithManual(payload.scoreBreakdown, manualChecked.length, manualTotal, {
+    reviewTotal: payload.scoreModel.reviewKeys.length,
+  }) ?? payload.scoreClamp;
 
 const statementMetaPath = join(reportDir, 'statement-meta.json');
 let statementMeta: any = null;

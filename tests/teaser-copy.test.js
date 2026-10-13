@@ -25,7 +25,8 @@ describe('teaser, loading, and catalog CTAs', () => {
   it('shows the automated /100 score in the teaser title, not two scores as a fraction', () => {
     assert.match(dashboard, /\$\{scoreClamp\}\/100/);
     assert.doesNotMatch(dashboard, /\$\{scoreClamp\} \/ \$\{combinedScore\}/);
-    assert.match(dashboard, /\{#if !locked\}/);
+    // Guests see the errors score only; the three-part breakdown is for signed-in reports.
+    assert.match(dashboard, /\{#if !locked && scoreParts\.length > 0\}/);
     assert.match(teaser, /guestToken: token/);
   });
 

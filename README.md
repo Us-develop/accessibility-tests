@@ -74,6 +74,24 @@ The public homepage stays the free 1-page **Gratis snapshot** (one per person, g
 - **Assisted review:** The suite combines axe-core (WCAG 2.2 A/AA tags), custom heuristics, and a manual checklist. It is **not** a complete WCAG audit or legal sign-off. See `/limitations` in the web UI. The product’s own statement is `/accessibility`. `node scripts/self-scan.mjs` builds the app and fails if public pages still have critical/serious axe violations or a `no-horizontal-scroll` fail at 320px or 1280px.
 - **Reports:** Axe results are placed in **one primary checklist chapter** per rule (so chapter charts do not double-count the same axe issue). Use the per-page violation list for the canonical axe finding list.
 
+## How the score works
+
+One overall score out of 100, made of three parts. The model is in `score-model.js`; `scoring.js` turns a scan result into its inputs.
+
+| Part | Weight | What it measures | 100 when |
+| --- | --- | --- | --- |
+| Errors | 60% | Automated failures (axe violations and failed custom checks) | No automated failure remains |
+| To review | 15% | Warnings: findings the tool cannot decide by itself | Every warning is fixed or marked as reviewed |
+| Manual checks | 25% | The human checklist | Every item is ticked |
+
+- **Errors, per page:** 100 x weight of rules that passed / weight of rules that passed or failed. A rule counts once per page however many elements fail it. Weights by severity: critical 10, serious 7, moderate 3, minor 1 (for axe rules, the rule's own severity in axe-core). The site figure is the average over the scanned pages.
+- **Overall** is 100 only when all three parts are 100, and stays at 79 or below while a critical failure remains.
+- **Points to gain:** each failing rule shows how many overall points fixing it everywhere is worth. This is exact, not an estimate.
+- Guests and the static HTML report show the Errors score, because they have no manual or review state.
+- 100 means nothing is left that this tool can find and the manual checks are done. It is not WCAG conformance.
+
+The scanner always records which axe rules passed (rule ids only), because the Errors part needs them. The former `ENABLE_AXE_PASSES` setting is gone.
+
 ## Benchmarks in the report
 
 The static report shows published reference figures next to a run's own findings, in the section "How common are these problems? (indicative)". They come from [The WebAIM Million](https://webaim.org/projects/million/) and live in `benchmarks.js` together with the edition they were taken from.

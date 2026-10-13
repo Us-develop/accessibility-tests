@@ -110,8 +110,7 @@ const dashboardProps = {
   manualGroups: MANUAL_TODO_GROUPS,
   manualInitialChecked: manualChecked,
   manualTotal,
-  autoPassed: payload.scoreBreakdown?.passed ?? 0,
-  autoApplicable: payload.scoreBreakdown?.applicable ?? 0,
+  scoreModel: payload.scoreModel,
   coveredScCount: payload.coveredScCount ?? 0,
   wcagAaCount: payload.wcagAaCount ?? 56,
 };

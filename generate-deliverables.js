@@ -685,7 +685,7 @@ function buildPostDashboardSectionHtml({ fixOrderItems, scoreClamp }) {
     </section>
     <section class="extra-stats">
       <h2>How to read these numbers</h2>
-      <div class="bench-note info">Automated score ${scoreClamp}/100 is not WCAG 2.2 AA or EAA conformance. Category counts come from this run only. We do not invent industry averages or lost-revenue estimates.</div>
+      <div class="bench-note info">Errors score ${scoreClamp}/100 is not WCAG 2.2 AA or EAA conformance. Category counts come from this run only. We do not invent industry averages or lost-revenue estimates.</div>
     </section>
   `;
 }
@@ -704,7 +704,7 @@ export function generateClientPresentation(data, outputDir) {
   const pagesAffected = metrics.pagesAffected;
   const mostAffected = metrics.mostAffectedPages.slice(0, 7);
   const complianceHeadline = 'Automated findings — not a conformance claim';
-  const complianceNote = `Automated score ${scoreClamp}/100 is the share of applicable machine checks that passed. It is not WCAG 2.2 AA or EAA compliance.`;
+  const complianceNote = `${scoreClamp}/100 is the errors score: automated failures weighted by severity, each rule counted once per page and averaged over the pages scanned. The overall score in the dashboard also counts findings to review and the manual checks. It is not WCAG 2.2 AA or EAA compliance.`;
   const topRoadmap = uniqueByRule(fixOrderItems).slice(0, 5);
 
   let html = `<!DOCTYPE html>
@@ -823,7 +823,7 @@ export function generateClientPresentation(data, outputDir) {
     <p class="audit-meta">Audited ${totalPages} page${totalPages === 1 ? '' : 's'} · ${auditedDate} · WCAG 2.2</p>
 
     <section class="kpi-grid" aria-label="Top metrics">
-      <div class="kpi"><div class="label">Overall score</div><div class="value warn">${scoreClamp} / 100</div></div>
+      <div class="kpi"><div class="label">Errors score</div><div class="value warn">${scoreClamp} / 100</div></div>
       <div class="kpi"><div class="label">Total issues</div><div class="value">${issuesCount}</div></div>
       <div class="kpi"><div class="label">Critical issues</div><div class="value fail">${criticalIssues}</div></div>
       <div class="kpi"><div class="label">Pages affected</div><div class="value">${pagesAffected} / ${Math.max(1, totalPages)}</div></div>

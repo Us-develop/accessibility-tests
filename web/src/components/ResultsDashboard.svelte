@@ -5,6 +5,7 @@
   import SeverityBadge from './SeverityBadge.svelte';
   import CodeBlock from './CodeBlock.svelte';
   import ManualChecklist from './ManualChecklist.svelte';
+  import { CRITICAL_CAP, overallScore } from '../../../score-model.js';
 
   /**
    * @typedef {{ url: string, title: string, errors: number, warnings: number, passed: number }} PageRow
@@ -65,8 +66,8 @@
    *   manualGroups: ManualGroup[],
    *   manualInitialChecked: string[],
    *   manualTotal: number,
-   *   autoPassed?: number,
-   *   autoApplicable?: number,
+   *   scoreModel?: { errors: number | null, hasCritical: boolean, reviewKeys: string[] },
+   *   reviewedInitial?: string[],
    *   coveredScCount?: number,
    *   wcagAaCount?: number,
    *   scoreAvailable?: boolean,
@@ -106,8 +107,8 @@
     manualGroups,
     manualInitialChecked = [],
     manualTotal,
-    autoPassed = 0,
-    autoApplicable = 0,
+    scoreModel = { errors: null, hasCritical: false, reviewKeys: [] },
+    reviewedInitial = [],
     coveredScCount = 0,
     wcagAaCount = 56,
     scoreAvailable = true,
@@ -168,13 +169,33 @@
   const totalChecks = $derived(severityCounts.errors + severityCounts.warnings + severityCounts.passed + severityCounts.notice);
   const pctPassed = $derived(totalChecks > 0 ? Math.round((severityCounts.passed / totalChecks) * 100) : 0);
   const scoreDelta = $derived(previousScore != null && scoreAvailable ? scoreClamp - previousScore : null);
-  const combinedScore = $derived.by(() => {
-    if (!scoreAvailable || autoApplicable <= 0) return null;
-    const applicable = autoApplicable + manualTotal;
-    if (applicable <= 0) return null;
-    const checked = Math.max(0, Math.min(manualChecked, manualTotal));
-    return Math.max(0, Math.min(100, Math.round(((autoPassed + checked) / applicable) * 100)));
-  });
+  /** Keys of "to review" findings a person has marked as reviewed. */
+  let reviewedKeys = $state(reviewedInitial);
+  const reviewTotal = $derived(scoreModel.reviewKeys.length);
+  const reviewDone = $derived(scoreModel.reviewKeys.filter((key) => reviewedKeys.includes(key)).length);
+  /** The three-part score (score-model.js), recomputed as boxes are ticked. */
+  const scoreResult = $derived(
+    scoreAvailable
+      ? overallScore({
+          errors: scoreModel.errors ?? scoreClamp,
+          hasCritical: scoreModel.hasCritical,
+          reviewDone,
+          reviewTotal,
+          manualDone: manualChecked,
+          manualTotal,
+        })
+      : null
+  );
+  const combinedScore = $derived(scoreResult ? scoreResult.overall : null);
+  const scoreParts = $derived(
+    scoreResult
+      ? [
+          { key: 'errors', label: 'Errors', value: scoreResult.errors, detail: 'automated failures' },
+          { key: 'review', label: 'To review', value: scoreResult.review, detail: `${reviewDone}/${reviewTotal} reviewed` },
+          { key: 'manual', label: 'Manual checks', value: scoreResult.manual, detail: `${manualChecked}/${manualTotal} ticked` },
+        ]
+      : []
+  );
 
   /** Pie segments for the issue distribution donut on the Overview tab. */
   const distSegs = $derived([
@@ -337,34 +358,52 @@
       <div class="hero-scores">
         <div class="hero-score-block">
           <div class="hero-score-donut-wrap">
-            <ScoreDonut score={scoreAvailable ? scoreClamp : null} size={130} stroke={12} {threshold} label="" />
+            <ScoreDonut score={locked ? (scoreAvailable ? scoreClamp : null) : combinedScore} size={130} stroke={12} {threshold} label="" />
             <details class="score-info" aria-label="How is the score calculated?">
               <summary aria-label="Score formula">i</summary>
               <div class="score-info-pop">
-                <strong style="display:block; margin-bottom: 6px;">When is it 100?</strong>
+                <strong style="display:block; margin-bottom: 6px;">How the score works</strong>
                 <p style="margin: 0 0 8px; font-size: 12px;">
-                  <strong>Without manual checks</strong> hits 100 only when a new scan has
-                  no automated errors, warnings, or axe violations. Fix the issues, then re-run.
+                  <strong>Errors (60%)</strong>: automated failures. Each rule counts once per page,
+                  weighted by severity, averaged over the pages scanned. Fix them and re-scan.
                 </p>
                 <p style="margin: 0 0 8px; font-size: 12px;">
-                  <strong>With manual checks</strong> hits 100 only when that automated score is
-                  already 100 <em>and</em> all {manualTotal} human items are ticked.
-                  Ticking the list while errors remain cannot reach 100.
+                  <strong>To review (15%)</strong>: findings the tool cannot decide by itself.
+                  Fix them or mark them as reviewed.
+                </p>
+                <p style="margin: 0 0 8px; font-size: 12px;">
+                  <strong>Manual checks (25%)</strong>: the {manualTotal} human checks.
+                </p>
+                <p style="margin: 0 0 8px; font-size: 12px;">
+                  The overall score is 100 only when all three are 100, and stays at {CRITICAL_CAP} or
+                  below while a critical error remains.
                 </p>
                 <p style="margin: 0; font-size: 12px;">
-                  100 on either donut is still not WCAG 2.2 AA or EAA conformance — automation
-                  and this checklist do not cover every success criterion.
+                  100 means nothing is left that this tool can find and the manual checks are done.
+                  It is not WCAG 2.2 AA or EAA conformance: automation and this checklist do not
+                  cover every success criterion.
                 </p>
               </div>
             </details>
           </div>
-          <div class="hero-score-label">Without manual checks</div>
+          <div class="hero-score-label">{locked ? 'Errors score' : 'Overall score'}</div>
+          {#if !locked && scoreResult?.capped}
+            <div class="hero-score-cap">Held at {CRITICAL_CAP} until critical errors are fixed</div>
+          {/if}
         </div>
-        {#if !locked}
-        <div class="hero-score-block">
-          <ScoreDonut score={combinedScore} size={130} stroke={12} {threshold} label="" />
-          <div class="hero-score-label">With manual checks · {manualChecked}/{manualTotal}</div>
-        </div>
+        {#if !locked && scoreParts.length > 0}
+        <dl class="hero-score-parts" aria-label="Score parts">
+          {#each scoreParts as part (part.key)}
+            <div class="hero-score-part">
+              <dt>{part.label}</dt>
+              <dd>
+                <span class="hero-score-part-value">{part.value}</span>
+                <span class="hero-score-part-bar" aria-hidden="true"><span style="width: {part.value}%;"></span></span>
+                <span class="hero-score-part-detail">{part.detail}</span>
+              </dd>
+            </div>
+          {/each}
+        </dl>
         {/if}
       </div>
       <div>
@@ -372,7 +411,7 @@
           <span class="dot" style="background: {passing ? '#8DFFB7' : '#FFB985'};"></span>
           {automatedLabel} &middot; scanned {auditedDate}
         </span>
-        <h1 class="hero-title">{primaryHost || 'This scan'} &middot; {scoreAvailable ? `${scoreClamp}/100` : 'n/a'}</h1>
+        <h1 class="hero-title">{primaryHost || 'This scan'} &middot; {scoreAvailable ? (locked || combinedScore == null ? `${scoreClamp}/100` : `${combinedScore}/100`) : 'n/a'}</h1>
         <div class="hero-meta">
           <span><strong style="color: #FFB985;">{severityCounts.errors}</strong> errors</span>
           <span><strong style="color: #F3AAFF;">{severityCounts.warnings}</strong> warnings</span>
@@ -390,9 +429,13 @@
           </span>
         </div>
         <p class="hero-disclaimer">
-          Automated scores only — not a WCAG 2.2 AA or EAA conformance claim.
-          100 without checks = all automated issues gone on a re-scan.
-          100 with checks = that, plus every manual item ticked.
+          Not a WCAG 2.2 AA or EAA conformance claim.
+          {#if locked}
+            The errors score is 100 when a re-scan finds no automated errors.
+          {:else}
+            The overall score is 100 when a re-scan finds no automated errors, every finding to review is
+            fixed or reviewed, and every manual check is ticked.
+          {/if}
           <a class="link" href="/limitations" style="color: inherit; text-decoration: underline;">What we can and cannot test</a>
           {#if !locked && hasLoadedPages}
             ·
@@ -499,16 +542,16 @@
         <!-- BIG STATS -->
         <div class="stat-strip" class:compact={variant === 'compact'} class:detailed={variant === 'detailed'}>
           <div class="stat" style="background: var(--us-lilac); color: var(--us-lilac-text);">
-            <div class="stat-label">Without manual checks</div>
+            <div class="stat-label">Errors score</div>
             <div class="stat-value">{scoreAvailable ? scoreClamp : 'n/a'}{#if scoreAvailable}<span class="stat-suffix">/100</span>{/if}</div>
             {#if scoreDelta != null}
               <div class="stat-sub">{scoreDelta >= 0 ? `+${scoreDelta}` : scoreDelta} since last audit</div>
             {/if}
           </div>
           <div class="stat" style="background: var(--us-mint); color: var(--us-mint-text);">
-            <div class="stat-label">With manual checks</div>
+            <div class="stat-label">Overall score</div>
             <div class="stat-value">{combinedScore != null ? combinedScore : 'n/a'}{#if combinedScore != null}<span class="stat-suffix">/100</span>{/if}</div>
-            <div class="stat-sub">{manualChecked}/{manualTotal} verified</div>
+            <div class="stat-sub">{manualChecked}/{manualTotal} manual · {reviewDone}/{reviewTotal} reviewed</div>
           </div>
           <div class="stat" style="background: #FCE8E5; color: var(--us-peach-text);">
             <div class="stat-label">Errors</div>
@@ -677,6 +720,9 @@
               </div>
               {#if variant !== 'compact'}
                 <span class="tag tag-outline" style="font-size: 11px;">{urlsForFix(item).length || 1} page{urlsForFix(item).length === 1 ? '' : 's'}</span>
+              {/if}
+              {#if item.scoreGain > 0}
+                <span class="tag tag-success" style="font-size: 11px;" title="Overall score gained by fixing this rule on every page where it fails">+{item.scoreGain} score</span>
               {/if}
               <span class="tag tag-lilac" style="font-size: 11px;">{impactToEffort(item)} pts</span>
               <span style="color: var(--fg-3);">›</span>
@@ -977,6 +1023,55 @@
   }
   .hero-score-donut-wrap {
     position: relative;
+  }
+  .hero-score-cap {
+    font-size: 11px;
+    max-width: 150px;
+    text-align: center;
+    color: #FFB985;
+  }
+  .hero-score-parts {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    min-width: 190px;
+  }
+  .hero-score-part dt {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.75;
+  }
+  .hero-score-part dd {
+    margin: 2px 0 0;
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    align-items: center;
+    column-gap: 8px;
+  }
+  .hero-score-part-value {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .hero-score-part-bar {
+    display: block;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+    overflow: hidden;
+  }
+  .hero-score-part-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: #8DFFB7;
+  }
+  .hero-score-part-detail {
+    grid-column: 2;
+    font-size: 11px;
+    opacity: 0.75;
   }
   .score-info {
     position: absolute;
