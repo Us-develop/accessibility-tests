@@ -36,6 +36,7 @@ import {
   duplicateIdSnippet,
 } from './duplicate-ids.js';
 import { occurrenceDetailsFromCustom, occurrenceDetailsFromAxe } from './occurrence-details.js';
+import { buildPublishedBenchmarks } from './benchmarks.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUTPUT_DIR = join(__dirname, 'reports');
@@ -329,55 +330,11 @@ export function generateReport(reportData, options = {}) {
   const categoryStats = computeCategoryStats(fixOrderItems);
   const categoryMax = Math.max(1, ...categoryStats.map((c) => c.count));
   const topCategoryCards = [...categoryStats].sort((a, b) => b.count - a.count).slice(0, 3);
-  const industryAvg = 71;
-  const top10Threshold = 88;
-  const betterThan = Math.max(5, Math.min(95, scoreClamp - 24));
-  const gapToAvg = scoreClamp - industryAvg;
-  const closeGapIssues = Math.max(1, Math.round(Math.abs(gapToAvg) * 2));
-  const top10Issues = Math.max(0, Math.round((top10Threshold - scoreClamp) * 1.6));
-  const avgByLabel = {
-    'Color contrast': 58,
-    'Form labels': 72,
-    'Missing alt text': 65,
-    'Keyboard nav': 68,
-    'Screen reader': 74,
-    'Link clarity': 69,
-    Headings: 70,
-  };
-  const categoryScores = categoryStats.map((c) => {
-    const avg = avgByLabel[c.label] ?? 70;
-    const scoreVal = Math.max(8, Math.min(96, Math.round(92 - c.count * 4)));
-    return { label: c.label, you: scoreVal, avg, diff: scoreVal - avg };
-  }).sort((a, b) => a.label.localeCompare(b.label)).slice(0, 6);
-  const distLeft = Math.max(4, Math.min(96, scoreClamp));
-  const avgLeft = industryAvg;
-  const thresholds = [30, 48, 71, 82, 88];
-  const quickWinsCount = fixOrderItems.filter((i) => i.impact === 'high' && i.effort === 'simple').length;
-  const projectedQuick = Math.min(100, scoreClamp + Math.max(6, quickWinsCount * 3));
-  const projectedFull = Math.min(100, scoreClamp + Math.max(14, Math.round(fixOrderItems.slice(0, 5).length * 4.5)));
-  const projectedPercentile = projectedFull >= 88 ? 'Top 10%' : projectedFull >= 80 ? 'Top 20%' : projectedFull >= 71 ? 'Top 38%' : 'Top 50%';
-  const visualUsers = Math.max(180, (disabilityStats['Blindness'] || 0) * 28 + (disabilityStats['Low Vision'] || 0) * 22);
-  const motorUsers = Math.max(140, (disabilityStats['Dexterity/Motor Disabilities'] || 0) * 18);
-  const cognitiveUsers = Math.max(120, (disabilityStats['Cognitive Disabilities'] || 0) * 15 + (disabilityStats['Reading Disabilities'] || 0) * 10);
-  const hearingUsers = Math.max(80, (disabilityStats['Deafness and Hard-of-Hearing'] || 0) * 14);
-  const agingUsers = Math.max(160, (disabilityStats['Low Vision'] || 0) * 20);
-  const temporaryUsers = Math.max(100, (disabilityStats['Various'] || 0) * 2);
-  const userImpactRows = [
-    ['Visual impairment', visualUsers],
-    ['Motor disability', motorUsers],
-    ['Cognitive disability', cognitiveUsers],
-    ['Hearing impairment', hearingUsers],
-    ['Low vision / aging', agingUsers],
-    ['Temporary disability', temporaryUsers],
-  ];
-  const maxImpactUsers = Math.max(1, ...userImpactRows.map(([, v]) => v));
+  const benchmarks = buildPublishedBenchmarks(reportData);
   const topPath = (() => {
     const first = mostAffected[0]?.url || '';
-    try { return new URL(first).pathname || '/'; } catch { return '/checkout'; }
+    try { return new URL(first).pathname || '/'; } catch { return 'this site'; }
   })();
-  const estimatedAffectedUsers = Math.max(300, Math.round((criticalIssues * 90 + issueMetrics.pagesAffected * 40) / 10) * 10);
-  const revenueLow = Math.max(1500, Math.round((estimatedAffectedUsers * 3.2) / 100) * 100);
-  const revenueHigh = Math.max(3000, Math.round((estimatedAffectedUsers * 5.8) / 100) * 100);
 
   let html = `<!DOCTYPE html>
 <html lang="en">
@@ -488,22 +445,13 @@ export function generateReport(reportData, options = {}) {
     .bench-note.bad { background: var(--fail-soft); color: #872012; }
     .bench-note.info { background: var(--info-soft); color: #294899; }
     .bench-note.good { background: var(--pass-soft); color: #048255; margin-top: 0; }
-    .dist-card { position: relative; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-height: 190px; }
-    .dist-area { position: absolute; left: 14px; right: 14px; bottom: 38px; top: 36px; background: linear-gradient(180deg, rgba(144,182,221,.7) 0%, rgba(144,182,221,.5) 60%, rgba(144,182,221,.35) 100%); clip-path: polygon(0% 100%, 8% 98%, 16% 95%, 28% 88%, 40% 76%, 50% 58%, 58% 42%, 66% 30%, 75% 24%, 84% 31%, 92% 48%, 100% 70%, 100% 100%); border-top: 2px solid #2f6fb1; }
-    .dist-marker { position: absolute; bottom: 62px; transform: translateX(-50%); font-size: .9rem; font-weight: 600; }
-    .dist-marker::after { content: ''; position: absolute; left: 50%; transform: translateX(-50%); top: 20px; width: 2px; height: 72px; background: currentColor; opacity: .65; }
-    .dist-marker.you { color: var(--fail); } .dist-marker.avg { color: #707070; }
-    .dist-axis { position: absolute; left: 14px; right: 14px; bottom: 8px; display: flex; justify-content: space-between; font-size: .86rem; color: var(--text-muted); }
     .split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .cat-table { width: 100%; border-collapse: collapse; }
     .cat-table th, .cat-table td { border-bottom: 1px solid var(--border); padding: 8px 6px; text-align: left; }
     .cat-table th { color: var(--text-muted); font-weight: 600; }
-    .percent-bars { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
-    .p-row { margin-bottom: 8px; }
-    .p-track { height: 12px; background: #efefed; border-radius: 999px; overflow: hidden; }
-    .p-fill { display: block; height: 100%; border-radius: 999px; }
-    .p-fill.c0 { background: #e69197; } .p-fill.c1 { background: #c73b42; } .p-fill.c2 { background: #a6c3e5; } .p-fill.c3 { background: #91c353; } .p-fill.c4 { background: #58bea0; } .p-fill.you { background: #d98200; }
-    .p-label { margin-top: 4px; font-size: .86rem; color: var(--text-muted); }
+    .cat-table tbody th { color: var(--text); font-weight: 400; text-align: left; }
+    .bench-intro { margin: 0 0 12px; font-size: .95rem; }
+    .bench-note a { color: inherit; text-decoration: underline; }
     .impact-intro { margin: 0 0 12px; color: var(--text); font-size: 1.03rem; }
     .impact-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
     .impact-card { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
@@ -516,7 +464,7 @@ export function generateReport(reportData, options = {}) {
     .impact-highlight { margin-top: 12px; background: var(--warn-soft); color: #872012; border: 1px solid rgba(235, 137, 22, 0.35); border-radius: 10px; padding: 12px; font-size: 1.03rem; }
     @media (max-width: 900px) { .kpi-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } .stats-panels { grid-template-columns: 1fr; } .compliance-card { grid-template-columns: 1fr; } }
     @media (max-width: 900px) { .quick-grid { grid-template-columns: 1fr; } .bench-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } .category-bars { grid-template-columns: repeat(2, minmax(0,1fr)); min-height: 0; } }
-    @media (max-width: 900px) { .split { grid-template-columns: 1fr; } .dist-marker::after { height: 56px; } }
+    @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
     @media (max-width: 900px) { .impact-grid { grid-template-columns: 1fr; } }
     .manual-section { padding: 28px 32px; background: var(--bg); border-top: 1px solid var(--border); }
     .manual-section h2 { font-size: 1.1rem; font-weight: 700; margin: 0 0 14px; }
@@ -579,12 +527,6 @@ export function generateReport(reportData, options = {}) {
     .suggested-fixes .pill.impact-low { color: var(--pass); background: var(--pass-soft); border-color: #b8e8cc; }
     .bottom-insights { padding: 18px 32px 26px; border-top: 1px solid var(--border); background: var(--surface); }
     .bottom-insights h3 { margin: 0 0 10px; font-size: 1rem; letter-spacing: .06em; text-transform: uppercase; }
-    .est-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin: 0 0 12px; }
-    .est-card { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
-    .est-card .lbl { font-size: .95rem; color: var(--text); margin-bottom: 6px; }
-    .est-card .val { font-size: 2rem; font-weight: 700; line-height: 1; }
-    .est-card .val.warn { color: #c97700; }
-    .est-card .val.good { color: var(--pass); }
     .insight-green { background: var(--pass-soft); color: #048255; border: 1px solid #b8e8cc; border-radius: 10px; padding: 11px 12px; font-size: 1.02rem; margin-bottom: 16px; }
     .impact-box { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 6px; }
     .impact-box p { margin: 0 0 10px; }
@@ -716,36 +658,18 @@ export function generateReport(reportData, options = {}) {
 
     <div class="extra-stats">
       <h3>How to read this report</h3>
-      <div class="bench-note info">This HTML is generated from the same automated run as the live dashboard. Industry averages, visitor estimates, and “better than X%” figures are not included because we do not have that data. The 0–100 figure is an automated check ratio, not WCAG 2.2 AA or EAA conformance.</div>
+      <div class="bench-note info">This HTML is generated from the same automated run as the live dashboard. It contains no visitor estimates, percentile rankings or projected scores, because we have no data to support them. The only outside figures are the published ones in the next section, shown for indication. The 0–100 figure is an automated check ratio, not WCAG 2.2 AA or EAA conformance.</div>
     </div>
     <div class="extra-stats">
-      <h3>Score distribution — where you sit</h3>
-      <div class="dist-card">
-        <div class="dist-area"></div>
-        <div class="dist-marker you" style="left:${distLeft}%;">You ${scoreClamp}</div>
-        <div class="dist-axis"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
-      </div>
-    </div>
-    <div class="extra-stats split">
-      <div>
-        <h3>Category score vs industry avg</h3>
-        <table class="cat-table">
-          <thead><tr><th>Category</th><th>You</th><th>Avg</th><th>Diff</th></tr></thead>
-          <tbody>
-            ${categoryScores.map((r) => `<tr><td>${escapeHtml(r.label)}</td><td>${r.you}</td><td>${r.avg}</td><td style="color:${r.diff >= 0 ? '#41bd73' : '#df2020'}">${r.diff >= 0 ? '+' : ''}${r.diff}</td></tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-      <div>
-        <h3>Percentile thresholds</h3>
-        <div class="percent-bars">
-          ${thresholds.map((t, idx) => `<div class="p-row"><div class="p-track"><span class="p-fill c${idx}" style="width:${Math.min(100, t)}%"></span></div><div class="p-label">${idx === 0 ? 'Bottom 10% < 30' : idx === 1 ? 'Bottom 25% < 48' : idx === 2 ? 'Median 71' : idx === 3 ? 'Top 25% > 82' : 'Top 10% > 88'}</div></div>`).join('')}
-          <div class="p-row"><div class="p-track"><span class="p-fill you" style="width:${Math.min(100, scoreClamp)}%"></span></div><div class="p-label">You (${scoreClamp})</div></div>
-        </div>
-      </div>
-    </div>
-    <div class="extra-stats">
-      <div class="bench-note info">Category bars above are counts of automated findings in this run, not an industry ranking.</div>
+      <h3>How common are these problems? (indicative)</h3>
+      <p class="bench-intro">${escapeHtml(benchmarks.source.publisher)} tests ${escapeHtml(benchmarks.source.sample)} every year. In its ${escapeHtml(benchmarks.source.edition)} edition, ${benchmarks.source.pagesWithFailuresPct}% of those home pages had at least one detected WCAG 2 failure, with ${benchmarks.source.averageErrorsPerPage} detected errors per page on average. The six most common failure types are listed below, next to what this scan found.</p>
+      <table class="cat-table">
+        <thead><tr><th scope="col">Failure type</th><th scope="col">Share of home pages (${escapeHtml(benchmarks.source.publisher)})</th><th scope="col">Found in this scan</th></tr></thead>
+        <tbody>
+          ${benchmarks.rows.map((r) => `<tr><th scope="row">${escapeHtml(r.label)}</th><td>${r.pct}%</td><td>${benchmarks.pagesScanned === 0 ? 'n/a' : r.found ? `Yes, on ${r.pagesAffected} of ${benchmarks.pagesScanned} page${benchmarks.pagesScanned === 1 ? '' : 's'}` : 'Not detected'}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="bench-note info">For indication only. Source: <a href="${escapeHtml(benchmarks.source.url)}" target="_blank" rel="noopener">${escapeHtml(benchmarks.source.name)}</a>, ${escapeHtml(benchmarks.source.edition)}. Those figures come from a different tool (${escapeHtml(benchmarks.source.tool)}) and from home pages only, so they are not a ranking of this site and cannot be compared directly with the score above. "Not detected" means this scan's automated checks did not find it, not that it is absent.</div>
     </div>
     <div class="extra-stats">
       <h3>Business impact & legal risk</h3>
@@ -1039,21 +963,7 @@ export function generateReport(reportData, options = {}) {
     ` : ''}
 
     <div class="bottom-insights">
-      <h3>Estimated score after fixes</h3>
-      <div class="est-grid">
-        <div class="est-card">
-          <div class="lbl">After quick wins (steps 1-2)</div>
-          <div class="val warn">~${projectedQuick}</div>
-        </div>
-        <div class="est-card">
-          <div class="lbl">After full roadmap (all 5)</div>
-          <div class="val good">~${projectedFull}</div>
-        </div>
-        <div class="est-card">
-          <div class="lbl">Projected percentile</div>
-          <div class="val good">${projectedPercentile}</div>
-        </div>
-      </div>
+      <h3>After the fixes</h3>
       <div class="insight-green">Re-run the scan after fixes to compare automated scores. Score change is not proof of WCAG conformance.</div>
 
       <div class="impact-box">

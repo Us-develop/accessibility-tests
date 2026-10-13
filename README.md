@@ -74,6 +74,15 @@ The public homepage stays the free 1-page **Gratis snapshot** (one per person, g
 - **Assisted review:** The suite combines axe-core (WCAG 2.2 A/AA tags), custom heuristics, and a manual checklist. It is **not** a complete WCAG audit or legal sign-off. See `/limitations` in the web UI. The product’s own statement is `/accessibility`. `node scripts/self-scan.mjs` builds the app and fails if public pages still have critical/serious axe violations or a `no-horizontal-scroll` fail at 320px or 1280px.
 - **Reports:** Axe results are placed in **one primary checklist chapter** per rule (so chapter charts do not double-count the same axe issue). Use the per-page violation list for the canonical axe finding list.
 
+## Benchmarks in the report
+
+The static report shows published reference figures next to a run's own findings, in the section "How common are these problems? (indicative)". They come from [The WebAIM Million](https://webaim.org/projects/million/) and live in `benchmarks.js` together with the edition they were taken from.
+
+- They are for indication only. WebAIM uses a different tool (WAVE) on home pages only, so the figures are not a ranking and cannot be compared directly with this scanner's score. The report says so next to the table.
+- The report contains no percentile rankings, industry averages or projected scores of our own: we have no data behind such numbers yet.
+- WebAIM publishes a new edition each spring. Update `edition`, `retrieved` and all figures in `benchmarks.js` together.
+- Planned: once enough scans exist in our own database, add percentiles computed from them alongside the published figures.
+
 ## Web UI
 
 After `AUTH_ENABLED=false npm start` (or `APP_PASSWORD` set — see above), open:

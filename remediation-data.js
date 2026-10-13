@@ -151,10 +151,12 @@ export const REMEDIATION_MAP = {
     impact: 'high',
     effort: 'simple',
   },
+  // 4.1.1 Parsing was removed in WCAG 2.2. Duplicate ids matter where an id is
+  // referenced (label for, aria-labelledby, aria-controls), which is 1.3.1 / 4.1.2.
   'unique-ids': {
-    wcag: ['4.1.1'],
-    snippet: 'Ensure every id attribute is unique within the page.',
-    impact: 'high',
+    wcag: ['1.3.1', '4.1.2'],
+    snippet: 'Ensure every id attribute is unique within the page, above all ids that labels or ARIA attributes point to.',
+    impact: 'medium',
     effort: 'moderate',
   },
   'img-alt': {
@@ -236,7 +238,7 @@ export const REMEDIATION_MAP = {
     effort: 'complex',
   },
   'video-autoplay': {
-    wcag: ['1.4.2'],
+    wcag: ['1.4.2', '2.2.2'],
     snippet: 'Don\'t autoplay with sound, or provide pause/mute controls.',
     impact: 'medium',
     effort: 'simple',
@@ -278,7 +280,7 @@ export const REMEDIATION_MAP = {
     effort: 'simple',
   },
   'no-auto-refresh': {
-    wcag: ['2.2.2'],
+    wcag: ['2.2.1'],
     snippet: 'Avoid auto-refresh. If required, allow user to extend time.',
     impact: 'medium',
     effort: 'moderate',
@@ -304,7 +306,7 @@ export const AXE_REMEDIATION = {
   'image-alt': REMEDIATION_MAP['img-alt'],
   'label': REMEDIATION_MAP['form-labels'],
   'link-name': REMEDIATION_MAP['link-text'],
-  'button-name': { wcag: ['2.1.1', '4.1.2'], snippet: '<button>Label</button> or aria-label="Label"', impact: 'high', effort: 'simple' },
+  'button-name': { wcag: ['4.1.2'], snippet: '<button>Label</button> or aria-label="Label"', impact: 'high', effort: 'simple' },
   'color-contrast': { wcag: ['1.4.3'], snippet: 'Increase contrast to 4.5:1 (normal) or 3:1 (large). Use WebAIM contrast checker.', impact: 'high', effort: 'moderate' },
   'landmark-one-main': REMEDIATION_MAP['single-main'],
   'region': { wcag: ['1.3.1', '2.4.1'], snippet: 'Use landmarks: main, nav, header, footer, aside.', impact: 'medium', effort: 'moderate' },
