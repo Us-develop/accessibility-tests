@@ -58,6 +58,12 @@ export function buildDbPoolConfig(env = process.env) {
 
 const poolConfig = buildDbPoolConfig();
 export const dbPool = poolConfig ? new Pool(poolConfig) : null;
+// pg emits `error` on the pool when an idle connection drops (Postgres restart,
+// network blip). Without a listener that is an uncaught exception, which exits
+// the process and every scan with it. The pool replaces the client by itself.
+dbPool?.on('error', (err) => {
+  console.error('[db] idle client error:', err?.message || err);
+});
 
 function txQuery(text, values) {
   const client = txAls.getStore() || dbPool;
@@ -456,14 +462,23 @@ export async function initDb() {
 /**
  * Mark queued/running DB rows as error when the matching reports/_queue file is gone.
  * Prevents a stale unique-index row from locking out later scans (permanent 409).
+ *
+ * `minAgeMs` skips rows touched more recently than that. Use it whenever the
+ * server is live: a scan that just finished has already lost its queue file a
+ * moment before its final status is written. At boot nothing is in flight, so 0 is fine.
+ * Returns the swept runs so the caller can refund them.
  */
-export async function sweepStaleActiveRuns() {
-  if (!dbPool) return { swept: 0 };
+export async function sweepStaleActiveRuns({ minAgeMs = 0 } = {}) {
+  if (!dbPool) return { swept: 0, runs: [] };
   const { rows } = await txQuery(
-    `SELECT id, run_id FROM runs WHERE status IN ('queued', 'running')`
+    `SELECT id, run_id FROM runs
+      WHERE status IN ('queued', 'running')
+        AND updated_at <= NOW() - ($1::bigint * INTERVAL '1 millisecond')`,
+    [Math.max(0, Math.floor(Number(minAgeMs) || 0))]
   );
   const queueDir = join(REPORTS_BASE, '_queue');
   let swept = 0;
+  const runs = [];
   for (const row of rows) {
     const jobFile = join(queueDir, `${row.id}:${row.run_id}.json`);
     if (existsSync(jobFile)) continue;
@@ -475,10 +490,30 @@ export async function sweepStaleActiveRuns() {
         WHERE id = $1 AND run_id = $2 AND status IN ('queued', 'running')`,
       [row.id, row.run_id]
     );
+    if (updated.rowCount) runs.push({ domain: row.id, runId: row.run_id });
     swept += updated.rowCount || 0;
   }
   if (swept) console.info('[db] swept stale active runs', { swept });
-  return { swept };
+  return { swept, runs };
+}
+
+/**
+ * Customer runs that ended in error with a consumed entitlement that was never
+ * given back (the refund failed, or the process died before it ran).
+ */
+export async function dbListUnrefundedErrorRunIds(limit = 500) {
+  if (!dbPool) return [];
+  const { rows } = await txQuery(
+    `SELECT run_id FROM runs
+      WHERE status = 'error'
+        AND refunded_at IS NULL
+        AND entitlement_json IS NOT NULL
+        AND user_id IS NOT NULL AND user_id <> 'staff'
+      ORDER BY updated_at
+      LIMIT $1`,
+    [limit]
+  );
+  return rows.map((row) => row.run_id);
 }
 
 /**

@@ -7,6 +7,7 @@ const {
   dbUpsertRun,
   dbGetRun,
   sweepStaleActiveRuns,
+  dbListUnrefundedErrorRunIds,
   dbClaimStripeEvent,
   dbClaimRunRefund,
   dbAddTokensToLot,
@@ -124,5 +125,41 @@ describe('postgres-backed paths', { skip: !haveDb }, () => {
     const reversed = await dbApplyTokenLotClawback(intent, 0);
     assert.equal(reversed.tokensRemaining, 10);
     assert.equal(reversed.tokensClawedBack, 0);
+  });
+
+  it('leaves a freshly touched run alone when the sweep has a minimum age', async () => {
+    await initDb();
+    const runId = `2026-09-15T00-00-00Z-fresh${Date.now().toString(16).slice(-8)}`;
+    await dbUpsertRun('fresh.example', runId, { status: 'running', userId: 'staff' });
+
+    const guarded = await sweepStaleActiveRuns({ minAgeMs: 60_000 });
+    assert.equal(guarded.runs.some((run) => run.runId === runId), false);
+    assert.equal((await dbGetRun('fresh.example', runId))?.status, 'running');
+
+    const unguarded = await sweepStaleActiveRuns();
+    assert.deepEqual(
+      unguarded.runs.filter((run) => run.runId === runId),
+      [{ domain: 'fresh.example', runId }]
+    );
+    assert.equal((await dbGetRun('fresh.example', runId))?.status, 'error');
+  });
+
+  it('lists errored customer runs that still hold an entitlement until they are refunded', async () => {
+    await initDb();
+    const stamp = Date.now().toString(16).slice(-8);
+    const owed = `2026-09-15T00-00-00Z-owed${stamp}`;
+    const staffRun = `2026-09-15T00-00-00Z-stff${stamp}`;
+    const noEntitlement = `2026-09-15T00-00-00Z-none${stamp}`;
+    await dbUpsertRun('owed.example', owed, { status: 'error', userId: 'u-owed', entitlement: { lots: [], scans: 1 } });
+    await dbUpsertRun('owed.example', staffRun, { status: 'error', userId: 'staff', entitlement: { lots: [], scans: 1 } });
+    await dbUpsertRun('owed.example', noEntitlement, { status: 'error', userId: 'u-owed' });
+
+    const before = await dbListUnrefundedErrorRunIds();
+    assert.equal(before.includes(owed), true);
+    assert.equal(before.includes(staffRun), false);
+    assert.equal(before.includes(noEntitlement), false);
+
+    await dbClaimRunRefund(owed);
+    assert.equal((await dbListUnrefundedErrorRunIds()).includes(owed), false);
   });
 });

@@ -2,6 +2,8 @@ import { randomBytes } from 'crypto';
 import {
   dbPool,
   dbClaimRunRefund,
+  dbListUnrefundedErrorRunIds,
+  sweepStaleActiveRuns,
   dbCountActiveRunsForUser,
   dbDecrementUsage,
   dbGetPlan,
@@ -377,6 +379,29 @@ export async function refundScanEntitlement(runId) {
   rec.refundedAt = new Date().toISOString();
   await restoreScanEntitlement(rec.userId, rec);
   return rec;
+}
+
+/**
+ * Safety net for runs the normal path lost track of (Postgres only):
+ *  1. rows still queued/running with no queue file become `error`, so the
+ *     one-active-scan rule stops answering 409 for that customer;
+ *  2. every errored customer run whose entitlement was never returned is refunded.
+ * Both steps are idempotent. Returns the swept runs so the caller can drop its
+ * own in-memory state for them.
+ */
+export async function reconcileStaleRuns({ minAgeMs = 0 } = {}) {
+  if (!useDb()) return { swept: 0, runs: [], refunded: 0 };
+  const { swept, runs } = await sweepStaleActiveRuns({ minAgeMs });
+  let refunded = 0;
+  for (const runId of await dbListUnrefundedErrorRunIds()) {
+    try {
+      if (await refundScanEntitlement(runId)) refunded += 1;
+    } catch (err) {
+      console.error(`[billing] refund for run ${runId} failed:`, err?.message || err);
+    }
+  }
+  if (refunded) console.info('[billing] refunded stranded scan entitlements', { refunded });
+  return { swept, runs, refunded };
 }
 
 /**

@@ -83,7 +83,12 @@ import { assertProductionPublicBaseUrl, publicBaseUrl } from './config.mjs';
 import { registerSeoRoutes } from './seo-routes.mjs';
 import { recordConsent } from './consents.mjs';
 import { LEGAL_PRIVACY_VERSION } from './legal-versions.mjs';
-import { consumeAndQueueCustomerScan, refundScanEntitlement, rememberRunEntitlement } from './billing.mjs';
+import {
+  consumeAndQueueCustomerScan,
+  reconcileStaleRuns,
+  refundScanEntitlement,
+  rememberRunEntitlement,
+} from './billing.mjs';
 import { MAX_PAGES_PER_CUSTOMER_RUN } from './plan-catalog.mjs';
 import {
   customerHasActiveScan,
@@ -321,14 +326,66 @@ async function getValidJiraAccess(domain) {
   return next;
 }
 
+const RECONCILE_FIRST_RUN_MS = 60 * 1000;
+const RECONCILE_EVERY_MS = 5 * 60 * 1000;
+/** Rows touched more recently than this may belong to a scan that is just finishing. */
+const RECONCILE_MIN_AGE_MS = 2 * 60 * 1000;
+let runReconcilerStarted = false;
+
+/**
+ * Every few minutes, clear runs that are stuck as queued/running with no queue
+ * job behind them and refund errored runs that never got their tokens back.
+ * Postgres only; without it run state does not outlive the process.
+ */
+function startRunReconciler() {
+  if (!dbPool || runReconcilerStarted) return;
+  runReconcilerStarted = true;
+  const tick = async () => {
+    try {
+      const { runs } = await reconcileStaleRuns({ minAgeMs: RECONCILE_MIN_AGE_MS });
+      for (const { domain, runId } of runs) {
+        const key = runKey(domain, runId);
+        const state = runStatus.get(key);
+        if (state && state.status !== 'done' && state.status !== 'error') {
+          rememberRunStatus(key, { ...state, status: 'error', error: 'The scan was interrupted.' });
+        }
+      }
+    } catch (err) {
+      console.error('[reconcile]', err?.message || err);
+    }
+  };
+  setTimeout(tick, RECONCILE_FIRST_RUN_MS).unref?.();
+  setInterval(tick, RECONCILE_EVERY_MS).unref?.();
+}
+
+const TERMINAL_WRITE_RETRY_MS = [1000, 5000, 20000];
+
+/**
+ * Write run state to the database without blocking the caller. A final status
+ * (`done` / `error`) is retried: if that write is lost the row stays "running"
+ * and the customer gets 409 on every new scan until the periodic reconcile runs.
+ */
+function persistRunState(domain, runId, state, attempt = 0) {
+  dbUpsertRun(domain, runId, state).catch((err) => {
+    console.error(`[run ${domain}/${runId}] DB state update failed:`, err.message);
+    const terminal = state.status === 'done' || state.status === 'error';
+    if (!terminal || attempt >= TERMINAL_WRITE_RETRY_MS.length) return;
+    const timer = setTimeout(() => {
+      // Skip the retry when something newer has been written in the meantime.
+      const current = runStatus.get(runKey(domain, runId));
+      if (current && current.status !== state.status) return;
+      persistRunState(domain, runId, state, attempt + 1);
+    }, TERMINAL_WRITE_RETRY_MS[attempt]);
+    timer.unref?.();
+  });
+}
+
 function runStatePatch(domain, runId, patch) {
   const key = runKey(domain, runId);
   const prev = runStatus.get(key) || {};
   const next = { ...prev, ...patch, domain, runId };
   rememberRunStatus(key, next);
-  dbUpsertRun(domain, runId, next).catch((err) => {
-    console.error(`[run ${domain}/${runId}] DB state update failed:`, err.message);
-  });
+  persistRunState(domain, runId, next);
   if (patch.status === 'error' && next.userId && next.userId !== 'staff') {
     void refundScanEntitlement(runId).catch((err) => {
       console.error(`[run ${domain}/${runId}] entitlement refund failed:`, err.message);
@@ -839,6 +896,7 @@ export function createAccessibilityApp(repoRoot, options = {}) {
   }
 
   recoverInterruptedJobs();
+  startRunReconciler();
   if (typeof options.lookup === 'function') {
     setUrlGuardLookup(options.lookup);
   }
@@ -1590,6 +1648,15 @@ app.post('/api/run', uploadSingleFile, async (req, res) => {
     });
   }
 
+  // The scan guard accepts some hosts that cannot be a report folder name (a
+  // trailing dot, an underscore, an IPv6 literal). Refuse them here, before any
+  // token is spent or any state is created.
+  if (!isValidDomain(domainKey)) {
+    return res.status(400).json({
+      error: `We can't scan ${domainKey} yet. Use a plain host name such as www.example.com.`,
+    });
+  }
+
   const domain = domainKey;
   // 409 only when this owner already has a run in progress — shared domains do not block others.
   if (!customerUser) {
@@ -1647,6 +1714,8 @@ app.post('/api/run', uploadSingleFile, async (req, res) => {
       );
       scanEntitlement = reserved.entitlement;
     } catch (err) {
+      // persistFn may have recorded a queued state before the transaction failed.
+      runStatus.delete(key);
       const status = Number(err?.status) || 400;
       return res.status(status).json({
         error: err.message || 'Scan is not allowed on this plan.',
@@ -1656,8 +1725,9 @@ app.post('/api/run', uploadSingleFile, async (req, res) => {
     }
   }
 
-  const reportDir = runDirOf(domain, runId);
+  let guestRunTracked = false;
   try {
+    const reportDir = runDirOf(domain, runId);
     if (!existsSync(reportDir)) mkdirSync(reportDir, { recursive: true });
     const statementMeta = staff ? parseStatementMeta(req.body || {}) : {};
     try {
@@ -1688,6 +1758,7 @@ app.post('/api/run', uploadSingleFile, async (req, res) => {
     rememberRunStatus(key, initialState);
     if (!fullReport) {
       trackGuestRunStart(ip);
+      guestRunTracked = true;
       persistGuestToken(guestToken, { domain, runId, url: urls[0], ip });
       markGuestFreeScan(req, res);
     }
@@ -1712,13 +1783,17 @@ app.post('/api/run', uploadSingleFile, async (req, res) => {
       hostResolverRules: hostResolverRulesFromTargets(filtered.targets),
     });
   } catch (err) {
-    if (customerUser) {
-      runStatePatch(domain, runId, {
-        status: 'error',
-        error: err?.message || String(err),
-        userId: customerUser.id,
-      });
-    }
+    // Whatever the tier, do not leave a run "queued" that never reached the queue:
+    // it would answer 409 for this owner until the next restart. For a customer
+    // the error state also returns the tokens that were just consumed.
+    console.error(`[run ${domain}/${runId}] could not be queued:`, err?.message || err);
+    if (guestRunTracked) trackGuestRunEnd(ip);
+    runStatePatch(domain, runId, {
+      status: 'error',
+      error: 'The scan could not be started.',
+      guestIp: null,
+      ...(customerUser ? { userId: customerUser.id } : {}),
+    });
     throw err;
   }
 
