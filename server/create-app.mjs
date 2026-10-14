@@ -56,6 +56,8 @@ import {
 import { scanProcessTimeoutMs, tailForLog } from './scan-child.mjs';
 import { carryReviewedForward, readReviewed, writeReviewed } from './reviewed.mjs';
 import { accessAllows } from './entitlements.mjs';
+import { isSafeRelativePath } from './safe-path.mjs';
+import { langSetCookie, normalizeLang } from '../i18n/index.mjs';
 import { buildTeaserPayload } from './teaser-payload.mjs';
 import {
   clearSessionCookies,
@@ -254,6 +256,7 @@ function isGuestOpenPath(req) {
     if (p === '/api/run' || p === '/api/lead' || p === '/api/access-request' || p === '/api/stripe/webhook') {
       return true;
     }
+    if (p === '/lang') return true;
     if (p.startsWith('/api/auth/')) return true;
   }
   return false;
@@ -2094,6 +2097,19 @@ app.get('/api/admin/leads', async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
+});
+
+/**
+ * Language switch: remember the choice in the wcag_lang cookie and go back to
+ * the page the visitor came from. A form post, so it works without JavaScript
+ * and is never triggered by a link prefetch or a crawler, as a GET would be.
+ */
+app.post('/lang', (req, res) => {
+  const lang = normalizeLang(req.body?.lang);
+  const next = typeof req.body?.next === 'string' && isSafeRelativePath(req.body.next) ? req.body.next : '/';
+  if (lang) res.append('Set-Cookie', langSetCookie(lang, { secure: process.env.NODE_ENV === 'production' }));
+  res.set('Cache-Control', 'no-store');
+  return res.redirect(303, next);
 });
 
 /**

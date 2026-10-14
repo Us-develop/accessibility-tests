@@ -1,4 +1,7 @@
 ---
+import { chromeTranslator } from '../lib/page-lang.js';
+import { LANGS } from '../../../i18n/index.mjs';
+
 interface Step {
   key: 'history' | 'results' | 'coverage' | 'sales' | 'statement' | 'developer';
   label: string;
@@ -15,16 +18,20 @@ interface Props {
   crumb?: string;
 }
 
-const { domain = null, runId = null, active = null, crumb = 'New scan' } = Astro.props;
+const tr = chromeTranslator(Astro);
+const { domain = null, runId = null, active = null, crumb = tr('header.crumb.newScan') } = Astro.props;
 
 const STEPS: Step[] = [
-  { key: 'history', label: 'History' },
-  { key: 'results', label: 'Results' },
-  { key: 'coverage', label: 'Coverage' },
-  { key: 'sales', label: 'Sales' },
-  { key: 'statement', label: 'Statement' },
-  { key: 'developer', label: 'Developer' },
+  { key: 'history', label: tr('header.step.history') },
+  { key: 'results', label: tr('header.step.results') },
+  { key: 'coverage', label: tr('header.step.coverage') },
+  { key: 'sales', label: tr('header.step.sales') },
+  { key: 'statement', label: tr('header.step.statement') },
+  { key: 'developer', label: tr('header.step.developer') },
 ];
+// Language switch: a small form, so it works without JavaScript and is not a GET.
+const backTo = `${Astro.url.pathname}${Astro.url.search}`;
+const LANG_NAMES: Record<string, string> = { nl: 'Nederlands', en: 'English' };
 
 function stepHref(stepKey: Step['key']): string | null {
   if (!domain) return null;
@@ -48,7 +55,7 @@ const onHome = Astro.url.pathname === '/';
 
 <header class="app-header" data-screen-label="App header">
   <div class="app-header-inner">
-    <a class="brand" href="/" aria-label="Us home">
+    <a class="brand" href="/" aria-label={tr('header.home')}>
       <span class="brand-marks" aria-hidden="true">
         <img src="/assets/logo-u-dark.svg" width="28" height="28" alt="" />
         <img src="/assets/logo-s-dark.svg" width="28" height="28" alt="" />
@@ -56,7 +63,7 @@ const onHome = Astro.url.pathname === '/';
     </a>
 
     {domain ? (
-      <nav class="nav-crumbs" aria-label="Audit progress" style="font-family: var(--font-mono);">
+      <nav class="nav-crumbs" aria-label={tr('header.progress')} style="font-family: var(--font-mono);">
         {(() => {
           const href = stepHref('history');
           return href ? (
@@ -73,13 +80,13 @@ const onHome = Astro.url.pathname === '/';
         ) : null}
       </nav>
     ) : (
-      <nav class="nav-crumbs" aria-label="Audit setup">
+      <nav class="nav-crumbs" aria-label={tr('header.setup')}>
         <span class="step active">{crumb}</span>
       </nav>
     )}
 
     <details class="app-header-nav">
-      <summary class="app-header-menu-toggle" aria-label="Open menu">
+      <summary class="app-header-menu-toggle" aria-label={tr('header.menu')}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
           <path d="M4 7h16M4 12h16M4 17h16" />
         </svg>
@@ -91,9 +98,9 @@ const onHome = Astro.url.pathname === '/';
           href="/audits"
           aria-current={Astro.url.pathname === '/audits' ? 'page' : undefined}
         >
-          All scans
+          {tr('header.allScans')}
         </a>
-        <a class="btn btn-primary btn-sm" href="/" aria-current={onHome ? 'page' : undefined}>Start new scan</a>
+        <a class="btn btn-primary btn-sm" href="/" aria-current={onHome ? 'page' : undefined}>{tr('header.startScan')}</a>
         <a
           class="btn btn-ghost btn-sm wcag-header-balance"
           id="wcag-header-balance"
@@ -101,16 +108,32 @@ const onHome = Astro.url.pathname === '/';
           data-customer={isCustomer ? '1' : undefined}
           hidden
         ></a>
-        <a class="btn btn-ghost btn-sm wcag-header-account" href="/account">Account</a>
-        <a class="btn btn-ghost btn-sm" href="/pricing">Pricing</a>
-        <span class="muted" style="font-size: 13px;">WCAG 2.2 AA aligned</span>
-        <a class="btn btn-ghost wcag-header-signup" href="/signup">Create account</a>
+        <a class="btn btn-ghost btn-sm wcag-header-account" href="/account">{tr('header.account')}</a>
+        <a class="btn btn-ghost btn-sm" href="/pricing">{tr('header.pricing')}</a>
+        <span class="muted" style="font-size: 13px;">{tr('header.aligned')}</span>
+        <form class="wcag-lang-switch" method="post" action="/lang" role="group" aria-label={tr('header.lang.label')} data-astro-reload>
+          <input type="hidden" name="next" value={backTo} />
+          {LANGS.map((code) => (
+            <button
+              type="submit"
+              class="btn btn-ghost btn-sm"
+              name="lang"
+              value={code}
+              lang={code}
+              aria-pressed={Astro.locals?.lang === code ? 'true' : 'false'}
+            >
+              <span aria-hidden="true">{code.toUpperCase()}</span>
+              <span class="sr-only">{LANG_NAMES[code]}</span>
+            </button>
+          ))}
+        </form>
+        <a class="btn btn-ghost wcag-header-signup" href="/signup">{tr('header.signup')}</a>
         <button type="button" class="btn btn-ghost wcag-header-login" id="wcag-header-login">
-          Log in
+          {tr('header.login')}
         </button>
         <div id="wcag-session-bar" class="wcag-session-bar" hidden={!sessionHint}>
-          <button type="button" id="wcag-logout-btn" class="wcag-session-logout" aria-label="Log out">
-            Log out
+          <button type="button" id="wcag-logout-btn" class="wcag-session-logout" aria-label={tr('header.logout')}>
+            {tr('header.logout')}
           </button>
         </div>
       </div>
@@ -120,6 +143,7 @@ const onHome = Astro.url.pathname === '/';
 
 <script>
   import { balanceLong, balanceShort, fetchBalance } from '../lib/balance.js';
+  import { pageLang, t } from '../../../i18n/index.mjs';
 
   /** Fill the balance link for a signed-in customer; keep it hidden for everyone else. */
   async function refreshHeaderBalance(force = false) {
@@ -136,7 +160,7 @@ const onHome = Astro.url.pathname === '/';
     }
     el.dataset.customer = '1';
     el.textContent = balanceShort(balance);
-    el.setAttribute('aria-label', `Your balance: ${balanceLong(balance)}. Open your account.`);
+    el.setAttribute('aria-label', t(pageLang(), 'header.balance.label', { balance: balanceLong(balance) }));
     el.hidden = false;
   }
 
@@ -182,6 +206,14 @@ const onHome = Astro.url.pathname === '/';
   /* .btn sets display, which would otherwise beat the hidden attribute. */
   .wcag-header-balance[hidden] {
     display: none;
+  }
+  .wcag-lang-switch {
+    display: inline-flex;
+    gap: 2px;
+  }
+  .wcag-lang-switch button[aria-pressed='true'] {
+    text-decoration: underline;
+    font-weight: 600;
   }
   .btn-all-scans {
     display: inline-flex;

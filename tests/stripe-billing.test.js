@@ -463,10 +463,10 @@ describe('stripe HTTP', () => {
 
   it('exposes pricing markup, account billing, and legal drafts', () => {
     const pricing = readFileSync(join(repoRoot, 'web/src/pages/pricing.astro'), 'utf8');
-    assert.match(pricing, /Gratis snapshot/);
-    assert.match(pricing, /Buy 10/);
-    assert.match(pricing, /Subscribe monthly/);
-    assert.match(pricing, /Us-diensten/);
+    // Pricing wording is in the dictionaries; the page asks for it by key.
+    for (const key of ['pricing.free.h2', 'pricing.tokens.buy', 'pricing.pro.monthly', 'pricing.services.h2']) {
+      assert.ok(pricing.includes(`tr('${key}'`), key);
+    }
     assert.match(readFileSync(join(repoRoot, 'web/src/lib/checkout.js'), 'utf8'), /\/api\/billing\/checkout/);
     assert.doesNotMatch(pricing, /centsWithVat/);
     const catalog = readFileSync(join(repoRoot, 'scripts/stripe-catalog.mjs'), 'utf8');

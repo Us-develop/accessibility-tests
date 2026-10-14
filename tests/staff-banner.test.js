@@ -9,9 +9,11 @@ const layout = readFileSync(join(repoRoot, 'web/src/layouts/Layout.astro'), 'utf
 const appCss = readFileSync(join(repoRoot, 'web/public/styles/app.css'), 'utf8');
 
 describe('staff session banner', () => {
-  it('is in the shared layout and only staff CSS shows it', () => {
+  it('is in the shared layout and only staff CSS shows it', async () => {
     assert.match(layout, /id="wcag-staff-banner"/);
-    assert.match(layout, /You are logged in as staff/);
+    // The wording lives in the dictionaries; the layout asks for it by key.
+    assert.match(layout, /tr\('layout\.staffBanner'\)/);
+    assert.equal((await import('../i18n/en.mjs')).default['layout.staffBanner'], 'You are logged in as staff');
     assert.match(layout, /role="status"/);
     assert.match(layout, /signedRole === 'staff' \? 'is-staff'/);
     assert.match(appCss, /\.wcag-staff-banner/);

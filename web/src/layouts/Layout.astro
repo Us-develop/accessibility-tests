@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { ClientRouter } from 'astro:transitions';
 import LoginModal from '../components/LoginModal.astro';
 import { companyIdentity } from '../../../server/company.mjs';
+import { chromeTranslator } from '../lib/page-lang.js';
 
 interface Props {
   title?: string;
@@ -15,8 +16,9 @@ interface Props {
   /** guest-ok: public pages. required: staff report/admin pages still lock until login. */
   authMode?: 'required' | 'guest-ok';
 }
+const tr = chromeTranslator(Astro);
 const {
-  title = 'Accessibility audit · Us',
+  title = tr('layout.defaultTitle'),
   description,
   canonical,
   ogImage = '/assets/og-default.png',
@@ -62,7 +64,7 @@ function ownerWeight(filename: string): string {
 }
 ---
 <!DOCTYPE html>
-<html lang="en" class={signedIn ? 'wcag-staff' : undefined}>
+<html lang={tr.lang} class={signedIn ? 'wcag-staff' : undefined}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -158,9 +160,9 @@ function ownerWeight(filename: string): string {
     </script>
   </head>
   <body data-wcag-auth={authMode} class={signedRole === 'staff' ? 'is-staff' : signedRole === 'customer' ? 'is-customer' : undefined}>
-    <a class="skip-link" href="#main">Skip to main content</a>
+    <a class="skip-link" href="#main">{tr('layout.skip')}</a>
     <div id="wcag-staff-banner" class="wcag-staff-banner" role="status">
-      You are logged in as staff
+      {tr('layout.staffBanner')}
     </div>
     <div
       id="wcag-main"
@@ -172,19 +174,19 @@ function ownerWeight(filename: string): string {
     </div>
     <LoginModal startLocked={gateLocked} />
     <footer class="site-legal">
-      <nav class="site-legal-links" aria-label="Legal">
-        <a href="/pricing">Pricing</a>
-        <a href="/terms">Terms</a>
-        <a href="/privacy">Privacy</a>
-        <a href="/cookies">Cookies</a>
-        <a href="/legal/subprocessors">Subprocessors</a>
-        <a href="/accessibility">Accessibility</a>
-        <a href="/contact?source=footer">Talk to a WCAG expert</a>
+      <nav class="site-legal-links" aria-label={tr('footer.aria')}>
+        <a href="/pricing">{tr('footer.pricing')}</a>
+        <a href="/terms">{tr('footer.terms')}</a>
+        <a href="/privacy">{tr('footer.privacy')}</a>
+        <a href="/cookies">{tr('footer.cookies')}</a>
+        <a href="/legal/subprocessors">{tr('footer.subprocessors')}</a>
+        <a href="/accessibility">{tr('footer.accessibility')}</a>
+        <a href="/contact?source=footer">{tr('cta.expert')}</a>
       </nav>
       {company.legalName ? (
         <p class="site-legal-identity">
           {company.legalName}
-          {company.vat ? ` · VAT ${company.vat}` : ''}
+          {company.vat ? ` · ${tr('footer.vat')} ${company.vat}` : ''}
           {company.kbo ? ` · KBO ${company.kbo}` : ''}
           {company.address ? ` · ${company.address}` : ''}
           {company.email ? (
@@ -219,8 +221,8 @@ function ownerWeight(filename: string): string {
     <noscript>
       <div class="wcag-noscript">
         {authMode === 'guest-ok'
-          ? 'Enable JavaScript to run a free accessibility check.'
-          : 'Enable JavaScript to sign in and use this app.'}
+          ? tr('layout.noscript.guest')
+          : tr('layout.noscript.required')}
       </div>
     </noscript>
     <style is:global>

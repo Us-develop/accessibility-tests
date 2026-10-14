@@ -23,6 +23,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
 
 <div
   id="wcag-login-modal"
+  lang={Astro.locals?.pageLang && Astro.locals.pageLang !== 'en' ? 'en' : undefined}
   class="wcag-login-overlay"
   data-start-locked={startLocked ? 'true' : 'false'}
   hidden={!startLocked}
