@@ -82,6 +82,24 @@ function guestIpAlreadyUsed(ip) {
   return Boolean(used[key]);
 }
 
+/**
+ * Sites a guest may scan for free as often as they like, without using up their
+ * one free scan: FREE_SCAN_UNLIMITED_HOSTS, a comma-separated list such as
+ * "about-us.be". A listed name also covers its www. form and the other way round.
+ * Meant for Us's own site, for demos. Empty by default.
+ * @param {string} hostname
+ */
+export function isUnlimitedFreeScanHost(hostname) {
+  const bare = (value) => String(value || '').trim().toLowerCase().replace(/\.$/, '').replace(/^www\./, '');
+  const host = bare(hostname);
+  if (!host) return false;
+  return String(process.env.FREE_SCAN_UNLIMITED_HOSTS || '')
+    .split(',')
+    .map(bare)
+    .filter(Boolean)
+    .includes(host);
+}
+
 /** Cookie or IP already claimed the one free guest snapshot. */
 export function guestFreebieClaimed(req) {
   return guestFreebieUsed(req) || guestIpAlreadyUsed(clientIp(req));
