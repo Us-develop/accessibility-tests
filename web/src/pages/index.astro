@@ -659,6 +659,19 @@ export const prerender = false;
     }
   }
 
+  /**
+   * After "free scan used" the button reads "See pricing" and leads there. Once
+   * the visitor types another address, ask the server again: some sites can be
+   * scanned without using the free scan (FREE_SCAN_UNLIMITED_HOSTS).
+   */
+  function resetFreebieLock() {
+    const form = document.getElementById('guest-run-form');
+    if (!(form instanceof HTMLFormElement) || form.dataset.freebieUsed !== '1') return;
+    delete form.dataset.freebieUsed;
+    const btn = document.getElementById('guest-submit-btn');
+    if (btn) btn.textContent = btn.dataset.label || 'Scan this page for free';
+  }
+
   async function submitGuestForm(form) {
     if (form.dataset.freebieUsed === '1') {
       window.location.href = '/pricing';
@@ -689,7 +702,10 @@ export const prerender = false;
           // Said right under the field, with the ways to continue, instead of
           // in the general error line at the bottom of the page.
           showFreebieUsed();
-          if (btn) btn.textContent = 'See pricing';
+          if (btn) {
+            btn.dataset.label = btn.dataset.label || btn.textContent.trim();
+            btn.textContent = 'See pricing';
+          }
           form.dataset.freebieUsed = '1';
           if (window.turnstile && turnstileWidgetId != null) window.turnstile.reset(turnstileWidgetId);
           return;
@@ -748,6 +764,9 @@ export const prerender = false;
 
   if (!globalThis.__wcagHomeScanBound) {
     globalThis.__wcagHomeScanBound = true;
+    document.addEventListener('input', (event) => {
+      if (event.target instanceof HTMLInputElement && event.target.id === 'guest-url') resetFreebieLock();
+    });
     // Capture-phase delegation survives Astro ClientRouter swaps; GET forms otherwise
     // navigate to /?url=... instead of starting a scan.
     document.addEventListener(

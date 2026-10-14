@@ -119,3 +119,13 @@ describe('guest scans', () => {
     await new Promise((resolve) => server.close(resolve));
   });
 });
+
+describe('the homepage after "free scan used"', () => {
+  it('asks the server again once the visitor types another address', async () => {
+    const { readFileSync } = await import('node:fs');
+    const home = readFileSync(join(repoRoot, 'web/src/pages/index.astro'), 'utf8');
+    assert.match(home, /event\.target\.id === 'guest-url'\) resetFreebieLock\(\)/);
+    assert.match(home, /delete form\.dataset\.freebieUsed;/);
+  });
+});
+
