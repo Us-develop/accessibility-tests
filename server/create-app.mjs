@@ -29,6 +29,7 @@ import {
   checkGuestFreeScan,
   markGuestFreeScan,
   guestFreebieClaimed,
+  isUnlimitedFreeScanHost,
   clientIp,
   guestIpHasRunningScan,
   isValidGuestToken,
@@ -1654,9 +1655,17 @@ app.post('/api/run', uploadSingleFile, async (req, res) => {
     });
   }
 
+  // A guest scanning a site on FREE_SCAN_UNLIMITED_HOSTS (Us's own site) is not
+  // limited to one free scan, and the scan does not use up the free scan either.
+  let freeScanExempt = false;
   if (!staff && !customerUser) {
     try {
-      checkGuestFreeScan(req);
+      freeScanExempt = isUnlimitedFreeScanHost(new URL(urls[0]).hostname);
+    } catch {
+      freeScanExempt = false;
+    }
+    try {
+      if (!freeScanExempt) checkGuestFreeScan(req);
       if (guestIpHasRunningScan(ip)) {
         return res.status(409).json({ error: 'A free scan is already running from this network. Please wait for it to finish.' });
       }
@@ -1805,7 +1814,7 @@ app.post('/api/run', uploadSingleFile, async (req, res) => {
       trackGuestRunStart(ip);
       guestRunTracked = true;
       persistGuestToken(guestToken, { domain, runId, url: urls[0], ip });
-      markGuestFreeScan(req, res);
+      if (!freeScanExempt) markGuestFreeScan(req, res);
     }
     if (!customerUser) {
       dbUpsertRun(domain, runId, { ...initialState, statementMeta }).catch((err) => {
