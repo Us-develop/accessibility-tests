@@ -28,14 +28,15 @@ sudo systemctl daemon-reload
 sudo systemctl enable accessibility.service
 ```
 
-Create `/etc/accessibility.env` (`chmod 600`) with every production variable from the root [`.env.example`](../.env.example). At minimum: `PORT=3000`, `NODE_ENV=production` (also set by the unit), `SESSION_SECRET`, `APP_PASSWORD`, `MAIL_FROM`, `PUBLIC_BASE_URL=https://wcag.about-us.be`, company identity, Stripe keys, and **`DATABASE_URL`**. The process **exits at startup** when `NODE_ENV=production` and `DATABASE_URL` is unset (JSON-store fallback is not used in production).
+Create `/etc/accessibility.env` (`chmod 600`) with every production variable from the root [`.env.example`](../.env.example). At minimum: `PORT=3000`, `NODE_ENV=production` (also set by the unit), `SESSION_SECRET`, `APP_PASSWORD`, `MAIL_FROM`, `PUBLIC_BASE_URL=https://wcag.about-us.be`, company identity, Stripe keys, **`DATABASE_URL`** and `PLAYWRIGHT_BROWSERS_PATH=/srv/accessibility-tests/.playwright`. The process **exits at startup** when `NODE_ENV=production` and `DATABASE_URL` is unset (JSON-store fallback is not used in production).
 
 If a drop-in still loads `/etc/accessibility-db.env`, merge those values into `/etc/accessibility.env` and remove the drop-in so there is one file.
 
 ```bash
 sudo -H -u deploy npm ci
 sudo -H -u deploy npm ci --prefix web
-sudo -u deploy npx playwright install chromium
+sudo -H -u deploy env PLAYWRIGHT_BROWSERS_PATH=/srv/accessibility-tests/.playwright npx playwright install chromium
+sudo npx playwright install-deps chromium
 sudo -H -u deploy npm run build --prefix web
 sudo systemctl restart accessibility.service
 sudo systemctl reload caddy
@@ -64,6 +65,7 @@ sudo -u deploy git log -1 --oneline
 # Only if package-lock.json or web/package-lock.json changed:
 # sudo -H -u deploy npm ci
 # sudo -H -u deploy npm ci --prefix web
+# sudo -H -u deploy env PLAYWRIGHT_BROWSERS_PATH=/srv/accessibility-tests/.playwright npx playwright install chromium
 
 sudo -H -u deploy npm run build --prefix web
 sudo systemctl restart accessibility.service
@@ -108,14 +110,22 @@ After the restart, run one scan of a public page and confirm it completes.
 
 ### If scans fail with "Executable doesn't exist"
 
-The unit sets `ProtectHome=true`, which hides `/home`. Playwright installs Chromium under the user's home by default. If the service cannot find it, install it inside the app folder and tell the app where it is:
+The browser the app expects is not in `/srv/accessibility-tests/.playwright`. The journal names the missing path, for example `chromium_headless_shell-1208`. Two usual causes:
+
+- **Playwright was upgraded.** A new Playwright version wants a new browser revision, and `npm ci` does not download it.
+- **The browser went to the wrong place.** The unit sets `ProtectHome=true`, which hides `/home`, so a Chromium installed under the deploy user's home is invisible to the service.
+
+Install it into the app folder, from inside that folder so the project's own Playwright version is used:
 
 ```bash
 cd /srv/accessibility-tests
 sudo -H -u deploy env PLAYWRIGHT_BROWSERS_PATH=/srv/accessibility-tests/.playwright npx playwright install chromium
-echo 'PLAYWRIGHT_BROWSERS_PATH=/srv/accessibility-tests/.playwright' | sudo tee -a /etc/accessibility.env
+sudo npx playwright install-deps chromium
+ls /srv/accessibility-tests/.playwright      # the revision must match the one in the journal
 sudo systemctl restart accessibility.service
 ```
+
+`/etc/accessibility.env` must contain the line `PLAYWRIGHT_BROWSERS_PATH=/srv/accessibility-tests/.playwright`. Edit the file with `sudo nano`; it takes `NAME=value` lines only, not commands.
 
 ## Monitoring
 

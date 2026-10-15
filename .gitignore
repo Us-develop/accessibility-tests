@@ -7,3 +7,6 @@ reports/
 .env.local
 content/
 *.imported
+
+# Chromium for the scanner on the server (PLAYWRIGHT_BROWSERS_PATH)
+.playwright/
