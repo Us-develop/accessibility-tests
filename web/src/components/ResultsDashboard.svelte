@@ -412,7 +412,7 @@
       <div class="hero-scores">
         <div class="hero-score-block">
           <div class="hero-score-donut-wrap">
-            <ScoreDonut score={locked ? (scoreAvailable ? scoreClamp : null) : combinedScore} size={130} stroke={12} {threshold} label="" />
+            <ScoreDonut score={combinedScore} size={130} stroke={12} {threshold} label="" />
             <details class="score-info" aria-label="How is the score calculated?">
               <summary aria-label="Score formula">i</summary>
               <div class="score-info-pop">
@@ -440,12 +440,12 @@
               </div>
             </details>
           </div>
-          <div class="hero-score-label">{locked ? 'Errors score' : 'Overall score'}</div>
-          {#if !locked && scoreResult?.capped}
+          <div class="hero-score-label">Overall score</div>
+          {#if scoreResult?.capped}
             <div class="hero-score-cap">Held at {CRITICAL_CAP} until critical errors are fixed</div>
           {/if}
         </div>
-        {#if !locked && scoreParts.length > 0}
+        {#if scoreParts.length > 0}
         <dl class="hero-score-parts" aria-label="Score parts">
           {#each scoreParts as part (part.key)}
             <div class="hero-score-part">
@@ -465,7 +465,7 @@
           <span class="dot" style="background: {passing ? '#8DFFB7' : '#FFB985'};"></span>
           {automatedLabel} &middot; scanned {auditedDate}
         </span>
-        <h1 class="hero-title">{primaryHost || 'This scan'} &middot; {scoreAvailable ? (locked || combinedScore == null ? `${scoreClamp}/100` : `${combinedScore}/100`) : 'n/a'}</h1>
+        <h1 class="hero-title">{primaryHost || 'This scan'} &middot; {combinedScore != null ? `${combinedScore}/100` : 'n/a'}</h1>
         <div class="hero-meta">
           <span><strong style="color: #FFB985;">{severityCounts.errors}</strong> errors</span>
           <span><strong style="color: #F3AAFF;">{severityCounts.warnings}</strong> warnings</span>
@@ -476,7 +476,7 @@
           <span>·</span>
           <span>
             {#if hasLoadedPages}
-              {pagesScannedCount} pages · automated WCAG 2.2 AA checks
+              {pagesScannedCount} {pagesScannedCount === 1 ? 'page' : 'pages'} · automated WCAG 2.2 AA checks
             {:else}
               0 pages scanned — nothing loaded
             {/if}
@@ -484,12 +484,8 @@
         </div>
         <p class="hero-disclaimer">
           Not a WCAG 2.2 AA or EAA conformance claim.
-          {#if locked}
-            The errors score is 100 when a re-scan finds no automated errors.
-          {:else}
-            The overall score is 100 when a re-scan finds no automated errors, every finding to review is
-            fixed or reviewed, and every manual check is ticked.
-          {/if}
+          The overall score is 100 when a re-scan finds no automated errors, every finding to review is
+          fixed or reviewed, and every manual check is ticked.
           <a class="link" href="/limitations" style="color: inherit; text-decoration: underline;">What we can and cannot test</a>
           {#if !locked && hasLoadedPages}
             ·

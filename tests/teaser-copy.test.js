@@ -22,11 +22,18 @@ describe('teaser, loading, and catalog CTAs', () => {
     assert.match(loadingPage, /free check/);
   });
 
-  it('shows the automated /100 score in the teaser title, not two scores as a fraction', () => {
-    assert.match(dashboard, /\$\{scoreClamp\}\/100/);
-    assert.doesNotMatch(dashboard, /\$\{scoreClamp\} \/ \$\{combinedScore\}/);
-    // Guests see the errors score only; the three-part breakdown is for signed-in reports.
-    assert.match(dashboard, /\{#if !locked && scoreParts\.length > 0\}/);
+  it('shows the overall score and its three parts to guests too, never the errors score alone', () => {
+    // A guest has not reviewed or ticked anything, so a clean scan must not read 100.
+    assert.match(dashboard, /\{combinedScore != null \? `\$\{combinedScore\}\/100` : 'n\/a'\}/);
+    assert.match(dashboard, /<ScoreDonut score=\{combinedScore\}/);
+    assert.match(dashboard, /\{#if scoreParts\.length > 0\}/);
+    assert.doesNotMatch(dashboard, /locked \? 'Errors score'/);
+    assert.doesNotMatch(dashboard, /The errors score is 100 when/);
+    assert.match(dashboard, /pagesScannedCount === 1 \? 'page' : 'pages'/);
+    // The teaser passes the number of findings to review, not their rule and page names.
+    assert.match(teaser, /reviewKeys: \(payload\.scoreModel\?\.reviewKeys \|\| \[\]\)\.map\(\(_, i\) => `locked-\$\{i\}`\)/);
+    assert.doesNotMatch(teaser, /reviewKeys: \[\]/);
+    assert.match(teaser, /manualInitialChecked: \[\]/);
     assert.match(teaser, /guestToken: token/);
   });
 
