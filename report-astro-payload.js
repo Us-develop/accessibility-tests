@@ -223,7 +223,7 @@ export function buildAstroMainReportPayload(reportData, { lang = 'en' } = {}) {
   const principles = buildPrinciples(reportData);
   const disabilities = buildDisabilities(reportData);
   const suggestedFixes = buildSuggestedFixes(fixOrderItems, 8);
-  const plainEnglish = buildPlainEnglishStats(reportData);
+  const plainEnglish = buildPlainEnglishStats(reportData, lang);
   const disabilityStats = Object.fromEntries(disabilities.map((d) => [d.label, d.issues]));
 
   const issueMetrics = computeIssueMetrics(reportData);

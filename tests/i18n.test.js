@@ -221,3 +221,24 @@ describe('report pages from phase F', () => {
     assert.match(coverage, /known\(`manual\.item\.\$\{item\.id\}`, item\.text\)/);
   });
 });
+
+describe('sales report', () => {
+  const deck = read('web/src/components/SalesDeck.svelte');
+  const sales = read('web/src/pages/report/[domain]/[runId]/sales.astro');
+
+  it('says what the trend did instead of always "trending up"', () => {
+    assert.doesNotMatch(deck, /You're trending up/);
+    assert.match(deck, /delta == null \? tr\('deck\.trend\.first'\) : delta > 0 \? tr\('deck\.trend\.up'\) : delta < 0 \? tr\('deck\.trend\.down'\) : tr\('deck\.trend\.flat'\)/);
+    assert.doesNotMatch(t('en', 'deck.next.h'), /eight tickets/);
+  });
+
+  it('counts only the reviewed marks of this scan, like the report does', () => {
+    assert.match(sales, /reviewDone: payload\.scoreModel\.reviewKeys\.filter\(\(key\) => reviewed\.has\(key\)\)\.length/);
+  });
+
+  it('follows the page language and marks fix titles from the scan', () => {
+    assert.match(sales, /const tr = usePageLang\(Astro\);/);
+    assert.match(sales, /lang: tr\.lang,/);
+    assert.match(deck, /<div lang=\{findingsAttr\}>/);
+  });
+});
