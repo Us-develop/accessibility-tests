@@ -119,6 +119,8 @@ export async function persistReportArtifactsToFtp(domain, runId, ftpConfig) {
     'accessibility-client.html',
     'accessibility-developers.html',
     'accessibility-statement.html',
+    'accessibility-statement.nl.html',
+    'accessibility-statement.en.html',
     'accessibility-results.json',
     'accessibility-results-previous.json',
     'statement-meta.json',

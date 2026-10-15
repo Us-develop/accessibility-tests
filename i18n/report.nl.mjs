@@ -558,7 +558,8 @@ export default {
   'stmtui.openHtml': 'Statische HTML openen',
   'stmtui.download': 'HTML downloaden',
   'stmtui.htmlEnglish': '(Engels)',
-  'stmtui.htmlNote': 'Het HTML-bestand is voorlopig in het Engels; een Nederlandse versie volgt.',
+  'stmtui.htmlOlder':
+    'Deze scan is ouder dan de Nederlandse versie van het bestand, dus het is alleen in het Engels beschikbaar.',
   'stmtui.langLabel': 'Taal van de verklaring',
   'stmtui.back': '← Terug naar de resultaten',
   'stmtui.developer': 'Herstellijst voor ontwikkelaars →',

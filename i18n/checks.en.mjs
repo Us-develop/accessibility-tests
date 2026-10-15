@@ -218,4 +218,88 @@ export default {
     'Add all required ARIA attributes for the role (e.g. combobox needs aria-expanded).',
   'fix.axe.form-field-multiple-labels': 'Each form control should have one associated label.',
   'fix.default': 'Review the issue and apply appropriate fix. See W3C WCAG guidelines.',
+
+  // ── Coverage notes and summary (WCAG coverage page) ───────────────
+  'covnote.1.1.1': 'Alt/name presence on images, SVG, canvas, maps — not whether text is meaningful.',
+  'covnote.1.2.1': 'Transcript / audio description quality is not tested.',
+  'covnote.1.2.2':
+    'Native <video> caption tracks only. YouTube/Vimeo is flagged for a human. Quality is not tested.',
+  'covnote.1.2.3': 'Audio description or media alternative is not tested.',
+  'covnote.1.2.4': 'Live captions are not tested.',
+  'covnote.1.2.5': 'Prerecorded audio description is not tested.',
+  'covnote.1.3.1':
+    'Landmarks, headings, tables, lists, and axe info/relationships rules. Programmatic relationships in custom widgets are often missed.',
+  'covnote.1.3.2': 'Meaningful reading order needs a human (and a screen reader).',
+  'covnote.1.3.3': 'Instructions that rely on shape, size, or location are not detected.',
+  'covnote.1.3.4': 'Orientation lock is not tested.',
+  'covnote.1.3.5': 'autocomplete / input purpose is not tested.',
+  'covnote.1.4.1': 'Link-vs-body colour heuristic only. Most “colour alone” cases need a human.',
+  'covnote.1.4.2': 'Flags autoplaying <audio>/<video>; does not prove a pause control exists.',
+  'covnote.1.4.3':
+    'Custom contrast plus axe. Skipped on huge DOMs (info). Heuristic, not a full visual audit.',
+  'covnote.1.4.4': 'Checks the viewport allows zoom. Does not test 200% reflow.',
+  'covnote.1.4.5': 'Images of text are not classified.',
+  'covnote.1.4.10':
+    '320px CSS overflow with a 10px tolerance. Does not prove two-dimensional scrolling is avoided everywhere.',
+  'covnote.1.4.11': 'Non-text contrast heuristic plus axe; same limits as 1.4.3.',
+  'covnote.1.4.12': 'Text spacing (user CSS) is not tested.',
+  'covnote.1.4.13': 'Hover/focus content dismiss and hoverable is not tested.',
+  'covnote.2.1.1':
+    'Positive tabindex warning and axe keyboard-related rules. Does not tab through the page.',
+  'covnote.2.1.2': 'Keyboard traps are not walked.',
+  'covnote.2.1.4': 'Single-character shortcuts are not detected.',
+  'covnote.2.2.1': 'Time limits are not tested.',
+  'covnote.2.2.2': 'Meta refresh / auto-refresh heuristic. Moving content generally needs a human.',
+  'covnote.2.3.1': 'Legacy Flash embed check only. Flashing content is not measured.',
+  'covnote.2.4.1': 'Skip-link presence and landmarks. Bypass that is not a skip link may be missed.',
+  'covnote.2.4.2': 'Title element exists. Uniqueness and descriptiveness are not tested.',
+  'covnote.2.4.3': 'Positive tabindex warning. DOM vs visual order is not tested.',
+  'covnote.2.4.4': '“Click here” / empty link heuristics. Purpose in context often needs a human.',
+  'covnote.2.4.5': 'Multiple ways to find pages is a site-level check.',
+  'covnote.2.4.6': 'Heading outline heuristic. Whether headings describe the topic is not tested.',
+  'covnote.2.4.7': 'Focus-indicator heuristic. Visibility in all states needs a human.',
+  'covnote.2.4.11': 'Focus not obscured (sticky headers, cookie bars) is not tested.',
+  'covnote.2.5.1': 'Path-based gestures are not tested.',
+  'covnote.2.5.2': 'Pointer cancellation is not tested.',
+  'covnote.2.5.3':
+    'Label in name (visible text vs accessible name) is not tested here as a dedicated check.',
+  'covnote.2.5.4': 'Motion actuation is not tested.',
+  'covnote.2.5.7': 'Dragging movements are not tested.',
+  'covnote.2.5.8':
+    '24×24 CSS px warning. Listed exceptions (inline links, etc.) are not applied automatically.',
+  'covnote.3.1.1': 'lang on <html>. Validity of the language code and language of parts are not tested.',
+  'covnote.3.1.2': 'Language of parts is not tested.',
+  'covnote.3.2.1': 'Context changes on focus are not tested.',
+  'covnote.3.2.2': 'Context changes on input are not tested.',
+  'covnote.3.2.3': 'Consistent navigation is a multi-page human check.',
+  'covnote.3.2.4': 'Consistent identification is a multi-page human check.',
+  'covnote.3.2.6': 'Consistent help is not tested.',
+  'covnote.3.3.1': 'Whether errors are identified in text is not tested automatically.',
+  'covnote.3.3.2': 'Label / placeholder-as-label heuristics. Instructions quality is not tested.',
+  'covnote.3.3.3': 'Error suggestions are not tested.',
+  'covnote.3.3.4': 'Error prevention for legal/financial data is not tested.',
+  'covnote.3.3.7': 'Redundant entry is not tested.',
+  'covnote.3.3.8': 'Accessible authentication is not tested.',
+  'covnote.4.1.1': 'Duplicate ids and axe parsing-related rules. WCAG 2.2 marks 4.1.1 obsolete.',
+  'covnote.4.1.2':
+    'Names on controls, iframes, SVG; axe name/role/value. Custom widgets often need a human.',
+  'covnote.4.1.3': 'aria-live / status-role heuristics. Correct announcement is not verified.',
+  'covtext.sc': '{id} {title} (Level {level})',
+  'covtext.checked.intro':
+    'This scan attempted automated checks that map to {attempted} of {total} WCAG 2.2 Level A and AA success criteria ({all} in total). Automation is based on presence or heuristics: a pass means the machine check did not fail, not that the criterion is met.',
+  'covtext.checked.fails': 'In this scan, automated failures or warnings still affect: {list}.',
+  'covtext.checked.none':
+    'In this scan, no mapped success criterion showed an automated failure or warning. That is not a WCAG pass.',
+  'covtext.notChecked':
+    '{n} success criteria are not checked by this scanner. Examples include caption quality, keyboard traps, accessible authentication and consistent navigation. axe-core and our own checks cannot see most of those.',
+  'covtext.manual.intro':
+    'Of those untested criteria, {n} can be covered with the Manual checks in the app (keyboard, screen reader, zoom, caption quality, meaningful names and related items).',
+  'covtext.manual.list': 'They include: {list}.',
+  'covtext.manual.honest': 'Ticking a box only counts if someone actually did that test.',
+  'covtext.path':
+    'If the automated findings are fixed and the manual and assistive-technology checks are done thoroughly (real keyboard, screen reader and zoom testing, not just ticks), you will have covered both what this scanner can find and the human checks this product includes. That is the path this tool is designed for, and it is necessary for WCAG 2.2 AA. It is not sufficient on its own: {n} success criteria remain outside this checklist{examples}. Completing the product well does not make the site fully compliant by itself.',
+  'covtext.path.examples': ' (including {list})',
+  'covtext.disclaimer':
+    'This is not an official WCAG 2.2 AA audit, not EN 301 549 certification, and not a legal sign-off under the EAA. Contact Us or another qualified accessibility professional for an official evaluation before you publish a conformance claim.',
+  'covtext.otherFindings': 'custom check',
 };

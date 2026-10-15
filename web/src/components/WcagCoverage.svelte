@@ -30,10 +30,15 @@
     return text === key ? fallback : text;
   };
   /**
-   * Criterion titles, notes, findings and the written analysis come from the
-   * server in English for now: marked as such on a page in another language.
+   * Criterion titles, notes and the written analysis are in the language the
+   * scan ran in (older scans: English); finding labels carry their own.
+   * Marked when they differ from the page.
    */
-  const contentLang = $derived(lang === 'en' ? undefined : 'en');
+  const contentLang = $derived(data && (data.lang || 'en') !== lang ? data.lang || 'en' : undefined);
+  const findingAttr = (f) => {
+    const of = f?.lang || data?.lang || 'en';
+    return of === lang ? undefined : of;
+  };
 
   let loading = $state(true);
   let generating = $state(false);
@@ -152,7 +157,7 @@
       <p class="muted" style="font-size: 13px;" role="status">{tr('cov.generating')}</p>
     {/if}
     {#if error}
-      <p class="muted" role="alert" style="font-size: 13px;"><span lang={contentLang}>{error}</span> {tr('cov.fallback')}</p>
+      <p class="muted" role="alert" style="font-size: 13px;">{error} {tr('cov.fallback')}</p>
     {/if}
     <h2>{tr('cov.h.checked')}</h2>
     <p lang={contentLang}>{data.narrative.checked}</p>
@@ -203,7 +208,8 @@
         <p class="muted" style="font-size: 13px; margin: 6px 0 0;" lang={contentLang}>{c.autoNote}</p>
         {#if c.findings.length}
           <p style="font-size: 13px; margin: 6px 0 0;">
-            {tr('cov.thisRun')} <span lang={contentLang}>{c.findings.map((f) => f.label).slice(0, 4).join('; ')}</span>
+            {tr('cov.thisRun')}
+            {#each c.findings.slice(0, 4) as f, i (i)}{#if i > 0}; {/if}<span lang={findingAttr(f)}>{f.label}</span>{/each}
           </p>
         {/if}
         {#if c.manualCanCover}

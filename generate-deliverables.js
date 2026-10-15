@@ -21,6 +21,9 @@ import {
 } from './report-summary.js';
 import { getWcagScLabel, compareScIds } from './wcag-sc-labels.js';
 import { REPORT_BRAND_HEAD, REPORT_DELIVERABLE_CSS, buildDeliverableHeaderHtml } from './report-brand.js';
+import { dateLocale, normalizeLang, translator } from './i18n/index.mjs';
+import { findingsLangs } from './findings-lang.js';
+import { STATEMENT_LANGS, statementFileName } from './statement-files.js';
 
 const STYLES = `
 ${REPORT_DELIVERABLE_CSS}
@@ -53,12 +56,33 @@ function escapeHtml(s) {
 
 /**
  * A finding's title or message, escaped, and marked with its language when that
- * is not English: these documents are English, while our own checks write in
- * the language of the scan (findings-lang.js).
+ * is not the document's: our own checks write in the language of the scan, axe
+ * in its own (findings-lang.js).
  */
-function findingHtml(text, textLang) {
+function findingHtml(text, textLang, docLang = 'en') {
   const html = escapeHtml(text);
-  return textLang && textLang !== 'en' && html ? `<span lang="${escapeHtml(textLang)}">${html}</span>` : html;
+  return textLang && textLang !== docLang && html ? `<span lang="${escapeHtml(textLang)}">${html}</span>` : html;
+}
+
+/**
+ * The documents are written in the language of the scan, like the findings in them.
+ * @returns {string}
+ */
+function documentLang(reportData) {
+  return findingsLangs(reportData).custom;
+}
+
+/**
+ * A dictionary text as HTML: the text is escaped, then `htmlVars` are inserted
+ * as they are (links, <strong>, placeholders).
+ */
+function htmlText(tr, key, htmlVars = {}) {
+  return escapeHtml(tr(key)).replace(/\{(\w+)\}/g, (whole, name) => (htmlVars[name] == null ? whole : String(htmlVars[name])));
+}
+
+/** Footer line with the Us tagline, which stays English. */
+function footerHtml(tr, nameKey) {
+  return `<span class="footer-brand">Us</span> · <span lang="en">Co-creating digital impact</span> · ${escapeHtml(tr(nameKey))}`;
 }
 
 /**
@@ -67,7 +91,9 @@ function findingHtml(text, textLang) {
  */
 export function generateDeveloperAdvice(data, outputDir) {
   const { reportData, fixOrderItems, domain, runId } = data;
-  const date = new Date(reportData.generatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const lang = documentLang(reportData);
+  const tr = translator(lang);
+  const date = new Date(reportData.generatedAt).toLocaleDateString(dateLocale(lang), { day: 'numeric', month: 'long', year: 'numeric' });
   // /report/<domain>/<runId>/ — link back to the live Astro report from this static deliverable.
   const backHref = domain && runId
     ? `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`
@@ -83,14 +109,24 @@ export function generateDeveloperAdvice(data, outputDir) {
       : 1;
     return {
       id: item.id || `fix-${i + 1}`,
-      rule: item.rule || item.id || 'Accessibility fix',
-      textLang: item.rule ? item.textLang : 'en',
+      rule: item.rule || item.id || tr('doc.dev.fixFallback'),
+      textLang: item.rule ? item.textLang : lang,
       severity: sev,
       points: effort,
       occurrences: 1,
     };
   });
   const totalPoints = tickets.reduce((s, t) => s + t.points, 0);
+  // Texts for the Jira dialog's script, in the document's language.
+  const jiraTexts = Object.fromEntries(
+    [
+      'noProjects', 'project', 'unknownDomain', 'checking', 'pickToContinue', 'notConnected', 'connectToLoad',
+      'connectedTo', 'yourSite', 'loadFailed', 'checkFailed', 'networkProjects', 'willCreate', 'creating',
+      'creatingTickets', 'createFailed', 'createdButton', 'networkCreate',
+    ].map((name) => [name, tr(`doc.dev.modal.${name}`)])
+  );
+  jiraTexts.createdOne = tr('doc.dev.modal.created.one');
+  jiraTexts.createdOther = tr('doc.dev.modal.created.other');
   const blockers = tickets.filter((t) => t.severity === 'error').length;
 
   const principleGroups = groupFixesByPrinciple(fixOrderItems).map((g) => ({
@@ -102,12 +138,18 @@ export function generateDeveloperAdvice(data, outputDir) {
   const ticketRows = tickets.map((t) => `
         <div class="ticket-row">
           <span class="mono ticket-key">${escapeHtml(t.id)}</span>
-          <span class="ticket-title">${findingHtml(t.rule, t.textLang)}</span>
+          <span class="ticket-title">${findingHtml(t.rule, t.textLang, lang)}</span>
           <span class="ticket-assignee">${escapeHtml(t.id)}</span>
           <span class="tag tag-lilac">${t.points}</span>
-          <span class="tag tag-${t.severity === 'error' ? 'error' : 'warning'}">${t.severity === 'error' ? 'Error' : 'Warning'}</span>
+          <span class="tag tag-${t.severity === 'error' ? 'error' : 'warning'}">${escapeHtml(tr(t.severity === 'error' ? 'severity.error' : 'severity.warning'))}</span>
         </div>`).join('');
 
+  /** Principle names in the document's language (the groups carry the English label). */
+  const principleLabel = (g) => {
+    const key = `dash.principle.${g.key}`;
+    const text = tr(key);
+    return text === key ? g.label : text;
+  };
   const principleSections = principleGroups.filter((g) => g.issues.length > 0).map((g) => {
     const items = g.issues.map((i) => {
       const wcagLinks = (i.wcag || []).map((sc) => `<a href="${wcagScUrl(sc)}" target="_blank" rel="noopener">${sc}</a>`).join(', ');
@@ -119,38 +161,38 @@ export function generateDeveloperAdvice(data, outputDir) {
         <details class="issue-details">
           <summary>
             <span class="summary-left">
-              <span class="tag tag-${sev === 'error' ? 'error' : 'warning'}">${sev === 'error' ? 'Error' : 'Warning'}</span>
-              <strong>${i.rule ? findingHtml(i.rule, i.textLang) : escapeHtml(i.id || 'Issue')}</strong>
+              <span class="tag tag-${sev === 'error' ? 'error' : 'warning'}">${escapeHtml(tr(sev === 'error' ? 'severity.error' : 'severity.warning'))}</span>
+              <strong>${i.rule ? findingHtml(i.rule, i.textLang, lang) : escapeHtml(i.id || tr('doc.dev.issueFallback'))}</strong>
               <span class="muted mono summary-meta">${i.id ? escapeHtml(i.id) : ''}${wcagLinks ? ` · WCAG ${wcagLinks}` : ''}</span>
             </span>
-            <span class="muted summary-effort">${effort} pt${effort === 1 ? '' : 's'}</span>
+            <span class="muted summary-effort">${escapeHtml(tr.n('doc.dev.pts', effort))}</span>
           </summary>
-          ${i.duplicateIdLabel ? `<p class="issue-desc"><strong>Duplicated IDs:</strong> <span class="mono">${escapeHtml(i.duplicateIdLabel)}</span></p>` : ''}
-          ${!i.duplicateIdLabel && i.message && i.message !== i.rule ? `<p class="issue-desc">${findingHtml(i.message, i.textLang)}</p>` : ''}
+          ${i.duplicateIdLabel ? `<p class="issue-desc"><strong>${escapeHtml(tr('dash.drawer.duplicatedIds'))}</strong> <span class="mono">${escapeHtml(i.duplicateIdLabel)}</span></p>` : ''}
+          ${!i.duplicateIdLabel && i.message && i.message !== i.rule ? `<p class="issue-desc">${findingHtml(i.message, i.textLang, lang)}</p>` : ''}
           ${i.snippet ? `<p class="issue-desc">${escapeHtml(i.snippet)}</p>` : ''}
           ${(i.occurrenceDetails || []).length
-            ? `<p class="issue-desc"><strong>Where they appear</strong></p><ul class="occ-list">${i.occurrenceDetails.map((d) => `<li class="mono">${escapeHtml(d)}</li>`).join('')}</ul>`
+            ? `<p class="issue-desc"><strong>${escapeHtml(tr('doc.dev.where'))}</strong></p><ul class="occ-list">${i.occurrenceDetails.map((d) => `<li class="mono">${escapeHtml(d)}</li>`).join('')}</ul>`
             : ''}
-          ${i.url ? `<p class="muted issue-url">Found on <span class="mono">${escapeHtml(i.url)}</span></p>` : ''}
+          ${i.url ? `<p class="muted issue-url">${escapeHtml(tr('doc.dev.foundOn'))} <span class="mono">${escapeHtml(i.url)}</span></p>` : ''}
         </details>`;
     }).join('');
     return `
       <section class="card-flat principle-card">
         <header class="principle-head">
-          <span class="principle-icon" style="background:${g.color}; color:${g.textColor};">${escapeHtml(g.label[0])}</span>
-          <h3>${escapeHtml(g.label)}</h3>
-          <span class="muted">· ${g.issues.length} issue${g.issues.length === 1 ? '' : 's'} to fix</span>
+          <span class="principle-icon" style="background:${g.color}; color:${g.textColor};" aria-hidden="true">${escapeHtml(principleLabel(g)[0])}</span>
+          <h3>${escapeHtml(principleLabel(g))}</h3>
+          <span class="muted">${escapeHtml(tr.n('doc.dev.issues', g.issues.length))}</span>
         </header>
         <div class="principle-body">${items}</div>
       </section>`;
   }).join('');
 
   const html = `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Developer guide · ${escapeHtml(reportData.urls?.[0] || 'Accessibility')}</title>
+  <title>${escapeHtml(tr('doc.dev.title', { site: reportData.urls?.[0] || 'Accessibility' }))}</title>
   <link rel="stylesheet" href="/styles/tokens.css">
   <style>
     :root {
@@ -297,10 +339,10 @@ export function generateDeveloperAdvice(data, outputDir) {
   <div class="container">
     <header class="header-row">
       <div>
-        ${backHref ? `<a class="btn btn-ghost btn-sm back-link" href="${backHref}">← Back to report</a>` : ''}
-        <span class="eyebrow"><span class="dot"></span>For the engineers</span>
-        <h1>Here's what to fix, in what order.</h1>
-        <p class="lead">${tickets.length} ticket${tickets.length === 1 ? '' : 's'} · ${totalPoints} story points · ~2 weeks. Each ticket includes the rule, an example fix, and the WCAG criterion.</p>
+        ${backHref ? `<a class="btn btn-ghost btn-sm back-link" href="${backHref}">${escapeHtml(tr('cov.back'))}</a>` : ''}
+        <span class="eyebrow"><span class="dot"></span>${escapeHtml(tr('doc.dev.eyebrow'))}</span>
+        <h1>${escapeHtml(tr('doc.dev.h1'))}</h1>
+        <p class="lead">${escapeHtml(tr.n('doc.dev.lead', tickets.length, { points: totalPoints }))}</p>
       </div>
       <div class="header-actions">
         <!-- Hidden until the server confirms this viewer may use the Jira export
@@ -310,55 +352,55 @@ export function generateDeveloperAdvice(data, outputDir) {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M11.5 2L2 11.5l3 3L11.5 8 18 14.5l-3 3 3 3 9.5-9.5L11.5 2z" opacity="0.95"/>
           </svg>
-          Add sprint to Jira
+          ${escapeHtml(tr('doc.dev.jira'))}
         </button>
-        <a class="btn btn-secondary btn-lg" href="/contact?source=developer-guide">Let Us fix this</a>
-        <p class="jira-hint" id="jira-pro-hint" hidden>Exporting these tickets to Jira is part of Pro. <a href="/pricing#pro">See Pro</a></p>
+        <a class="btn btn-secondary btn-lg" href="/contact?source=developer-guide">${escapeHtml(tr('doc.dev.letUs'))}</a>
+        <p class="jira-hint" id="jira-pro-hint" hidden>${escapeHtml(tr('doc.dev.jiraPro'))} <a href="/pricing#pro">${escapeHtml(tr('doc.dev.seePro'))}</a></p>
       </div>
     </header>
 
     <section class="stat-grid">
       <div class="stat ink">
-        <div class="stat-label">Sprint</div>
-        <div class="stat-value">A11y sprint</div>
-        <div class="stat-sub">2 weeks</div>
+        <div class="stat-label">${escapeHtml(tr('doc.dev.stat.sprint'))}</div>
+        <div class="stat-value">${escapeHtml(tr('doc.dev.stat.sprintValue'))}</div>
+        <div class="stat-sub">${escapeHtml(tr('doc.dev.stat.sprintSub'))}</div>
       </div>
       <div class="stat lilac">
-        <div class="stat-label">Tickets</div>
+        <div class="stat-label">${escapeHtml(tr('doc.dev.stat.tickets'))}</div>
         <div class="stat-value">${tickets.length}</div>
-        <div class="stat-sub">${blockers} blocker${blockers === 1 ? '' : 's'}</div>
+        <div class="stat-sub">${escapeHtml(tr.n('doc.dev.stat.blockers', blockers))}</div>
       </div>
       <div class="stat mint">
-        <div class="stat-label">Story points</div>
+        <div class="stat-label">${escapeHtml(tr('doc.dev.stat.points'))}</div>
         <div class="stat-value">${totalPoints}</div>
-        <div class="stat-sub">Estimated by issue impact</div>
+        <div class="stat-sub">${escapeHtml(tr('doc.dev.stat.pointsSub'))}</div>
       </div>
       <div class="stat peach">
-        <div class="stat-label">Generated</div>
+        <div class="stat-label">${escapeHtml(tr('doc.dev.stat.generated'))}</div>
         <div class="stat-value">${escapeHtml(date)}</div>
-        <div class="stat-sub">From this audit run</div>
+        <div class="stat-sub">${escapeHtml(tr('doc.dev.stat.generatedSub'))}</div>
       </div>
     </section>
 
     <section class="card-flat ticket-card">
       <div class="ticket-head">
-        <h2>Proposed tickets</h2>
-        <span class="muted" style="font-size: 13px;">Sorted by severity → effort</span>
+        <h2>${escapeHtml(tr('doc.dev.tickets.h'))}</h2>
+        <span class="muted" style="font-size: 13px;">${escapeHtml(tr('doc.dev.tickets.sorted'))}</span>
       </div>
       <div class="ticket-row head">
-        <span>Id</span><span>Title</span><span>Rule</span><span>Points</span><span>Severity</span>
+        <span>${escapeHtml(tr('doc.dev.col.id'))}</span><span>${escapeHtml(tr('doc.dev.col.title'))}</span><span>${escapeHtml(tr('doc.dev.col.rule'))}</span><span>${escapeHtml(tr('doc.dev.col.points'))}</span><span>${escapeHtml(tr('doc.dev.col.severity'))}</span>
       </div>
       ${ticketRows}
     </section>
 
-    <h2 style="font-size: 28px; margin-bottom: 18px;">Fixes by principle</h2>
+    <h2 style="font-size: 28px; margin-bottom: 18px;">${escapeHtml(tr('doc.dev.byPrinciple'))}</h2>
     <div class="principles">
-      ${principleSections || '<p class="muted">No outstanding fixes — well done!</p>'}
+      ${principleSections || `<p class="muted">${escapeHtml(tr('doc.dev.none'))}</p>`}
     </div>
-    <p class="muted" style="font-size: 11px; margin-top: 12px;">Fixes grouped by WCAG POUR from success criteria on this run.</p>
+    <p class="muted" style="font-size: 11px; margin-top: 12px;">${escapeHtml(tr('doc.dev.groupedNote'))}</p>
 
     <div class="footer-foot">
-      Generated by Us · Co-creating digital impact · Developer remediation guide
+      ${footerHtml(tr, 'doc.dev.name')}
     </div>
   </div>
 
@@ -367,29 +409,29 @@ export function generateDeveloperAdvice(data, outputDir) {
       <div class="modal-head">
         <div>
           <div class="eyebrow"><span class="dot"></span>Jira</div>
-          <h2 id="jira-modal-title" style="font-size: 22px; margin-top: 6px;">Add sprint to Jira</h2>
+          <h2 id="jira-modal-title" style="font-size: 22px; margin-top: 6px;">${escapeHtml(tr('doc.dev.jira'))}</h2>
         </div>
-        <button class="btn btn-secondary btn-sm" type="button" data-close>✕</button>
+        <button class="btn btn-secondary btn-sm" type="button" data-close aria-label="${escapeHtml(tr('doc.dev.modal.close'))}">✕</button>
       </div>
       <div class="modal-body">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
-          <div style="font-size: 13px; font-weight: 500;">Pick a project</div>
-          <button class="btn btn-secondary btn-sm" id="jira-connect" type="button">Connect Jira</button>
+          <div style="font-size: 13px; font-weight: 500;">${escapeHtml(tr('doc.dev.modal.pick'))}</div>
+          <button class="btn btn-secondary btn-sm" id="jira-connect" type="button">${escapeHtml(tr('doc.dev.modal.connect'))}</button>
         </div>
-        <div class="muted" id="jira-connection" style="font-size:12px; margin-bottom:10px;">Checking Jira connection…</div>
+        <div class="muted" id="jira-connection" style="font-size:12px; margin-bottom:10px;" role="status">${escapeHtml(tr('doc.dev.modal.checking'))}</div>
         <div class="project-grid" id="project-grid">
-          <div class="muted" style="font-size:12px;">Connect Jira to load projects.</div>
+          <div class="muted" style="font-size:12px;">${escapeHtml(tr('doc.dev.modal.connectToLoad'))}</div>
         </div>
-        <div style="font-size: 13px; font-weight: 500; margin: 16px 0 10px;">Tickets to create (${tickets.length})</div>
+        <div style="font-size: 13px; font-weight: 500; margin: 16px 0 10px;">${escapeHtml(tr('doc.dev.modal.toCreate', { n: tickets.length }))}</div>
         <div>
-          ${tickets.map((t) => `<div style="display:grid; grid-template-columns:auto 1fr auto; gap:12px; padding:8px 0; font-size:13px; align-items:center;"><span class="mono muted" style="font-size:11px;">${escapeHtml(t.id)}</span><span>${findingHtml(t.rule, t.textLang)}</span><span class="tag tag-lilac" style="font-size:11px;">${t.points} pts</span></div>`).join('')}
+          ${tickets.map((t) => `<div style="display:grid; grid-template-columns:auto 1fr auto; gap:12px; padding:8px 0; font-size:13px; align-items:center;"><span class="mono muted" style="font-size:11px;">${escapeHtml(t.id)}</span><span>${findingHtml(t.rule, t.textLang, lang)}</span><span class="tag tag-lilac" style="font-size:11px;">${escapeHtml(tr.n('doc.dev.pts', t.points))}</span></div>`).join('')}
         </div>
       </div>
       <div class="modal-foot">
-        <span class="muted" style="font-size: 13px;" id="jira-summary">Pick a project to continue.</span>
+        <span class="muted" style="font-size: 13px;" id="jira-summary" role="status">${escapeHtml(tr('doc.dev.modal.pickToContinue'))}</span>
         <div style="display: flex; gap: 8px;">
-          <button class="btn btn-secondary btn-sm" type="button" data-close>Cancel</button>
-          <button class="btn btn-sm" type="button" id="jira-confirm" disabled>Create ${tickets.length} tickets</button>
+          <button class="btn btn-secondary btn-sm" type="button" data-close>${escapeHtml(tr('doc.dev.modal.cancel'))}</button>
+          <button class="btn btn-sm" type="button" id="jira-confirm" disabled>${escapeHtml(tr('doc.dev.modal.create', { n: tickets.length }))}</button>
         </div>
       </div>
     </div>
@@ -407,13 +449,23 @@ export function generateDeveloperAdvice(data, outputDir) {
       var tickets = ${JSON.stringify(tickets).replace(/</g, '\\u003c')};
       var domain = ${JSON.stringify(domain || '').replace(/</g, '\\u003c')};
       var runId = ${JSON.stringify(runId || '').replace(/</g, '\\u003c')};
+      // Texts in the language of this document, with {placeholders}.
+      var T = ${JSON.stringify(jiraTexts).replace(/</g, '\\u003c')};
+      function say(key, vars) {
+        return String(T[key] || key).replace(/\\{(\\w+)\\}/g, function (whole, name) {
+          return vars && vars[name] != null ? String(vars[name]) : whole;
+        });
+      }
+      function escapeText(value) {
+        return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
       var selected = null;
 
       function openModal() { modal.classList.add('open'); }
       function closeModal() { modal.classList.remove('open'); }
       function renderProjects(projects) {
         if (!Array.isArray(projects) || projects.length === 0) {
-          projectGrid.innerHTML = '<div class="muted" style="font-size:12px;">No projects found for this Jira connection.</div>';
+          projectGrid.innerHTML = '<div class="muted" style="font-size:12px;">' + escapeText(say('noProjects')) + '</div>';
           return;
         }
         projectGrid.innerHTML = projects.map(function (p) {
@@ -423,39 +475,39 @@ export function generateDeveloperAdvice(data, outputDir) {
             '<button class="project-btn" data-project="' + key + '" type="button">' +
               '<span class="project-key">' + key + '</span>' +
               '<span><span style="display:block; font-weight:500;">' + name + '</span>' +
-              '<span style="display:block; font-size:11px; color: var(--fg-3);">Jira project</span></span>' +
+              '<span style="display:block; font-size:11px; color: var(--fg-3);">' + escapeText(say('project')) + '</span></span>' +
             '</button>'
           );
         }).join('');
       }
       async function refreshJiraState() {
         if (!domain) {
-          connectionLabel.textContent = 'Unknown run domain — cannot connect Jira.';
+          connectionLabel.textContent = say('unknownDomain');
           return;
         }
-        connectionLabel.textContent = 'Checking Jira connection…';
+        connectionLabel.textContent = say('checking');
         selected = null;
         confirmBtn.disabled = true;
-        summary.textContent = 'Pick a project to continue.';
+        summary.textContent = say('pickToContinue');
         try {
           var statusRes = await fetch('/api/jira/oauth/status?domain=' + encodeURIComponent(domain), { credentials: 'same-origin' });
           var statusData = await statusRes.json().catch(function () { return {}; });
           if (!statusRes.ok || !statusData.connected) {
-            connectionLabel.textContent = (statusData && statusData.error) || 'Not connected. Click "Connect Jira".';
-            projectGrid.innerHTML = '<div class="muted" style="font-size:12px;">Connect Jira to load projects.</div>';
+            connectionLabel.textContent = (statusData && statusData.error) || say('notConnected');
+            projectGrid.innerHTML = '<div class="muted" style="font-size:12px;">' + escapeText(say('connectToLoad')) + '</div>';
             return;
           }
-          connectionLabel.textContent = 'Connected to ' + (statusData.siteName || statusData.siteUrl || 'your Jira site') + '.';
+          connectionLabel.textContent = say('connectedTo', { site: statusData.siteName || statusData.siteUrl || say('yourSite') });
           var projectsRes = await fetch('/api/jira/projects?domain=' + encodeURIComponent(domain), { credentials: 'same-origin' });
           var projectsData = await projectsRes.json().catch(function () { return {}; });
           if (!projectsRes.ok) {
-            projectGrid.innerHTML = '<div class="muted" style="font-size:12px;">' + (projectsData.error || 'Failed to load projects.') + '</div>';
+            projectGrid.innerHTML = '<div class="muted" style="font-size:12px;">' + escapeText(projectsData.error || say('loadFailed')) + '</div>';
             return;
           }
           renderProjects(projectsData.projects || []);
         } catch (err) {
-          connectionLabel.textContent = 'Failed to check Jira connection.';
-          projectGrid.innerHTML = '<div class="muted" style="font-size:12px;">Network error while loading Jira projects.</div>';
+          connectionLabel.textContent = say('checkFailed');
+          projectGrid.innerHTML = '<div class="muted" style="font-size:12px;">' + escapeText(say('networkProjects')) + '</div>';
         }
       }
 
@@ -505,14 +557,14 @@ export function generateDeveloperAdvice(data, outputDir) {
         btn.classList.add('active');
         selected = btn.getAttribute('data-project');
         confirmBtn.disabled = false;
-        summary.textContent = 'Will create ${tickets.length} issues in ' + (btn.querySelector('span span')?.textContent || selected) + '.';
+        summary.textContent = say('willCreate', { n: ${tickets.length}, project: btn.querySelector('span span')?.textContent || selected });
       });
       confirmBtn?.addEventListener('click', async function () {
         if (!selected) return;
         confirmBtn.disabled = true;
         var prev = confirmBtn.textContent;
-        confirmBtn.textContent = 'Creating…';
-        summary.textContent = 'Creating Jira tickets…';
+        confirmBtn.textContent = say('creating');
+        summary.textContent = say('creatingTickets');
         try {
           var res = await fetch('/api/jira/sprint', {
             method: 'POST',
@@ -522,16 +574,16 @@ export function generateDeveloperAdvice(data, outputDir) {
           });
           var data = await res.json().catch(function () { return {}; });
           if (!res.ok) {
-            summary.textContent = data.error || ('Failed to create tickets (' + res.status + ').');
+            summary.textContent = data.error || say('createFailed', { status: res.status });
             confirmBtn.disabled = false;
             confirmBtn.textContent = prev;
             return;
           }
           var count = Number(data.createdCount || 0);
-          summary.textContent = 'Created ' + count + ' Jira issue' + (count === 1 ? '' : 's') + '.';
-          confirmBtn.textContent = 'Created';
+          summary.textContent = say(count === 1 ? 'createdOne' : 'createdOther', { n: count });
+          confirmBtn.textContent = say('createdButton');
         } catch (err) {
-          summary.textContent = 'Network error while creating Jira tickets.';
+          summary.textContent = say('networkCreate');
           confirmBtn.disabled = false;
           confirmBtn.textContent = prev;
         }
@@ -546,101 +598,18 @@ export function generateDeveloperAdvice(data, outputDir) {
   return path;
 }
 
-function buildAiClientSummaryHtml({
-  reportData,
-  chartPayload,
-  scoreClamp,
-  pass,
-  fail,
-  warn,
-  totalAxeViolations,
-  quickWins,
-  mediumEffort,
-  longTerm,
-}) {
-  const urlCount = (reportData.urls || []).length;
-  const topLabels = chartPayload?.disabilityTopLabels || [];
-  const topCounts = chartPayload?.disabilityTopCounts || [];
-  const top3 = topLabels
-    .slice(0, 3)
-    .map((l, i) => ({ label: l, count: topCounts[i] != null ? topCounts[i] : null }))
-    .filter((x) => x.label);
-
-  const guidance = {
-    Blindness:
-      'Navigation clarity matters most: strong headings/landmarks, predictable focus order, and link/form semantics help screen-reader users build a mental model quickly.',
-    'Low Vision':
-      'Contrast, scalable text, and focus visibility are critical. If content is too light/low-contrast or doesn’t reflow cleanly, reading and operating controls becomes slow and error-prone.',
-    Colorblindness:
-      'Color cannot be the only signal. The report pattern suggests you should confirm that state, instructions, and errors are still understandable without relying on color alone.',
-    'Deafness and Hard-of-Hearing':
-      'Provide captions and clear transcripts so information that would normally be heard is available visually, with consistent synchronization.',
-    Deafblindness:
-      'Deafblind users need redundant, dependable channels. Captions/transcripts plus keyboard-accessible controls and clear labeling reduce the “missing context” problem.',
-    'Dexterity/Motor Disabilities':
-      'Keyboard support and precise interaction patterns are key: ensure all actions are reachable without traps, and interactive elements are easy to target.',
-    'Speech Disabilities':
-      'Avoid speech-only requirements. Where communication is needed, provide non-voice alternatives (labels, keyboard input, and clear instructions).',
-    'Cognitive Disabilities':
-      'Reduce cognitive load: consistent structure, straightforward instructions, and fewer surprise context changes help users stay oriented and complete tasks.',
-    'Reading Disabilities':
-      'Readable, well-structured content helps: descriptive headings, unambiguous link text, and error messages that explain what to do next.',
-    'Seizure Disorders':
-      'Minimize flashing and provide safe alternatives. Even if automated checks only partially cover this, manual review is important for animations and media.',
-  };
-
-  const scoreTone =
-    scoreClamp >= 80
-      ? 'This score suggests you are close to meeting many WCAG-oriented expectations, and targeted fixes can improve consistency for more users.'
-      : scoreClamp >= 50
-        ? 'This score indicates meaningful gaps. The fastest wins usually come from fixing navigation and form patterns first, then tightening media and dynamic behaviors.'
-        : 'This score suggests barriers likely remain across multiple user journeys. Start with the highest-impact quick wins so the largest disability groups benefit first.';
-
-  const topLine = top3.length
-    ? `Automated findings most often map to: ${top3
-        .map((x) => `${x.label}${x.count != null ? ` (${x.count})` : ''}`)
-        .join(', ')}.`
-    : 'No disability-specific impact signal was strong enough to rank in the top-3 for this run.';
-
-  const phaseOpinion = (() => {
-    const p1 = quickWins.length ? `Phase 1 (quick wins, ${quickWins.length} items) should be your first pass.` : 'Phase 1 has no quick wins in this run.';
-    const p2 = mediumEffort.length ? `Phase 2 (medium effort, ${mediumEffort.length} items) is where you fix the “makes tasks hard” issues.` : 'Phase 2 has no medium-effort items in this run.';
-    const p3 = longTerm.length ? `Phase 3 (long-term, ${longTerm.length} items) reduces deeper risk over time.` : 'Phase 3 has no long-term items in this run.';
-    return `${p1} ${p2} ${p3}`;
-  })();
-
-  const disabilityParagraphs = top3.length
-    ? top3
-        .map((x) => {
-          const text =
-            guidance[x.label] ||
-            'Your results suggest prioritizing semantics, keyboard access, and clear instructions so users can complete core tasks with less effort.';
-          return `<p><strong>${escapeHtml(x.label)}</strong>: ${escapeHtml(text)}</p>`;
-        })
-        .join('')
-    : `<p class="muted">To personalize this further, rerun with more URLs or focus on user journeys that matter most, then compare disability impact across runs.</p>`;
-
-  const currentSituation = `
-    <p class="muted">${escapeHtml(scoreTone)}</p>
-    <p>${escapeHtml(topLine)}</p>
-    <p>In this run, there were <strong>${fail}</strong> failures, <strong>${warn}</strong> warnings, and <strong>${totalAxeViolations}</strong> axe violations across <strong>${urlCount}</strong> page${urlCount === 1 ? '' : 's'}.</p>
-  `;
-
-  const rec = `
-    <h3>My recommendation</h3>
-    <p>${escapeHtml(phaseOpinion)}</p>
-    <p class="muted">Automation is a strong starting point, but manual checks (keyboard + screen reader + real user flows) are still required to validate real-world accessibility.</p>
-  `;
-
-  return `
-    <div class="ai-summary" role="region" aria-labelledby="ai-summary-heading">
-      <h2 id="ai-summary-heading">AI-generated client summary (disability-focused)</h2>
-      ${currentSituation}
-      ${top3.length ? '<h3>What this means for disabilities</h3>' : ''}
-      ${disabilityParagraphs}
-      ${rec}
-    </div>
-  `;
+/** Disability group names arrive in English (report-buckets.js); the dashboard's names per language. */
+const DISABILITY_KEYS = {
+  'Blind / screen reader': 'blind',
+  'Low vision / colour vision': 'lowvision',
+  'Deaf / hard of hearing': 'deaf',
+  'Motor / dexterity': 'motor',
+  'Cognitive / reading': 'cognitive',
+  'Seizure / vestibular': 'seizure',
+};
+function disabilityLabel(label, tr) {
+  const key = DISABILITY_KEYS[label];
+  return key ? tr(`dash.disab.${key}`) : label;
 }
 
 function severityRank(level) {
@@ -694,15 +663,15 @@ function computeClientIssueMetrics(reportData, fixOrderItems) {
   };
 }
 
-function computeCategoryStats(fixOrderItems) {
+function computeCategoryStats(fixOrderItems, tr = translator('en')) {
   const defs = [
-    { key: 'contrast', label: 'Color contrast', color: '#df2020', match: (i) => /contrast/i.test(i.id || '') || /contrast/i.test(i.rule || '') },
-    { key: 'images', label: 'Missing alt text', color: '#eb8916', match: (i) => /img-alt|image-alt|alt/i.test(i.id || '') || /alt text|image/i.test(i.rule || '') },
-    { key: 'forms', label: 'Form labels', color: '#3c81e7', match: (i) => /label|form/i.test(i.id || '') || /label|form/i.test(i.rule || '') },
-    { key: 'keyboard', label: 'Keyboard nav', color: '#048255', match: (i) => /keyboard|tabindex|focus-order|focus-visible|focus/i.test(i.id || '') || /keyboard|focus|tab/i.test(i.rule || '') },
-    { key: 'reader', label: 'Screen reader', color: '#6257e8', match: (i) => /aria|name-role|iframe|landmark|region|dynamic/i.test(i.id || '') || /screen reader|aria/i.test(i.rule || '') },
-    { key: 'links', label: 'Link clarity', color: '#707070', match: (i) => /link/i.test(i.id || '') || /link/i.test(i.rule || '') },
-    { key: 'headings', label: 'Headings', color: '#41bd73', match: (i) => /heading/i.test(i.id || '') || /heading/i.test(i.rule || '') },
+    { key: 'contrast', label: tr('doc.client.cat.contrast'), color: '#df2020', match: (i) => /contrast/i.test(i.id || '') || /contrast/i.test(i.rule || '') },
+    { key: 'images', label: tr('doc.client.cat.images'), color: '#eb8916', match: (i) => /img-alt|image-alt|alt/i.test(i.id || '') || /alt text|image/i.test(i.rule || '') },
+    { key: 'forms', label: tr('doc.client.cat.forms'), color: '#3c81e7', match: (i) => /label|form/i.test(i.id || '') || /label|form/i.test(i.rule || '') },
+    { key: 'keyboard', label: tr('doc.client.cat.keyboard'), color: '#048255', match: (i) => /keyboard|tabindex|focus-order|focus-visible|focus/i.test(i.id || '') || /keyboard|focus|tab/i.test(i.rule || '') },
+    { key: 'reader', label: tr('doc.client.cat.reader'), color: '#6257e8', match: (i) => /aria|name-role|iframe|landmark|region|dynamic/i.test(i.id || '') || /screen reader|aria/i.test(i.rule || '') },
+    { key: 'links', label: tr('doc.client.cat.links'), color: '#707070', match: (i) => /link/i.test(i.id || '') || /link/i.test(i.rule || '') },
+    { key: 'headings', label: tr('doc.client.cat.headings'), color: '#41bd73', match: (i) => /heading/i.test(i.id || '') || /heading/i.test(i.rule || '') },
   ];
   const counts = Object.fromEntries(defs.map((d) => [d.key, 0]));
   (fixOrderItems || []).forEach((item) => {
@@ -712,27 +681,27 @@ function computeCategoryStats(fixOrderItems) {
   return defs.map((d) => ({ ...d, count: counts[d.key] }));
 }
 
-function buildPostDashboardSectionHtml({ fixOrderItems, scoreClamp }) {
-  const cats = computeCategoryStats(fixOrderItems);
+function buildPostDashboardSectionHtml({ fixOrderItems, scoreClamp, tr = translator('en') }) {
+  const cats = computeCategoryStats(fixOrderItems, tr);
   const max = Math.max(1, ...cats.map((c) => c.count));
   const topThree = [...cats].sort((a, b) => b.count - a.count).slice(0, 3);
 
   return `
     <section class="extra-stats">
-      <h2>Issues by category</h2>
+      <h2>${escapeHtml(tr('doc.client.categories'))}</h2>
       <div class="category-bars">
         ${cats.map((c) => `<div class="cat-item"><div class="cat-bar" style="height:${Math.max(10, Math.round((c.count / max) * 180))}px;background:${c.color};"></div><div class="cat-label">${escapeHtml(c.label)}</div></div>`).join('')}
       </div>
     </section>
     <section class="extra-stats">
-      <h2>Most frequent finding types</h2>
+      <h2>${escapeHtml(tr('doc.client.frequent'))}</h2>
       <div class="quick-grid">
         ${topThree.map((c) => `<div class="quick-card"><div class="quick-num" style="color:${c.color};">${c.count}</div><div class="quick-title">${escapeHtml(c.label)}</div><div class="quick-line"><span style="background:${c.color};"></span></div></div>`).join('')}
       </div>
     </section>
     <section class="extra-stats">
-      <h2>How to read these numbers</h2>
-      <div class="bench-note info">Errors score ${scoreClamp}/100 is not WCAG 2.2 AA or EAA conformance. Category counts come from this run only. We do not invent industry averages or lost-revenue estimates.</div>
+      <h2>${escapeHtml(tr('doc.client.howToRead'))}</h2>
+      <div class="bench-note info">${escapeHtml(tr('doc.client.howToReadBody', { score: scoreClamp }))}</div>
     </section>
   `;
 }
@@ -740,26 +709,27 @@ function buildPostDashboardSectionHtml({ fixOrderItems, scoreClamp }) {
 
 export function generateClientPresentation(data, outputDir) {
   const { reportData, fixOrderItems, disabilityStats, score, scoreClamp, pass, fail, warn, totalAxeViolations, total } = data;
-  const date = new Date(reportData.generatedAt).toLocaleString();
+  const lang = documentLang(reportData);
+  const tr = translator(lang);
   const issuesCount = fail + warn + totalAxeViolations;
   const uniqueByRule = (items) => [...new Map(items.map((i) => [i.rule, i])).values()];
   const { host: siteHost } = deriveSiteUrls(reportData);
-  const auditedDate = new Date(reportData.generatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const auditedDate = new Date(reportData.generatedAt).toLocaleDateString(dateLocale(lang), { day: 'numeric', month: 'long', year: 'numeric' });
   const metrics = computeClientIssueMetrics(reportData, fixOrderItems);
   const criticalIssues = metrics.severity.critical;
   const totalPages = (reportData.urls || []).length;
   const pagesAffected = metrics.pagesAffected;
   const mostAffected = metrics.mostAffectedPages.slice(0, 7);
-  const complianceHeadline = 'Automated findings — not a conformance claim';
-  const complianceNote = `${scoreClamp}/100 is the errors score: automated failures weighted by severity, each rule counted once per page and averaged over the pages scanned. The overall score in the dashboard also counts findings to review and the manual checks. It is not WCAG 2.2 AA or EAA compliance.`;
+  const complianceHeadline = tr('doc.client.compliance.headline');
+  const complianceNote = tr('doc.client.compliance.note', { score: scoreClamp });
   const topRoadmap = uniqueByRule(fixOrderItems).slice(0, 5);
 
   let html = `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Accessibility summary – Client presentation</title>
+  <title>${escapeHtml(tr('doc.client.title'))}</title>
   ${REPORT_BRAND_HEAD}
   <style>${STYLES}
     ${buildChartSectionStyles()}
@@ -864,49 +834,49 @@ export function generateClientPresentation(data, outputDir) {
 </head>
 <body>
   <div class="container">
-    ${buildDeliverableHeaderHtml()}
-    <p class="audit-kicker">Accessibility Audit Report</p>
+    ${buildDeliverableHeaderHtml(tr)}
+    <p class="audit-kicker">${escapeHtml(tr('doc.client.kicker'))}</p>
     <h1 class="audit-domain">${escapeHtml(siteHost)}</h1>
-    <p class="audit-meta">Audited ${totalPages} page${totalPages === 1 ? '' : 's'} · ${auditedDate} · WCAG 2.2</p>
+    <p class="audit-meta">${escapeHtml(tr.n('doc.client.meta', totalPages, { date: auditedDate }))}</p>
 
-    <section class="kpi-grid" aria-label="Top metrics">
-      <div class="kpi"><div class="label">Errors score</div><div class="value warn">${scoreClamp} / 100</div></div>
-      <div class="kpi"><div class="label">Total issues</div><div class="value">${issuesCount}</div></div>
-      <div class="kpi"><div class="label">Critical issues</div><div class="value fail">${criticalIssues}</div></div>
-      <div class="kpi"><div class="label">Pages affected</div><div class="value">${pagesAffected} / ${Math.max(1, totalPages)}</div></div>
+    <section class="kpi-grid" aria-label="${escapeHtml(tr('doc.client.kpi.label'))}">
+      <div class="kpi"><div class="label">${escapeHtml(tr('doc.client.kpi.errorsScore'))}</div><div class="value warn">${scoreClamp} / 100</div></div>
+      <div class="kpi"><div class="label">${escapeHtml(tr('doc.client.kpi.total'))}</div><div class="value">${issuesCount}</div></div>
+      <div class="kpi"><div class="label">${escapeHtml(tr('doc.client.kpi.critical'))}</div><div class="value fail">${criticalIssues}</div></div>
+      <div class="kpi"><div class="label">${escapeHtml(tr('doc.client.kpi.pages'))}</div><div class="value">${pagesAffected} / ${Math.max(1, totalPages)}</div></div>
     </section>
 
-    <section class="compliance-card" aria-label="Compliance snapshot">
+    <section class="compliance-card" aria-label="${escapeHtml(tr('doc.client.compliance.label'))}">
       <div class="score-ring" aria-hidden="true"></div>
       <div>
         <h2 class="compliance-title">${escapeHtml(complianceHeadline)}</h2>
         <p class="compliance-copy">${escapeHtml(complianceNote)}</p>
         <div class="status-row">
-          <span class="status-pill a">Level A — not claimed</span>
-          <span class="status-pill aa">Level AA — not claimed</span>
-          <span class="status-pill aaa">Level AAA — not claimed</span>
+          <span class="status-pill a">${escapeHtml(tr('doc.client.level.a'))}</span>
+          <span class="status-pill aa">${escapeHtml(tr('doc.client.level.aa'))}</span>
+          <span class="status-pill aaa">${escapeHtml(tr('doc.client.level.aaa'))}</span>
         </div>
       </div>
     </section>
 
     <section class="stats-panels">
       <div class="panel">
-        <h3>Issues by severity</h3>
+        <h3>${escapeHtml(tr('doc.client.bySeverity'))}</h3>
         ${[
-          ['Critical', metrics.severity.critical, 'sev-critical'],
-          ['Serious', metrics.severity.serious, 'sev-serious'],
-          ['Moderate', metrics.severity.moderate, 'sev-moderate'],
-          ['Minor', metrics.severity.minor, 'sev-minor'],
+          [tr('doc.client.sev.critical'), metrics.severity.critical, 'sev-critical'],
+          [tr('doc.client.sev.serious'), metrics.severity.serious, 'sev-serious'],
+          [tr('doc.client.sev.moderate'), metrics.severity.moderate, 'sev-moderate'],
+          [tr('doc.client.sev.minor'), metrics.severity.minor, 'sev-minor'],
         ].map(([label, value, cls]) => {
           const max = Math.max(1, metrics.severity.critical, metrics.severity.serious, metrics.severity.moderate, metrics.severity.minor);
           const pct = Math.round((Number(value) / max) * 100);
-          return `<div class="severity-row"><div>${label}</div><div class="bar"><div class="fill ${cls}" style="width:${pct}%"></div></div><div>${value}</div></div>`;
+          return `<div class="severity-row"><div>${escapeHtml(label)}</div><div class="bar"><div class="fill ${cls}" style="width:${pct}%"></div></div><div>${value}</div></div>`;
         }).join('')}
       </div>
       <div class="panel most-pages">
-        <h3>Most affected pages</h3>
+        <h3>${escapeHtml(tr('doc.client.mostAffected'))}</h3>
         <table>
-          <thead><tr><th>Page</th><th>Issues</th><th>Worst</th></tr></thead>
+          <thead><tr><th>${escapeHtml(tr('doc.client.col.page'))}</th><th>${escapeHtml(tr('doc.client.col.issues'))}</th><th>${escapeHtml(tr('doc.client.col.worst'))}</th></tr></thead>
           <tbody>
             ${(mostAffected.length ? mostAffected : [{ url: '—', issues: 0, worst: 'minor' }]).map((row) => {
               let label = row.url;
@@ -914,7 +884,7 @@ export function generateClientPresentation(data, outputDir) {
                 const u = new URL(row.url);
                 label = u.pathname || '/';
               } catch {}
-              return `<tr><td>${escapeHtml(label)}</td><td>${row.issues}</td><td><span class="sev-tag ${row.worst}">${row.worst.charAt(0).toUpperCase() + row.worst.slice(1)}</span></td></tr>`;
+              return `<tr><td>${escapeHtml(label)}</td><td>${row.issues}</td><td><span class="sev-tag ${row.worst}">${escapeHtml(tr(`doc.client.sev.${row.worst}`))}</span></td></tr>`;
             }).join('')}
           </tbody>
         </table>
@@ -924,51 +894,50 @@ export function generateClientPresentation(data, outputDir) {
     ${buildPostDashboardSectionHtml({
       fixOrderItems,
       scoreClamp,
+      tr,
       criticalIssues,
       pagesAffected,
       mostAffectedPages: metrics.mostAffectedPages,
     })}
 
     <section class="roadmap">
-      <h2>Recommended fix roadmap</h2>
-      <p>Prioritized by impact-to-effort ratio. Addressing these in order delivers the fastest score improvement.</p>
+      <h2>${escapeHtml(tr('doc.client.roadmap'))}</h2>
+      <p>${escapeHtml(tr('doc.client.roadmapLead'))}</p>
       ${topRoadmap.map((item, idx) => {
         const impact = (item.impact || 'medium').toLowerCase();
         const effort = (item.effort || 'moderate').toLowerCase();
-        const eta = effort === 'simple' ? (impact === 'high' ? '~2h' : '<1h') : effort === 'moderate' ? '~1 day' : '~3+ days';
-        const impactLabel = impact === 'high' ? 'High impact' : impact === 'low' ? 'Quick win' : 'Medium impact';
-        const effortLabel = effort === 'simple' ? 'Low effort' : effort === 'moderate' ? 'Medium effort' : 'High effort';
-        const desc = item.url
-          ? `Issue appears on ${item.url}. Fixing this pattern will improve task completion and reduce legal risk.`
-          : `${item.rule} can be addressed globally and should improve accessibility outcomes quickly.`;
+        const eta = tr(effort === 'simple' ? (impact === 'high' ? 'doc.client.eta.hours' : 'doc.client.eta.short') : effort === 'moderate' ? 'doc.client.eta.day' : 'doc.client.eta.days');
+        const impactLabel = tr(impact === 'high' ? 'doc.client.impact.high' : impact === 'low' ? 'doc.client.impact.low' : 'doc.client.impact.medium');
+        const effortLabel = tr(effort === 'simple' ? 'doc.client.effort.simple' : effort === 'moderate' ? 'doc.client.effort.moderate' : 'doc.client.effort.complex');
+        const desc = item.url ? tr('doc.client.desc.url', { url: item.url }) : tr('doc.client.desc.global');
         return `<div class="item">
           <div class="idx">${idx + 1}</div>
           <div>
-            <h4>${findingHtml(item.rule, item.textLang)}</h4>
+            <h4>${findingHtml(item.rule, item.textLang, lang)}</h4>
             <p>${escapeHtml(desc)}</p>
             <div class="badge-line">
-              <span class="pill impact-${impact === 'high' ? 'high' : impact === 'low' ? 'low' : 'medium'}">${impactLabel}</span>
-              <span class="pill">${effortLabel}</span>
-              <span class="pill">${eta}</span>
+              <span class="pill impact-${impact === 'high' ? 'high' : impact === 'low' ? 'low' : 'medium'}">${escapeHtml(impactLabel)}</span>
+              <span class="pill">${escapeHtml(effortLabel)}</span>
+              <span class="pill">${escapeHtml(eta)}</span>
             </div>
           </div>
         </div>`;
       }).join('')}
     </section>
 
-    <h2>Impact by disability</h2>
-    <p>These accessibility improvements will help users with the following:</p>
+    <h2>${escapeHtml(tr('doc.client.disability'))}</h2>
+    <p>${escapeHtml(tr('doc.client.disabilityLead'))}</p>
     <div class="stats-grid">
       ${Object.entries(disabilityStats)
         .filter(([k, v]) => v > 0 && k !== 'Various')
-        .map(([k, v]) => `<div class="stat-card"><span>${v}</span><small>${escapeHtml(k)}</small></div>`)
+        .map(([k, v]) => `<div class="stat-card"><span>${v}</span><small>${escapeHtml(disabilityLabel(k, tr))}</small></div>`)
         .join('')}
     </div>
 
     <p style="margin-top: 32px; font-size: 0.9rem; color: var(--text-muted);">
-      For the full technical report and developer fix guide, see the main report.
+      ${escapeHtml(tr('doc.client.footerNote'))}
     </p>
-    <div class="deliverable-footer"><span class="footer-brand">Us</span> · Co-creating digital impact · Client summary</div>
+    <div class="deliverable-footer">${footerHtml(tr, 'doc.client.name')}</div>
   </div>
 </body>
 </html>`;
@@ -995,18 +964,20 @@ function deriveSiteUrls(reportData) {
 
 function writeFailedLoadDeliverables(data, outputDir) {
   const reportData = data?.reportData || {};
-  const host = primaryHostFromReport(reportData) || data?.domain || 'this scan';
+  const lang = documentLang(reportData);
+  const tr = translator(lang);
+  const host = primaryHostFromReport(reportData) || data?.domain || tr('dash.thisScan');
   const failures = pageLoadFailures(reportData);
   const items = failures
     .map(
       (row) =>
-        `<li><code>${escapeHtml(row.url || '')}</code>: ${escapeHtml(row.message || 'Page failed to load')}</li>`
+        `<li><code>${escapeHtml(row.url || '')}</code>: ${row.message ? `<span lang="en">${escapeHtml(row.message)}</span>` : escapeHtml(tr('doc.failed.pageFailed'))}</li>`
     )
     .join('');
-  const list = items ? `<ul>${items}</ul>` : '<p>No pages could be loaded.</p>';
+  const list = items ? `<ul>${items}</ul>` : `<p>${escapeHtml(tr('doc.failed.noPages'))}</p>`;
 
   const html = (title) => `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -1019,10 +990,10 @@ ${REPORT_DELIVERABLE_CSS}
 </head>
 <body>
   <div class="container">
-    <h1>${escapeHtml(title)} is not ready</h1>
-    <p>The scan of <strong>${escapeHtml(host)}</strong> did not load any pages, so this file is not a client deliverable.</p>
+    <h1>${escapeHtml(tr('doc.failed.h1', { title }))}</h1>
+    <p>${htmlText(tr, 'doc.failed.body', { host: `<strong>${escapeHtml(host)}</strong>` })}</p>
     ${list}
-    <p>Re-run the scan after the host resolves (DNS, timeout, or bot protection).</p>
+    <p>${escapeHtml(tr('doc.failed.retry'))}</p>
   </div>
 </body>
 </html>`;
@@ -1032,9 +1003,9 @@ ${REPORT_DELIVERABLE_CSS}
     client: join(outputDir, 'accessibility-client.html'),
     statement: join(outputDir, 'accessibility-statement.html'),
   };
-  writeFileSync(paths.developers, html('Developer guide'), 'utf8');
-  writeFileSync(paths.client, html('Sales report'), 'utf8');
-  writeFileSync(paths.statement, html('Accessibility statement'), 'utf8');
+  writeFileSync(paths.developers, html(tr('doc.failed.dev')), 'utf8');
+  writeFileSync(paths.client, html(tr('doc.failed.sales')), 'utf8');
+  writeFileSync(paths.statement, html(tr('doc.failed.statement')), 'utf8');
   return paths;
 }
 
@@ -1052,9 +1023,10 @@ function dedupeFindingsByRule(items) {
   }));
 }
 
-function buildLimitationBlocks(fixOrderItems) {
+function buildLimitationBlocks(fixOrderItems, tr = translator('en')) {
+  const lang = tr.lang;
   if (!fixOrderItems.length) {
-    return '<p>This automated run recorded no failed checks or axe violations. That is not a WCAG 2.2 AA pass. Complete manual and assistive-technology testing before using official conformance wording.</p>';
+    return `<p>${escapeHtml(tr('doc.stmt.limits.none'))}</p>`;
   }
   const groups = new Map();
   for (const item of fixOrderItems) {
@@ -1067,29 +1039,28 @@ function buildLimitationBlocks(fixOrderItems) {
   let html = '';
   for (const key of keys) {
     const items = groups.get(key);
-    const { title, level } = getWcagScLabel(key);
+    const { title, level } = getWcagScLabel(key, lang);
     const heading =
       key === '_other'
-        ? 'Other findings from this assessment'
-        : `${key} ${title} – Level ${level}`;
+        ? tr('doc.stmt.limits.otherFindings')
+        : tr('doc.stmt.limits.heading', { id: key, title, level });
     const scLink = key !== '_other' ? wcagScUrl(key) : null;
     const rows = dedupeFindingsByRule(items);
     html += '<div class="limitation-block">';
     html += `<h4 class="limitation-sc">${escapeHtml(heading)}</h4>`;
     if (scLink) {
-      html += `<p class="wcag-understanding">Official success criterion (W3C): <a href="${scLink}" target="_blank" rel="noopener">Understanding ${escapeHtml(key)} ${escapeHtml(title)}</a>.</p>`;
-      html +=
-        '<p class="wcag-note">The full normative wording is published by the W3C at the link above. Below is a summary of what our automated assessment found (grouped by rule; pages listed where applicable).</p>';
+      const link = `<a href="${scLink}" target="_blank" rel="noopener" hreflang="en">${escapeHtml(tr('doc.stmt.limits.understandingLink', { id: key, title }))}</a>`;
+      html += `<p class="wcag-understanding">${htmlText(tr, 'doc.stmt.limits.understanding', { link })}</p>`;
+      html += `<p class="wcag-note">${escapeHtml(tr('doc.stmt.limits.wcagNote'))}</p>`;
     } else {
-      html +=
-        '<p class="wcag-note">These findings are not mapped to a single WCAG success criterion in our tool configuration. Review and describe them in your own words for the published statement.</p>';
+      html += `<p class="wcag-note">${escapeHtml(tr('doc.stmt.limits.otherNote'))}</p>`;
     }
     for (const row of rows) {
       const pages =
         row.urls.length > 0
-          ? `<span class="finding-url">Affected pages: ${row.urls.map((u) => escapeHtml(u)).join('; ')}</span>`
+          ? `<span class="finding-url">${htmlText(tr, 'doc.affectedPages', { pages: row.urls.map((u) => escapeHtml(u)).join('; ') })}</span>`
           : '';
-      html += `<p class="finding"><strong>${findingHtml(row.rule, row.textLang)}</strong>${pages ? `<br>${pages}` : ''}</p>`;
+      html += `<p class="finding"><strong>${findingHtml(row.rule, row.textLang, lang)}</strong>${pages ? `<br>${pages}` : ''}</p>`;
     }
     html += '</div>';
   }
@@ -1118,26 +1089,29 @@ function statementSpan(meta, key, placeholder) {
   return `<span class="placeholder">${escapeHtml(placeholder)}</span>`;
 }
 
-function statementResponseDaysLine(meta) {
+function statementResponseDaysLine(meta, placeholder = '[NUMBER]') {
   const d = meta?.responseDays;
   if (d != null && Number.isFinite(Number(d)) && Number(d) > 0) {
     return escapeHtml(String(Number(d)));
   }
-  return `<span class="placeholder">[NUMBER]</span>`;
+  return `<span class="placeholder">${escapeHtml(placeholder)}</span>`;
 }
 
-export function generateAccessibilityStatement(data, outputDir) {
+function renderAccessibilityStatement(data, lang) {
   const { reportData, fixOrderItems, statementMeta: smRaw } = data;
+  const tr = translator(lang);
   const sm = smRaw && typeof smRaw === 'object' ? smRaw : {};
   const isoDate = new Date().toISOString().slice(0, 10);
   const testedUrls = reportData.urls || [];
   const { display: siteDisplay, host: siteHost } = deriveSiteUrls(reportData);
   const created = new Date(reportData.generatedAt || Date.now());
-  const monthYear = created.toLocaleString('en-GB', { month: 'long', year: 'numeric' });
-  const limitationsHtml = buildLimitationBlocks(fixOrderItems);
-  const prefilledNote = hasStatementMeta(sm)
-    ? ' Organization and contact details were pre-filled from the optional fields on the run form where provided.'
-    : '';
+  const monthYear = created.toLocaleString(dateLocale(lang), { month: 'long', year: 'numeric' });
+  const limitationsHtml = buildLimitationBlocks(fixOrderItems, tr);
+  const prefilledNote = hasStatementMeta(sm) ? tr('doc.stmt.prefilled') : '';
+  const org = statementStrong(sm, 'orgName', tr('doc.stmt.ph.org'));
+  const orgShort = statementStrong(sm, 'orgShortName', tr('doc.stmt.ph.orgShort'));
+  const siteStrong = `<strong>${escapeHtml(siteDisplay)}</strong>`;
+  const host = escapeHtml(siteHost);
 
   const STATEMENT_EXTRA_STYLES = `
     .statement-section { margin: 28px 0; }
@@ -1159,12 +1133,12 @@ export function generateAccessibilityStatement(data, outputDir) {
     .eval-list li { margin-bottom: 6px; }
   `;
 
-  const html = `<!DOCTYPE html>
-<html lang="en">
+  return `<!DOCTYPE html>
+<html lang="${lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Accessibility statement · ${escapeHtml(siteHost)}</title>
+  <title>${escapeHtml(tr('doc.stmt.title', { host: siteHost }))}</title>
   ${REPORT_BRAND_HEAD}
   <style>${STYLES}
     ${STATEMENT_EXTRA_STYLES}
@@ -1172,90 +1146,103 @@ export function generateAccessibilityStatement(data, outputDir) {
 </head>
 <body>
   <div class="container">
-    ${buildDeliverableHeaderHtml()}
-    <h1>Accessibility Statement for ${escapeHtml(siteHost)}</h1>
-    <p class="meta">Draft generated ${isoDate}.${prefilledNote} This is not a published accessibility statement and not a WCAG/EAA conformance claim. Replace placeholders and complete a human review before publishing.</p>
+    ${buildDeliverableHeaderHtml(tr)}
+    <h1>${escapeHtml(tr('doc.stmt.h1', { host: siteHost }))}</h1>
+    <p class="meta">${escapeHtml(tr('doc.stmt.meta', { date: isoDate, prefilled: prefilledNote }))}</p>
 
     <div class="statement-section">
-      <h2>About this statement</h2>
-      <p>At ${statementStrong(sm, 'orgName', '[ORGANIZATION NAME]')}, we believe digital experiences should work for everyone. Accessibility isn’t an afterthought for us, it’s a core part of how we build and maintain <strong>${escapeHtml(siteDisplay)}</strong>. We actively work to align our website with relevant accessibility standards, and we’re committed to identifying and resolving any remaining issues to ensure an inclusive experience for all visitors.</p>
+      <h2>${escapeHtml(tr('doc.stmt.about.h'))}</h2>
+      <p>${htmlText(tr, 'doc.stmt.about.body', { org, site: siteStrong })}</p>
     </div>
 
     <div class="statement-section">
-      <h2>Conformance status</h2>
-      <p>The <a href="https://www.w3.org/WAI/standards-guidelines/wcag/" target="_blank" rel="noopener">Web Content Accessibility Guidelines (WCAG)</a> define three levels of conformance: Level A, Level AA, and Level AAA. The target for this draft is <strong>WCAG 2.2 Level AA</strong> (and EN 301 549 where the EAA applies).</p>
-      <p>This file is an <strong>automated draft</strong>. It does not state that <strong>${escapeHtml(siteDisplay)}</strong> is fully, partially, or not conformant. Use those official terms only after a human evaluation.</p>
-      <p>The following pages were included in the automated assessment:</p>
+      <h2>${escapeHtml(tr('doc.stmt.status.h'))}</h2>
+      <p>${htmlText(tr, 'doc.stmt.status.levels', {
+        wcag: `<a href="https://www.w3.org/WAI/standards-guidelines/wcag/" target="_blank" rel="noopener">${escapeHtml(tr('doc.stmt.status.wcag'))}</a>`,
+        target: `<strong>${escapeHtml(tr('doc.stmt.status.target'))}</strong>`,
+      })}</p>
+      <p>${htmlText(tr, 'doc.stmt.status.draft', { draft: `<strong>${escapeHtml(tr('doc.stmt.status.draftWord'))}</strong>`, site: siteStrong })}</p>
+      <p>${escapeHtml(tr('doc.stmt.status.pages'))}</p>
       <ul>${testedUrls.map((u) => `<li>${escapeHtml(u)}</li>`).join('')}</ul>
     </div>
 
     <div class="statement-section">
-      <h2>Measures to support accessibility</h2>
-      <p>List only measures ${statementStrong(sm, 'orgShortName', '[ORGANIZATION SHORT NAME]')} actually takes. The items below are examples from the W3C statement generator — delete any that are not true before publishing.</p>
+      <h2>${escapeHtml(tr('doc.stmt.measures.h'))}</h2>
+      <p>${htmlText(tr, 'doc.stmt.measures.p', { org: orgShort })}</p>
       <ul class="measures">
-        <li><span class="placeholder">[e.g. Include accessibility throughout our internal policies.]</span></li>
-        <li><span class="placeholder">[e.g. Integrate accessibility into procurement.]</span></li>
-        <li><span class="placeholder">[e.g. Appoint an accessibility officer.]</span></li>
-        <li><span class="placeholder">[e.g. Provide accessibility training for staff.]</span></li>
+        ${[1, 2, 3, 4].map((n) => `<li><span class="placeholder">${escapeHtml(tr(`doc.stmt.measures.${n}`))}</span></li>`).join('\n        ')}
       </ul>
     </div>
 
     <div class="statement-section">
-      <h2>Technical specifications</h2>
-      <p>Accessibility of <strong>${escapeHtml(siteDisplay)}</strong> relies on the following technologies to work with the particular combination of web browser and any assistive technologies or plugins installed on your computer:</p>
+      <h2>${escapeHtml(tr('doc.stmt.tech.h'))}</h2>
+      <p>${htmlText(tr, 'doc.stmt.tech.p', { site: siteStrong })}</p>
       <ul class="tech-list">
         <li>HTML</li>
         <li>WAI-ARIA</li>
         <li>CSS</li>
         <li>JavaScript</li>
       </ul>
-      <p>These technologies need to work with the visitor’s browser and assistive technology. Confirm the list before publishing.</p>
+      <p>${escapeHtml(tr('doc.stmt.tech.confirm'))}</p>
     </div>
 
     <div class="statement-section">
-      <h2>Questions and feedback</h2>
-      <p>We welcome your feedback on the accessibility of ${escapeHtml(siteHost)}. Please let us know if you encounter accessibility barriers on ${escapeHtml(siteHost)}:</p>
+      <h2>${escapeHtml(tr('doc.stmt.feedback.h'))}</h2>
+      <p>${htmlText(tr, 'doc.stmt.feedback.p', { host })}</p>
       <div class="contact-block">
-        <p><strong>Phone:</strong> ${statementSpan(sm, 'phone', '[PHONE NUMBER]')}</p>
-        <p><strong>E-mail:</strong> ${statementSpan(sm, 'email', '[EMAIL ADDRESS]')}</p>
-        <p><strong>Visitor Address:</strong> ${statementSpan(sm, 'visitorAddress', '[STREET, CITY]')}</p>
-        <p><strong>Postal Address:</strong> ${statementSpan(sm, 'postalAddress', '[STREET, CITY]')}</p>
+        <p><strong>${escapeHtml(tr('doc.stmt.feedback.phone'))}</strong> ${statementSpan(sm, 'phone', tr('doc.stmt.ph.phone'))}</p>
+        <p><strong>${escapeHtml(tr('doc.stmt.feedback.email'))}</strong> ${statementSpan(sm, 'email', tr('doc.stmt.ph.email'))}</p>
+        <p><strong>${escapeHtml(tr('doc.stmt.feedback.visitor'))}</strong> ${statementSpan(sm, 'visitorAddress', tr('doc.stmt.ph.address'))}</p>
+        <p><strong>${escapeHtml(tr('doc.stmt.feedback.postal'))}</strong> ${statementSpan(sm, 'postalAddress', tr('doc.stmt.ph.address'))}</p>
       </div>
-      <p>We try to respond to feedback within ${statementResponseDaysLine(sm)} business days.</p>
+      <p>${htmlText(tr, 'doc.stmt.feedback.respond', { days: statementResponseDaysLine(sm, tr('doc.stmt.ph.number')) })}</p>
     </div>
 
     <div class="statement-section">
-      <h2>Limitations and alternatives</h2>
-      <p>Despite our best efforts to ensure accessibility of ${escapeHtml(siteHost)}, there may be some limitations. Below is a description of known limitations and potential solutions. Please contact us if you observe an issue not listed below.</p>
-      <h3>Known limitations for ${escapeHtml(siteDisplay)}</h3>
+      <h2>${escapeHtml(tr('doc.stmt.limits.h'))}</h2>
+      <p>${htmlText(tr, 'doc.stmt.limits.p', { host })}</p>
+      <h3>${escapeHtml(tr('doc.stmt.limits.known', { site: siteDisplay }))}</h3>
       ${limitationsHtml}
-      <p class="placeholder" style="margin-top: 20px; padding: 12px; border-radius: 8px; font-size: 0.9rem;">Add manual narrative for each issue (as in a full accessibility statement), timelines, and workarounds where appropriate. Automated findings above are a starting point only.</p>
+      <p class="placeholder" style="margin-top: 20px; padding: 12px; border-radius: 8px; font-size: 0.9rem;">${escapeHtml(tr('doc.stmt.limits.manual'))}</p>
     </div>
 
     <div class="statement-section">
-      <h2>Assessment approach</h2>
-      <p>${statementStrong(sm, 'orgShortName', '[ORGANIZATION SHORT NAME]')} assessed the accessibility of <strong>${escapeHtml(siteDisplay)}</strong> by the following approaches:</p>
+      <h2>${escapeHtml(tr('doc.stmt.approach.h'))}</h2>
+      <p>${htmlText(tr, 'doc.stmt.approach.p', { org: orgShort, site: siteStrong })}</p>
       <ul class="eval-list">
-        <li>Automated testing (custom checks and axe-core) on ${escapeHtml(created.toLocaleString())}, covering the URLs listed under Conformance status.</li>
-        <li><span class="placeholder">[Add keyboard, screen-reader, and other human evaluation if completed.]</span></li>
+        <li>${escapeHtml(tr('doc.stmt.approach.auto', { date: created.toLocaleString(dateLocale(lang)) }))}</li>
+        <li><span class="placeholder">${escapeHtml(tr('doc.stmt.approach.manual'))}</span></li>
       </ul>
     </div>
 
     <div class="statement-section">
-      <h2>Date</h2>
-      <p>This statement was created in <strong>${escapeHtml(monthYear)}</strong>.</p>
+      <h2>${escapeHtml(tr('doc.stmt.date.h'))}</h2>
+      <p>${htmlText(tr, 'doc.stmt.date.p', { month: `<strong>${escapeHtml(monthYear)}</strong>` })}</p>
     </div>
 
     <p style="margin-top: 32px; font-size: 0.85rem; color: var(--text-muted);">
-      This file was generated by the accessibility test suite. Review and customize all placeholders and limitation narratives before publication. See the <a href="https://www.w3.org/WAI/planning/statements/" target="_blank" rel="noopener">W3C Accessibility Statement Guide</a> for more information.
+      ${htmlText(tr, 'doc.stmt.generated', {
+        guide: `<a href="https://www.w3.org/WAI/planning/statements/" target="_blank" rel="noopener" hreflang="en">${escapeHtml(tr('doc.stmt.guide'))}</a>`,
+      })}
     </p>
-    <div class="deliverable-footer"><span class="footer-brand">Us</span> · Co-creating digital impact · Draft accessibility statement</div>
+    <div class="deliverable-footer">${footerHtml(tr, 'doc.stmt.name')}</div>
   </div>
 </body>
 </html>`;
+}
 
+/**
+ * Writes the statement in every statement language, plus the scan's language
+ * under the plain name that older links use.
+ * @returns {string} path of the statement in the scan's language
+ */
+export function generateAccessibilityStatement(data, outputDir) {
+  const scanLang = documentLang(data.reportData);
+  for (const lang of STATEMENT_LANGS) {
+    writeFileSync(join(outputDir, statementFileName(lang)), renderAccessibilityStatement(data, lang), 'utf8');
+  }
   const path = join(outputDir, 'accessibility-statement.html');
-  writeFileSync(path, html, 'utf8');
+  writeFileSync(path, renderAccessibilityStatement(data, scanLang), 'utf8');
   return path;
 }
 

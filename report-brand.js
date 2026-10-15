@@ -156,16 +156,21 @@ export const REPORT_DELIVERABLE_CSS = `
 export const REPORT_LOGO_URL =
   'https://about-us.be/wp-content/smush-avif/2025/09/logo-us-200x200.png.avif';
 
-/** Logo + tagline block for client/developer/statement deliverables */
-export function buildDeliverableHeaderHtml() {
+/**
+ * Logo + tagline block for client/developer/statement deliverables.
+ * @param {(key: string) => string} [tr] translator of the document's language; English without one
+ */
+export function buildDeliverableHeaderHtml(tr) {
+  const tagline = tr ? tr('doc.brandTagline') : 'Co-creating digital impact';
+  const back = tr ? tr('doc.backToResults') : 'Go back to results page';
   return `
     <div class="deliverable-brand-bar" aria-hidden="true"></div>
     <div class="deliverable-header">
       <img class="brand-logo" src="${REPORT_LOGO_URL}" width="44" height="44" alt="Us" decoding="async" />
       <div>
         <div class="brand-mark">Us</div>
-        <p class="report-tagline">Co-creating digital impact</p>
-        <a class="back-to-results" href="./">Go back to results page</a>
+        <p class="report-tagline" lang="en">${tagline}</p>
+        <a class="back-to-results" href="./">${back}</a>
       </div>
     </div>`;
 }

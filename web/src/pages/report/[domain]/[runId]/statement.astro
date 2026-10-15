@@ -10,6 +10,7 @@ import { isValidReportId } from '../../../../../../server/fs-utils.js';
 import { runDir, isValidRunId } from '../../../../../../server/run-ids.js';
 import { usePageLang } from '../../../../lib/page-lang.js';
 import { normalizeLang, translator } from '../../../../../../i18n/index.mjs';
+import { statementFileName } from '../../../../../../statement-files.js';
 
 export const prerender = false;
 // The page around the statement follows the visitor's language.
@@ -77,6 +78,11 @@ function nextYear(value: string): string {
 const reviewDate = nextYear(auditDate);
 
 const base = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}`;
+// The HTML file in the chosen language. Scans from before it existed only have
+// the English file, under the plain name.
+const docFileExists = existsSync(join(reportDir, statementFileName(docLang)));
+const htmlFile = docFileExists ? statementFileName(docLang) : 'accessibility-statement.html';
+const htmlLang = docFileExists ? docLang : 'en';
 const docLangs = [
   { code: 'nl', label: 'Nederlands' },
   { code: 'en', label: 'English' },
@@ -119,10 +125,10 @@ const docLangs = [
                 ))}
               </nav>
               <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
-                <a class="btn btn-secondary btn-sm" href={`${base}/accessibility-statement.html`} hreflang="en">{tr('stmtui.openHtml')} {tr('stmtui.htmlEnglish')}</a>
-                <a class="btn btn-primary btn-sm" href={`${base}/accessibility-statement.html`} hreflang="en" download>{tr('stmtui.download')} {tr('stmtui.htmlEnglish')}</a>
+                <a class="btn btn-secondary btn-sm" href={`${base}/${htmlFile}`} hreflang={htmlLang}>{tr('stmtui.openHtml')}{htmlLang !== docLang ? ` ${tr('stmtui.htmlEnglish')}` : ''}</a>
+                <a class="btn btn-primary btn-sm" href={`${base}/${htmlFile}`} hreflang={htmlLang} download>{tr('stmtui.download')}{htmlLang !== docLang ? ` ${tr('stmtui.htmlEnglish')}` : ''}</a>
               </div>
-              {docLang !== 'en' ? <p class="muted" style="font-size: 12px; margin: 0;">{tr('stmtui.htmlNote')}</p> : null}
+              {htmlLang !== docLang ? <p class="muted" style="font-size: 12px; margin: 0;">{tr('stmtui.htmlOlder')}</p> : null}
             </div>
           </div>
 

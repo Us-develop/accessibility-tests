@@ -91,3 +91,37 @@ describe('manual checklist SC mapping', () => {
     }
   });
 });
+
+describe('coverage in the language of the scan', () => {
+  it('uses the official Dutch criterion names, Dutch notes and a Dutch summary for a Dutch scan', () => {
+    const report = { lang: 'nl', urls: ['https://example.com/'], customResults: [], axeResults: {} };
+    const cov = buildWcagCoverage(report, []);
+    assert.equal(cov.lang, 'nl');
+    const sc = cov.criteria.find((c) => c.id === '1.1.1');
+    assert.equal(sc.title, 'Niet-tekstuele content');
+    assert.match(sc.autoNote, /^Controleert of afbeeldingen/);
+    const n = buildStaticNarrative(cov);
+    assert.match(n.disclaimer, /^Dit is geen officiële WCAG 2\.2 AA-audit/);
+    assert.match(n.pathToConformance, /maakt de site op zich niet volledig conform/);
+  });
+
+  it('stays English for reports from before the scan language was recorded', () => {
+    const cov = buildWcagCoverage({ urls: ['https://example.com/'], customResults: [], axeResults: {} }, []);
+    assert.equal(cov.lang, 'en');
+    assert.equal(cov.criteria.find((c) => c.id === '1.1.1').title, 'Non-text Content');
+  });
+
+  it('keeps the language of each finding label', () => {
+    const cov = buildWcagCoverage(
+      {
+        lang: 'nl',
+        urls: ['https://example.com/'],
+        customResults: [{ id: 'img-alt', rule: 'Informatieve afbeeldingen …', status: 'fail', url: 'https://example.com/' }],
+        axeResults: { 'https://example.com/': { violations: [{ id: 'image-alt', help: 'Images must have alternative text', tags: ['wcag2a', 'wcag111'], nodes: [{}] }], passes: [], incomplete: [] } },
+      },
+      []
+    );
+    const langs = cov.criteria.find((c) => c.id === '1.1.1').findings.map((f) => f.lang).sort();
+    assert.deepEqual(langs, ['en', 'nl']);
+  });
+});
