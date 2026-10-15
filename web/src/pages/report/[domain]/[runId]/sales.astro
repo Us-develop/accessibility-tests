@@ -15,8 +15,11 @@ import { combinedScoreWithManual } from '../../../../../../report-buckets.js';
 import { readReviewed } from '../../../../../../server/reviewed.mjs';
 import { accessAllows } from '../../../../../../server/entitlements.mjs';
 import { MANUAL_TODO_GROUPS, normalizeManualProgress } from '../../../../../../manual-checklist.js';
+import { usePageLang } from '../../../../lib/page-lang.js';
+import { dateLocale } from '../../../../../../i18n/index.mjs';
 
 export const prerender = false;
+const tr = usePageLang(Astro);
 
 const rawDomain = Astro.params.domain ?? '';
 const rawRunId = Astro.params.runId ?? '';
@@ -30,7 +33,7 @@ if (!isValidReportId(domain) || !isValidRunId(runId)) {
 // Pro only. The Express app in front already refuses; this covers `astro dev`,
 // where pages are served without it.
 if (!(await accessAllows(Astro.locals.access, 'salesReport'))) {
-  return new Response('The sales report is part of Pro.', { status: 403 });
+  return new Response(tr('sales.proOnly'), { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 }
 
 const reportDir = runDir(domain, runId);
@@ -40,7 +43,7 @@ if (!existsSync(resultsPath)) {
 }
 
 const json = JSON.parse(readFileSync(resultsPath, 'utf8'));
-const payload = buildAstroMainReportPayload(json);
+const payload = buildAstroMainReportPayload(json, { lang: tr.lang });
 const pagesLoaded = payload.pagesLoaded === true;
 
 const manualProgressPath = join(reportDir, 'manual-progress.json');
@@ -52,10 +55,12 @@ if (existsSync(manualProgressPath)) {
   } catch {}
 }
 const manualTotal = MANUAL_TODO_GROUPS.reduce((s, g) => s + g.items.length, 0);
+// Count only the reviewed marks that belong to this scan's findings, as the report does.
+const reviewed = new Set(readReviewed(domain, runId));
 const combinedScore =
   combinedScoreWithManual(payload.scoreBreakdown, manualChecked.length, manualTotal, {
     reviewTotal: payload.scoreModel.reviewKeys.length,
-    reviewDone: readReviewed(domain, runId).length,
+    reviewDone: payload.scoreModel.reviewKeys.filter((key) => reviewed.has(key)).length,
   }) ?? payload.scoreClamp;
 
 const statementMetaPath = join(reportDir, 'statement-meta.json');
@@ -77,7 +82,7 @@ const trend = allRuns
   .map((r) => {
     const d = r.updatedAt ? new Date(r.updatedAt) : null;
     const label = d && !Number.isNaN(d.getTime())
-      ? d.toLocaleString('en-GB', { month: 'short', day: '2-digit' })
+      ? d.toLocaleString(dateLocale(tr.lang), { month: 'short', day: '2-digit' })
       : r.runId.slice(5, 10);
     return { date: label, score: r.score as number };
   });
@@ -91,8 +96,8 @@ const previousScore = (() => {
 const fixOrderTopColors = ['var(--us-peach)', 'var(--us-lilac)', 'var(--us-mint)', 'var(--us-sky)', 'var(--us-pink)'];
 const topFixes = (payload.fixOrderTop || []).slice(0, 5).map((f, i) => ({
   rank: String(i + 1).padStart(2, '0'),
-  title: f.duplicateIdLabel ? `${f.rule || f.id} (${f.duplicateIdLabel})` : (f.rule || f.id || 'Fix'),
-  impact: f.snippet || `Affects ${f.url || 'multiple pages'}.`,
+  title: f.duplicateIdLabel ? `${f.rule || f.id} (${f.duplicateIdLabel})` : (f.rule || f.id || tr('sales.fixFallback')),
+  impact: f.snippet || tr('sales.affects', { where: f.url || tr('sales.multiplePages') }),
   points: typeof f.effort === 'number' ? f.effort : f.impact === 'High' ? 5 : f.impact === 'Medium' ? 3 : 1,
   color: fixOrderTopColors[i % fixOrderTopColors.length],
 }));
@@ -114,7 +119,7 @@ const deckProps = {
   pagesScanned: payload.urls.length,
   rulesChecked: payload.rulesTable.length,
   trend: trend.length > 1 ? trend : [
-    { date: 'now', score: payload.scoreClamp },
+    { date: tr('sales.now'), score: payload.scoreClamp },
   ],
   principles,
   plainEnglish,
@@ -124,12 +129,16 @@ const deckProps = {
   legalName,
   domain,
   runId,
+  lang: tr.lang,
+  // Rule names and snippets come from the scan; English for now.
+  findingsLang: 'en',
+  auditYear: json.generatedAt ? new Date(json.generatedAt).getFullYear() : new Date().getFullYear(),
 };
 
 const autoPrint = Astro.url.searchParams.get('print') === '1';
 ---
 
-<Layout title={`Sales report · ${companyName}`} description={`Sales deck summarizing the accessibility audit for ${companyName}.`}>
+<Layout title={tr('sales.title', { company: companyName })} description={tr('sales.description', { company: companyName })}>
   <div class="app-shell">
     <AppHeader domain={domain} runId={runId} active="sales" />
     <main id="main" class="app-main" tabindex="-1">
@@ -141,7 +150,8 @@ const autoPrint = Astro.url.searchParams.get('print') === '1';
           runId={runId}
           primaryHost={payload.primaryHost || domain}
           loadFailures={payload.loadFailures || []}
-          title="Sales report is not ready"
+          title={tr('sales.notReady')}
+          lang={tr.lang}
         />
       )}
     </main>

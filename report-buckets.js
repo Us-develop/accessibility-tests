@@ -6,6 +6,7 @@ import { getRemediation } from './remediation-data.js';
 
 import { errorsBreakdown, PAGE_LOAD_CHECK_ID, VACUOUS_PASS_IDS } from './scoring.js';
 import { overallScore } from './score-model.js';
+import { t, tn } from './i18n/index.mjs';
 
 export { PAGE_LOAD_CHECK_ID, VACUOUS_PASS_IDS };
 
@@ -520,7 +521,11 @@ function pagesWithErrors(reportData) {
  * Plain-English stats for the sales deck — always from this run.
  * @param {object} reportData
  */
-export function buildPlainEnglishStats(reportData) {
+/**
+ * @param {object} reportData
+ * @param {string} [lang] language of the page that shows it (the sales report)
+ */
+export function buildPlainEnglishStats(reportData, lang = 'en') {
   const pageCount = Math.max(1, (reportData.urls || []).length);
   const errorPages = pagesWithErrors(reportData);
   const contrastPages = pagesWithRule(reportData, CONTRAST_RULE_IDS);
@@ -529,21 +534,22 @@ export function buildPlainEnglishStats(reportData) {
 
   let headline;
   if (errorPages === 0) {
-    headline = 'Automated checks did not find errors on these pages.';
+    headline = t(lang, 'pe.headline.none');
   } else if (errorPages === pageCount && pageCount === 1) {
-    headline = 'This page has at least one automated error.';
+    headline = t(lang, 'pe.headline.single');
   } else if (errorPages === pageCount) {
-    headline = `Every scanned page (${pageCount}) has at least one automated error.`;
+    headline = t(lang, 'pe.headline.all', { n: pageCount });
   } else {
-    headline = `${errorPages} of ${pageCount} scanned pages have at least one automated error.`;
+    headline = t(lang, 'pe.headline.some', { errors: errorPages, total: pageCount });
   }
 
-  function card(pages, label, bodyWhenZero, bodyWhenSome) {
+  /** One card: `area` is the dictionary prefix (pe.names, pe.contrast, pe.keyboard). */
+  function card(pages, area) {
     const pct = Math.round((pages / pageCount) * 100);
     return {
-      value: pageCount === 1 ? (pages ? 'Yes' : 'No') : `${pct}%`,
-      label,
-      body: pages === 0 ? bodyWhenZero : bodyWhenSome.replace('{n}', String(pages)).replace('{pct}', String(pct)),
+      value: pageCount === 1 ? t(lang, pages ? 'pe.yes' : 'pe.no') : `${pct}%`,
+      label: t(lang, `${area}.label`),
+      body: pages === 0 ? t(lang, `${area}.zero`) : tn(lang, `${area}.some`, pages),
     };
   }
 
@@ -552,24 +558,9 @@ export function buildPlainEnglishStats(reportData) {
     errorPages,
     pageCount,
     cards: [
-      card(
-        namePages,
-        'Text alternatives & names',
-        'No missing names or alt text in this automated pass.',
-        '{n} page(s) have missing names, labels, or text alternatives.'
-      ),
-      card(
-        contrastPages,
-        'Contrast & visual design',
-        'No automated contrast failures on these pages.',
-        '{n} page(s) fail automated contrast or related visual checks.'
-      ),
-      card(
-        keyboardPages,
-        'Keyboard & target size',
-        'No automated keyboard or target-size failures on these pages.',
-        '{n} page(s) have keyboard, focus, reflow, or target-size issues.'
-      ),
+      card(namePages, 'pe.names'),
+      card(contrastPages, 'pe.contrast'),
+      card(keyboardPages, 'pe.keyboard'),
     ],
   };
 }

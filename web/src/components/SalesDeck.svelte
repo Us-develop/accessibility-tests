@@ -3,6 +3,7 @@
   import { onMount, onDestroy } from 'svelte';
   import ScoreDonut from './ScoreDonut.svelte';
   import TrendChart from './TrendChart.svelte';
+  import { t, tn } from '../../../i18n/index.mjs';
 
   /**
    * @type {{
@@ -26,6 +27,9 @@
    *   domain: string,
    *   runId: string,
    *   autoPrint?: boolean,
+   *   lang?: string,
+   *   findingsLang?: string,
+   *   auditYear?: number,
    * }}
    */
   let {
@@ -49,7 +53,23 @@
     domain,
     runId,
     autoPrint = false,
+    lang = 'en',
+    findingsLang = 'en',
+    auditYear = new Date().getFullYear(),
   } = $props();
+
+  const tr = (key, vars) => t(lang, key, vars);
+  const known = (key, fallback) => {
+    const text = tr(key);
+    return text === key ? fallback : text;
+  };
+  /** Fix titles and snippets come from the scan, in the language it ran in. */
+  const findingsAttr = $derived(findingsLang && findingsLang !== lang ? findingsLang : undefined);
+  const signed = (n) => (n >= 0 ? `+${n}` : String(n));
+  /** The trend slide says what actually happened, not always "up". */
+  const trendHeading = $derived(
+    delta == null ? tr('deck.trend.first') : delta > 0 ? tr('deck.trend.up') : delta < 0 ? tr('deck.trend.down') : tr('deck.trend.flat')
+  );
 
   const delta = $derived(previousScore != null ? scoreClamp - previousScore : null);
 
@@ -105,17 +125,17 @@
   <div class="deck-frame">
     <div class="deck-head">
       <div>
-        <span class="eyebrow" style="color: rgba(255,255,255,0.6);"><span class="dot"></span>For the client</span>
-        <h2 style="color: var(--us-cream); font-size: clamp(1.15rem, 3.5vw, 28px); margin-top: 6px;">Sales-ready report · {companyName}</h2>
+        <span class="eyebrow" style="color: rgba(255,255,255,0.6);"><span class="dot"></span>{tr('deck.eyebrow')}</span>
+        <h2 style="color: var(--us-cream); font-size: clamp(1.15rem, 3.5vw, 28px); margin-top: 6px;">{tr('deck.h', { company: companyName })}</h2>
       </div>
       <div class="deck-controls">
-        <a class="btn btn-ghost btn-sm deck-nav" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`}>← Back to report</a>
+        <a class="btn btn-ghost btn-sm deck-nav" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`}>{tr('cov.back')}</a>
         <span class="deck-pos">
           {String(slideIdx + 1).padStart(2, '0')} / {String(totalSlides).padStart(2, '0')}
         </span>
         <span class="deck-divider"></span>
-        <button class="btn btn-ghost btn-sm deck-nav" onclick={() => window.print()}>Print / PDF</button>
-        <button class="btn btn-cream btn-sm" onclick={gotoStatement}>Open statement →</button>
+        <button class="btn btn-ghost btn-sm deck-nav" onclick={() => window.print()}>{tr('deck.print')}</button>
+        <button class="btn btn-cream btn-sm" onclick={gotoStatement}>{tr('deck.openStatement')}</button>
       </div>
     </div>
 
@@ -129,18 +149,18 @@
             <div class="cover-row">
               <span class="cover-brand">
                 <img class="cover-logo" src="/assets/us-logo.png" width="83" height="40" alt="Us" />
-                <span style="font-size: 18px;">Accessibility</span>
+                <span style="font-size: 18px;">{tr('deck.cover.brand')}</span>
               </span>
               <span style="opacity: 0.5; font-size: 14px;">{auditDate}</span>
             </div>
             <div>
-              <span class="eyebrow" style="color: rgba(255,255,255,0.6);"><span class="dot"></span>Automated scan · WCAG 2.2 AA aligned</span>
-              <h1 class="cover-title">A clear-eyed look at <em>{companyName}</em></h1>
-              <p class="cover-lead">What automation found, what still needs a human, and what we'd change first.</p>
+              <span class="eyebrow" style="color: rgba(255,255,255,0.6);"><span class="dot"></span>{tr('deck.cover.eyebrow')}</span>
+              <h1 class="cover-title">{tr('deck.cover.title')} <em>{companyName}</em></h1>
+              <p class="cover-lead">{tr('deck.cover.lead')}</p>
             </div>
             <div class="cover-foot">
-              <div style="font-size: 14px; opacity: 0.6;">Prepared for {legalName || companyName}</div>
-              <div style="font-size: 14px; opacity: 0.6;">{pagesScanned} pages · automated checks (not a conformance audit)</div>
+              <div style="font-size: 14px; opacity: 0.6;">{tr('deck.cover.preparedFor', { name: legalName || companyName })}</div>
+              <div style="font-size: 14px; opacity: 0.6;">{tn(lang, 'deck.cover.pages', pagesScanned)}</div>
             </div>
           </div>
         </section>
@@ -149,32 +169,31 @@
         <section data-screen-label="Slide 02 - Score" class="slide slide-cream">
           <div class="slide-pad score-grid">
             <div>
-              <span class="eyebrow"><span class="dot"></span>The bottom line</span>
-              <h2 class="score-h2">One score, three parts.</h2>
+              <span class="eyebrow"><span class="dot"></span>{tr('deck.score.eyebrow')}</span>
+              <h2 class="score-h2">{tr('deck.score.h')}</h2>
               <p class="score-p">
-                Overall: <strong>{combinedScore}/100</strong>. It combines automated errors (60%), findings to
-                review (15%) and the manual checks (25%), and reaches 100 only when all three are complete.
-                Errors score: <strong>{scoreClamp}/100</strong>. Manual checks: {manualChecked}/{manualTotal} ticked.
+                {tr('deck.score.overall')} <strong>{combinedScore}/100</strong>. {tr('deck.score.explain')}
+                {tr('deck.score.errors')} <strong>{scoreClamp}/100</strong>. {tr('deck.score.manual', { done: manualChecked, total: manualTotal })}
                 {#if delta != null}
-                  Automated score is <strong>{delta >= 0 ? `+${delta}` : delta}</strong> {delta >= 0 ? 'from' : 'below'} your last scan.
+                  {tr('deck.score.delta', { delta: signed(delta) })}
                 {/if}
-                Neither is WCAG or EAA conformance.
+                {tr('deck.score.notConformance')}
               </p>
               <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                 {#if delta != null}
                   <span class="tag {delta >= 0 ? 'tag-success' : 'tag-error'}" style="font-size: 14px; padding: 8px 14px;">
-                    {delta >= 0 ? `↑ +${delta}` : `↓ ${delta}`} automated since last scan
+                    {delta >= 0 ? '↑' : '↓'} {tr('deck.score.deltaTag', { delta: signed(delta) })}
                   </span>
                 {/if}
-                <span class="tag tag-outline" style="font-size: 14px; padding: 8px 14px;">Not a legal sign-off</span>
+                <span class="tag tag-outline" style="font-size: 14px; padding: 8px 14px;">{tr('deck.score.notLegal')}</span>
               </div>
             </div>
             <div class="score-donuts">
               <div class="score-donut-block">
-                <ScoreDonut score={scoreClamp} size={Math.min(deckDonutSize, 240)} stroke={24} threshold={80} label="Without" />
+                <ScoreDonut score={scoreClamp} size={Math.min(deckDonutSize, 240)} stroke={24} threshold={80} label={tr('deck.score.donutErrors')} />
               </div>
               <div class="score-donut-block">
-                <ScoreDonut score={combinedScore} size={Math.min(deckDonutSize, 240)} stroke={24} threshold={80} label="With checks" />
+                <ScoreDonut score={combinedScore} size={Math.min(deckDonutSize, 240)} stroke={24} threshold={80} label={tr('deck.score.donutOverall')} />
               </div>
             </div>
           </div>
@@ -183,9 +202,9 @@
         <!-- 3: plain English -->
         <section data-screen-label="Slide 03 - Plain english" class="slide slide-white">
           <div class="slide-pad" style="display: flex; flex-direction: column; justify-content: center;">
-            <span class="eyebrow"><span class="dot"></span>What this scan found</span>
+            <span class="eyebrow"><span class="dot"></span>{tr('deck.plain.eyebrow')}</span>
             <h2 class="slide-h2 wide" style="margin-top: 14px; margin-bottom: 40px;">
-              {plainEnglish.headline || 'Automated findings for this run.'}
+              {plainEnglish.headline || tr('deck.plain.fallback')}
             </h2>
             <div class="deck-grid-3">
               {#each (plainEnglish.cards || []) as card, i (card.label)}
@@ -198,15 +217,15 @@
                 </div>
               {/each}
             </div>
-            <p class="muted" style="font-size: 12px; margin-top: 20px;">Figures are from this automated run only. A human audit is still required for WCAG 2.2 AA or EAA conformance.</p>
+            <p class="muted" style="font-size: 12px; margin-top: 20px;">{tr('deck.plain.note')}</p>
           </div>
         </section>
 
         <!-- 4: principles -->
         <section data-screen-label="Slide 04 - Principles" class="slide slide-cream">
           <div class="slide-pad" style="display: flex; flex-direction: column; justify-content: center;">
-            <span class="eyebrow"><span class="dot"></span>The four pillars · WCAG POUR</span>
-            <h2 class="slide-h2" style="margin-top: 14px; margin-bottom: 40px;">How you score on each pillar</h2>
+            <span class="eyebrow"><span class="dot"></span>{tr('deck.pillars.eyebrow')}</span>
+            <h2 class="slide-h2" style="margin-top: 14px; margin-bottom: 40px;">{tr('deck.pillars.h')}</h2>
             <div class="deck-grid-4">
               {#each principles as p (p.key)}
                 {@const total = p.errors + p.warnings + p.passed}
@@ -214,11 +233,11 @@
                 <div class="principle-card" style="background: {p.color}; color: {p.textColor};">
                   <div>
                     <div class="principle-pct">{pct}%</div>
-                    <div class="principle-pct-label">pass rate</div>
+                    <div class="principle-pct-label">{tr('dash.principle.passRate')}</div>
                   </div>
                   <div>
-                    <div class="principle-name">{p.label}</div>
-                    <div class="principle-meta">{p.errors} errors · {p.warnings} warnings</div>
+                    <div class="principle-name">{known(`dash.principle.${p.key}`, p.label)}</div>
+                    <div class="principle-meta">{tr('deck.pillars.meta', { errors: p.errors, warnings: p.warnings })}</div>
                   </div>
                 </div>
               {/each}
@@ -229,17 +248,17 @@
         <!-- 5: top fixes -->
         <section data-screen-label="Slide 05 - Top fixes" class="slide slide-white">
           <div class="slide-pad" style="display: flex; flex-direction: column; justify-content: center;">
-            <span class="eyebrow"><span class="dot"></span>Where to start</span>
-            <h2 class="slide-h2" style="margin-top: 14px; margin-bottom: 40px;">Three fixes for big impact</h2>
+            <span class="eyebrow"><span class="dot"></span>{tr('deck.fixes.eyebrow')}</span>
+            <h2 class="slide-h2" style="margin-top: 14px; margin-bottom: 40px;">{tr('deck.fixes.h')}</h2>
             <div style="display: flex; flex-direction: column; gap: 18px;">
               {#each topFixes.slice(0, 3) as f, i (i)}
                 <div class="fix-card">
                   <div class="fix-rank" style="background: {f.color};">{f.rank || String(i + 1).padStart(2, '0')}</div>
-                  <div>
+                  <div lang={findingsAttr}>
                     <div class="fix-title">{f.title}</div>
                     <div class="fix-impact">{f.impact}</div>
                   </div>
-                  <span class="tag tag-ink" style="font-size: 14px; padding: 8px 14px;">{f.points} story points</span>
+                  <span class="tag tag-ink" style="font-size: 14px; padding: 8px 14px;">{tn(lang, 'deck.fixes.points', f.points)}</span>
                 </div>
               {/each}
             </div>
@@ -250,16 +269,14 @@
         <section data-screen-label="Slide 06 - Trend" class="slide slide-cream">
           <div class="slide-pad trend-grid">
             <div>
-              <span class="eyebrow"><span class="dot"></span>Score trend</span>
-              <h2 class="slide-h2" style="margin-top: 14px; margin-bottom: 22px;">You're trending up — let's keep going.</h2>
+              <span class="eyebrow"><span class="dot"></span>{tr('dash.trend.h')}</span>
+              <h2 class="slide-h2" style="margin-top: 14px; margin-bottom: 22px;">{trendHeading}</h2>
               {#if delta != null}
-                <p class="trend-p">
-                  Score moved by <strong>{delta >= 0 ? `+${delta}` : delta}</strong> since the previous audit.
-                </p>
+                <p class="trend-p">{tr('deck.trend.moved', { delta: signed(delta) })}</p>
               {/if}
             </div>
             <div class="trend-card">
-              <TrendChart data={trend} width={620} height={320} />
+              <TrendChart data={trend} width={620} height={320} {lang} />
             </div>
           </div>
         </section>
@@ -268,17 +285,17 @@
         <section data-screen-label="Slide 07 - Next steps" class="slide slide-dark">
           <div aria-hidden="true" class="blob blob-iri-mid"></div>
           <div class="slide-pad" style="position: relative; display: flex; flex-direction: column; justify-content: center;">
-            <span class="eyebrow" style="color: rgba(255,255,255,0.6);"><span class="dot"></span>What's next</span>
-            <h2 class="slide-h2 next-h2">A two-week sprint, eight tickets, one big leap forward.</h2>
+            <span class="eyebrow" style="color: rgba(255,255,255,0.6);"><span class="dot"></span>{tr('deck.next.eyebrow')}</span>
+            <h2 class="slide-h2 next-h2">{tr('deck.next.h')}</h2>
             <div class="deck-grid-3 deck-grid-3--tight">
-              <div class="next-card"><div class="next-num">01</div><div class="next-title">This week</div><div class="next-body">Sign off the sprint and assign tickets.</div></div>
-              <div class="next-card"><div class="next-num">02</div><div class="next-title">Weeks 1–2</div><div class="next-body">Frontend ships fixes, design audits color tokens.</div></div>
-              <div class="next-card"><div class="next-num">03</div><div class="next-title">Week 3</div><div class="next-body">Re-audit and publish the updated statement.</div></div>
+              {#each [1, 2, 3] as n (n)}
+                <div class="next-card"><div class="next-num">{String(n).padStart(2, '0')}</div><div class="next-title">{tr(`deck.next.${n}.title`)}</div><div class="next-body">{tr(`deck.next.${n}.body`)}</div></div>
+              {/each}
             </div>
             {#if coordinator || coordinatorEmail}
               <div style="margin-top: 60px; display: flex; gap: 14px; align-items: center;">
-                <span class="btn btn-grad btn-lg">Approve sprint →</span>
-                <span style="opacity: 0.6; font-size: 14px;">Or contact <strong style="color: var(--us-cream);">{coordinator}</strong> · {coordinatorEmail}</span>
+                <span class="btn btn-grad btn-lg">{tr('deck.next.approve')}</span>
+                <span style="opacity: 0.6; font-size: 14px;">{tr('deck.next.contact')} <strong style="color: var(--us-cream);">{coordinator}</strong> · {coordinatorEmail}</span>
               </div>
             {/if}
           </div>
@@ -289,13 +306,11 @@
           <div class="slide-pad closing-pad">
             <img class="closing-logo" src="/assets/us-logo.png" width="83" height="40" alt="Us" />
             <h2 class="closing-h2">
-              Let's make it work for <em class="grad-text">everyone.</em>
+              {tr('deck.closing.h')} <em class="grad-text">{tr('deck.closing.everyone')}</em>
             </h2>
-            <p class="closing-lead">
-              Questions? Reach out — we'll walk through the report with your team.
-            </p>
+            <p class="closing-lead">{tr('deck.closing.lead')}</p>
             <div style="margin-top: 40px; font-size: 14px; color: var(--fg-3);">
-              Us Agency · Accessibility practice · 2026
+              {tr('deck.closing.footer', { year: auditYear })}
             </div>
           </div>
         </section>

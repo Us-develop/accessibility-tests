@@ -139,6 +139,17 @@ describe('buildPlainEnglishStats', () => {
     assert.equal(stats.pageCount, 2);
     assert.match(stats.headline, /1 of 2/);
   });
+
+  it('writes the summary in the language of the page, with singular and plural', () => {
+    const nl = buildPlainEnglishStats(sampleReport, 'nl');
+    assert.equal(nl.headline, "1 van de 2 gescande pagina's hebben minstens één automatische fout.");
+    assert.equal(nl.cards.length, 3);
+    for (const card of nl.cards) {
+      assert.doesNotMatch(`${card.label} ${card.body}`, /\b(page|pages|missing|failures)\b/);
+    }
+    const en = buildPlainEnglishStats(sampleReport);
+    assert.doesNotMatch(en.cards.map((c) => c.body).join(' '), /page\(s\)/);
+  });
 });
 
 describe('groupFixesByPrinciple', () => {
