@@ -549,7 +549,8 @@ export default {
   'stmtui.openHtml': 'Open static HTML',
   'stmtui.download': 'Download HTML',
   'stmtui.htmlEnglish': '(English)',
-  'stmtui.htmlNote': 'The HTML file is in English for now; a Dutch version follows.',
+  'stmtui.htmlOlder':
+    'This scan is older than the Dutch version of the file, so it is only available in English.',
   'stmtui.langLabel': 'Language of the statement',
   'stmtui.back': '← Back to results',
   'stmtui.developer': 'Developer fix list →',

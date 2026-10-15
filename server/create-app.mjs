@@ -126,6 +126,9 @@ const DELIVERABLE_FILES = [
   'accessibility-developers.html',
   'accessibility-client.html',
   'accessibility-statement.html',
+  // The statement in each language the statement page offers.
+  'accessibility-statement.nl.html',
+  'accessibility-statement.en.html',
 ];
 
 function runKey(domain, runId) {
@@ -2644,6 +2647,8 @@ async function readRunReportData(domain, runId) {
 
 function publicWcagAnalysis(payload) {
   return {
+    // Language of the content (criterion names, notes, summary): the scan's.
+    lang: payload.coverage.lang || 'en',
     standard: payload.coverage.standard,
     total: payload.coverage.total,
     pages: payload.coverage.pages,

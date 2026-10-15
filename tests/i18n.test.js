@@ -214,7 +214,7 @@ describe('report pages from phase F', () => {
 
   it('mark coverage content that is still English when the page is not', () => {
     const coverage = read('web/src/components/WcagCoverage.svelte');
-    assert.match(coverage, /const contentLang = \$derived\(lang === 'en' \? undefined : 'en'\);/);
+    assert.match(coverage, /const contentLang = \$derived\(data && \(data\.lang \|\| 'en'\) !== lang \? data\.lang \|\| 'en' : undefined\);/);
     assert.match(coverage, /<strong lang=\{contentLang\}>\{c\.title\}<\/strong>/);
     assert.match(coverage, /<p lang=\{contentLang\}>\{data\.narrative\.checked\}<\/p>/);
     // Manual checks it lists come from the translated checklist.
@@ -267,7 +267,10 @@ describe('accessibility statement', () => {
     assert.match(t('en', 'stmt.errorsScore', { score: 80 }), /weighted by severity/);
   });
 
-  it('says the downloadable HTML is still English', () => {
-    assert.match(page, /hreflang="en" download>\{tr\('stmtui\.download'\)\} \{tr\('stmtui\.htmlEnglish'\)\}/);
+  it('offers the HTML file in the chosen language, and says so when an older scan only has English', () => {
+    assert.match(page, /const htmlFile = docFileExists \? statementFileName\(docLang\) : 'accessibility-statement\.html';/);
+    assert.match(page, /href=\{`\$\{base\}\/\$\{htmlFile\}`\} hreflang=\{htmlLang\} download>/);
+    assert.match(page, /\{htmlLang !== docLang \? <p class="muted" style="font-size: 12px; margin: 0;">\{tr\('stmtui\.htmlOlder'\)\}<\/p> : null\}/);
+    assert.doesNotMatch(page, /generate-deliverables/);
   });
 });

@@ -6,6 +6,8 @@ import { getRemediation, wcagScUrl } from './remediation-data.js';
 import { ALL_MANUAL_ITEMS } from './manual-checklist.js';
 import { WCAG_22_AA_SC, WCAG_22_AA_COUNT, getWcagScLabel } from './wcag-sc-labels.js';
 import { wcagFromAxeTags } from './report-buckets.js';
+import { t } from './i18n/index.mjs';
+import { findingsLangs } from './findings-lang.js';
 
 /** @typedef {'none' | 'presence' | 'partial'} AutoCapability */
 
@@ -123,40 +125,47 @@ function statusRank(status) {
  * @param {object} reportData
  * @param {string[]} [manualCheckedIds]
  */
+/**
+ * The coverage content (criterion names, notes, summary) is written in the
+ * language of the scan, like the findings. Finding labels keep their own
+ * language (`lang` per finding: our checks and axe can differ).
+ */
 export function buildWcagCoverage(reportData, manualCheckedIds = []) {
+  const langs = findingsLangs(reportData);
+  const lang = langs.custom;
   const checkedSet = new Set(Array.isArray(manualCheckedIds) ? manualCheckedIds : []);
-  /** @type {Map<string, { status: string, label: string }[]>} */
+  /** @type {Map<string, { status: string, label: string, lang: string }[]>} */
   const findingsBySc = new Map();
 
-  function addFinding(sc, status, label) {
+  function addFinding(sc, status, label, labelLang) {
     if (!sc || !AUTO_COVERAGE[sc]) return;
     if (!findingsBySc.has(sc)) findingsBySc.set(sc, []);
-    findingsBySc.get(sc).push({ status, label });
+    findingsBySc.get(sc).push({ status, label, lang: labelLang });
   }
 
   for (const row of reportData?.customResults || []) {
     const scs = wcagForCustomRow(row);
-    const label = row.rule || row.id || 'custom check';
+    const label = row.rule || row.id || t(lang, 'covtext.otherFindings');
     let status = 'not-run';
     if (row.status === 'fail') status = 'fail';
     else if (row.status === 'warn') status = 'warn';
     else if (row.status === 'pass') status = 'pass';
     else if (row.status === 'info') status = 'incomplete';
-    for (const sc of scs) addFinding(sc, status, label);
+    for (const sc of scs) addFinding(sc, status, label, langs.custom);
   }
 
   for (const data of Object.values(reportData?.axeResults || {})) {
     for (const v of data.violations || []) {
       const label = v.help || v.id || 'axe violation';
-      for (const sc of wcagForAxeItem(v)) addFinding(sc, 'fail', label);
+      for (const sc of wcagForAxeItem(v)) addFinding(sc, 'fail', label, langs.axe);
     }
     for (const v of data.incomplete || []) {
       const label = v.help || v.id || 'axe incomplete';
-      for (const sc of wcagForAxeItem(v)) addFinding(sc, 'incomplete', label);
+      for (const sc of wcagForAxeItem(v)) addFinding(sc, 'incomplete', label, langs.axe);
     }
     for (const v of data.passes || []) {
       const label = v.help || v.id || 'axe pass';
-      for (const sc of wcagForAxeItem(v)) addFinding(sc, 'pass', label);
+      for (const sc of wcagForAxeItem(v)) addFinding(sc, 'pass', label, langs.axe);
     }
   }
 
@@ -174,13 +183,15 @@ export function buildWcagCoverage(reportData, manualCheckedIds = []) {
     const manualPartial =
       manualCanCover && !manualChecked && manuals.some((item) => checkedSet.has(item.id));
     const needsProfessional = meta.auto === 'none' && !manualCanCover;
+    const noteKey = `covnote.${row.id}`;
+    const note = lang === 'en' ? meta.note : t(lang, noteKey);
     return {
       id: row.id,
-      title: row.title,
+      title: getWcagScLabel(row.id, lang).title,
       level: row.level,
       principle: principleFromId(row.id),
       auto: meta.auto,
-      autoNote: meta.note,
+      autoNote: note === noteKey ? meta.note : note,
       url: wcagScUrl(row.id),
       thisRun: meta.auto === 'none' && findings.length === 0 ? 'not-checked' : thisRun,
       findings: findings.slice(0, 8),
@@ -203,6 +214,7 @@ export function buildWcagCoverage(reportData, manualCheckedIds = []) {
   const autoFails = criteria.filter((c) => c.thisRun === 'fail' || c.thisRun === 'warn');
 
   return {
+    lang,
     standard: 'WCAG 2.2 Level A and AA',
     total: WCAG_22_AA_COUNT,
     pages: Array.isArray(reportData?.urls) ? reportData.urls.length : 0,
@@ -227,6 +239,8 @@ export function buildWcagCoverage(reportData, manualCheckedIds = []) {
 
 export function compactCoverageForPrompt(coverage) {
   return {
+    // The language the explanation must be written in; part of the cache hash.
+    lang: coverage.lang || 'en',
     standard: coverage.standard,
     total: coverage.total,
     pages: coverage.pages,
@@ -259,49 +273,40 @@ export function compactCoverageForPrompt(coverage) {
 
 export function buildStaticNarrative(coverage) {
   const { counts } = coverage;
-  const failIds = coverage.buckets.autoFails
-    .map((id) => {
-      const { title, level } = getWcagScLabel(id);
-      return `${id} ${title} (Level ${level})`;
-    })
-    .slice(0, 12);
-  const manualIds = coverage.buckets.manualCanCover
-    .map((id) => {
-      const { title, level } = getWcagScLabel(id);
-      return `${id} ${title} (Level ${level})`;
-    });
-  const outsideIds = coverage.buckets.outsideProduct
-    .map((id) => {
-      const { title, level } = getWcagScLabel(id);
-      return `${id} ${title} (Level ${level})`;
-    });
+  const lang = coverage.lang || 'en';
+  const scText = (id) => {
+    const { title, level } = getWcagScLabel(id, lang);
+    return t(lang, 'covtext.sc', { id, title, level });
+  };
+  const failIds = coverage.buckets.autoFails.map(scText).slice(0, 12);
+  const manualIds = coverage.buckets.manualCanCover.map(scText);
+  const outsideIds = coverage.buckets.outsideProduct.map(scText);
 
-  const checked =
-    `This run attempted automated checks that map to ${counts.autoAttempted} of ${counts.autoAttempted + counts.autoNotChecked} WCAG 2.2 Level A and AA success criteria (${coverage.total} in total). ` +
-    `Automation is presence- or heuristic-based: a pass means the machine check did not fail, not that the criterion is met. ` +
-    (failIds.length
-      ? `On this run, automated fails or warnings still touch: ${failIds.join('; ')}.`
-      : `On this run, no mapped success criterion showed an automated fail or warning. That is not a WCAG pass.`);
+  const checked = [
+    t(lang, 'covtext.checked.intro', {
+      attempted: counts.autoAttempted,
+      total: counts.autoAttempted + counts.autoNotChecked,
+      all: coverage.total,
+    }),
+    failIds.length ? t(lang, 'covtext.checked.fails', { list: failIds.join('; ') }) : t(lang, 'covtext.checked.none'),
+  ].join(' ');
 
-  const notChecked =
-    `${counts.autoNotChecked} success criteria are not checked by this scanner. ` +
-    `Examples include captions quality, keyboard traps, accessible authentication, and consistent navigation. ` +
-    `axe-core and the custom chapters cannot see most of those.`;
+  const notChecked = t(lang, 'covtext.notChecked', { n: counts.autoNotChecked });
 
-  const manualCanCover =
-    `Of those untested criteria, ${counts.manualCanCover} can be addressed with the in-app Manual checks (keyboard, screen reader, zoom, captions quality, meaningful names, and related items). ` +
-    (manualIds.length ? `They include: ${manualIds.join('; ')}. ` : '') +
-    `Ticking a box only counts if someone actually performed that test.`;
+  const manualCanCover = [
+    t(lang, 'covtext.manual.intro', { n: counts.manualCanCover }),
+    manualIds.length ? t(lang, 'covtext.manual.list', { list: manualIds.join('; ') }) : '',
+    t(lang, 'covtext.manual.honest'),
+  ]
+    .filter(Boolean)
+    .join(' ');
 
-  const pathToConformance =
-    `If automated findings are fixed and the manual and assistive-technology checks are done thoroughly — real keyboard, screen reader, and zoom testing, not just ticks — you will have covered both what this scanner can find and the human checks this product includes. ` +
-    `That is the path this tool is designed for, and it is necessary for WCAG 2.2 AA. It is not sufficient on its own: ${counts.outsideProduct} success criteria remain outside this checklist` +
-    (outsideIds.length ? ` (including ${outsideIds.slice(0, 8).join('; ')})` : '') +
-    `. Completing the product well does not make the site fully compliant by itself.`;
+  const pathToConformance = t(lang, 'covtext.path', {
+    n: counts.outsideProduct,
+    examples: outsideIds.length ? t(lang, 'covtext.path.examples', { list: outsideIds.slice(0, 8).join('; ') }) : '',
+  });
 
-  const disclaimer =
-    `This is not an official WCAG 2.2 AA audit, not EN 301 549 certification, and not an EAA legal sign-off. ` +
-    `Contact Us or another qualified accessibility professional for an official evaluation before you publish a conformance claim.`;
+  const disclaimer = t(lang, 'covtext.disclaimer');
 
   return { checked, notChecked, manualCanCover, pathToConformance, disclaimer };
 }

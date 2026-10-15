@@ -22,7 +22,7 @@ Hard rules:
 - You may say: if automated findings are fixed AND the manual/assistive-technology checks are actually performed well (keyboard, screen reader, zoom — not just ticking boxes), the customer will have covered what this product is designed to catch. That path is necessary for WCAG 2.2 AA. It is not sufficient: criteria listed as outsideProduct still need a professional.
 - Always tell them to contact Us or another qualified professional for an official evaluation before publishing a conformance claim.
 
-Write in clear English for a non-specialist. No markdown headings. Plain paragraphs.
+Write for a non-specialist in the language given as "lang" in the matrix: "nl" is Dutch as written in Belgium, addressing the reader formally as "u"; "en" is English. Use the criterion titles as they appear in the matrix. No markdown headings. Plain paragraphs.
 
 Return ONLY JSON with keys:
 checked, notChecked, manualCanCover, pathToConformance, disclaimer
@@ -59,6 +59,11 @@ function parseNarrativeJson(text) {
 function narrativeLooksUnsafe(narrative) {
   const blob = Object.values(narrative).join('\n');
   const positiveClaims = [
+    // Dutch
+    /\b(is|bent|zijn|wordt|worden) (nu )?volledig (conform|in orde)\b/i,
+    /\bvoldoet volledig aan\b/i,
+    /\bdit is een officiële (audit|evaluatie)\b/i,
+    // English
     /\byou are fully compliant\b/i,
     /\bsite is fully compliant\b/i,
     /\bwebsite is fully compliant\b/i,

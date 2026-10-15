@@ -73,13 +73,82 @@ export const WCAG_SC_LABEL = Object.fromEntries(
 );
 WCAG_SC_LABEL['2.5.5'] = { title: 'Target Size (Enhanced)', level: 'AAA' };
 
-export function getWcagScLabel(sc) {
+/**
+ * Dutch titles from the authorized Dutch translation of WCAG 2.2 (W3C, 12 June 2024):
+ * https://www.w3.org/Translations/WCAG22-nl-20240612/ . The English text is normative.
+ */
+export const WCAG_SC_TITLE_NL = Object.freeze({
+  '1.1.1': 'Niet-tekstuele content',
+  '1.2.1': 'Louter-geluid en louter-videobeeld (vooraf opgenomen)',
+  '1.2.2': 'Ondertitels voor doven en slechthorenden (vooraf opgenomen)',
+  '1.2.3': 'Audiodescriptie of media-alternatief (vooraf opgenomen)',
+  '1.2.4': 'Ondertitels voor doven en slechthorenden (live)',
+  '1.2.5': 'Audiodescriptie (vooraf opgenomen)',
+  '1.3.1': 'Info en relaties',
+  '1.3.2': 'Betekenisvolle volgorde',
+  '1.3.3': 'Zintuiglijke eigenschappen',
+  '1.3.4': 'Weergavestand',
+  '1.3.5': 'Identificeer het doel van de input',
+  '1.4.1': 'Gebruik van kleur',
+  '1.4.2': 'Geluidsbediening',
+  '1.4.3': 'Contrast (minimum)',
+  '1.4.4': 'Herschalen van tekst',
+  '1.4.5': 'Afbeeldingen van tekst',
+  '1.4.10': 'Reflow',
+  '1.4.11': 'Contrast van niet-tekstuele content',
+  '1.4.12': 'Tekstafstand',
+  '1.4.13': 'Content bij hover of focus',
+  '2.1.1': 'Toetsenbord',
+  '2.1.2': 'Geen toetsenbordval',
+  '2.1.4': 'Enkel teken sneltoetsen',
+  '2.2.1': 'Timing aanpasbaar',
+  '2.2.2': 'Pauzeren, stoppen, verbergen',
+  '2.3.1': 'Drie flitsen of beneden drempelwaarde',
+  '2.4.1': 'Blokken omzeilen',
+  '2.4.2': 'Paginatitel',
+  '2.4.3': 'Focus volgorde',
+  '2.4.4': 'Linkdoel (in context)',
+  '2.4.5': 'Meerdere manieren',
+  '2.4.6': 'Koppen en labels',
+  '2.4.7': 'Focus zichtbaar',
+  '2.4.11': 'Focus niet bedekt (minimum)',
+  '2.5.1': 'Aanwijzergebaren',
+  '2.5.2': 'Aanwijzerannulering',
+  '2.5.3': 'Label in naam',
+  '2.5.4': 'Bewegingsactivering',
+  '2.5.7': 'Sleepbewegingen',
+  '2.5.8': 'Grootte van het aanwijsgebied (minimum)',
+  '3.1.1': 'Taal van de pagina',
+  '3.1.2': 'Taal van onderdelen',
+  '3.2.1': 'Bij focus',
+  '3.2.2': 'Bij input',
+  '3.2.3': 'Consistente navigatie',
+  '3.2.4': 'Consistente identificatie',
+  '3.2.6': 'Consistente hulp',
+  '3.3.1': 'Foutidentificatie',
+  '3.3.2': 'Labels of instructies',
+  '3.3.3': 'Foutsuggestie',
+  '3.3.4': 'Foutpreventie (wettelijk, financieel, gegevens)',
+  '3.3.7': 'Overbodige invoer',
+  '3.3.8': 'Toegankelijke authenticatie (minimum)',
+  '4.1.1': 'Parsen (verouderd en verwijderd)',
+  '4.1.2': 'Naam, rol, waarde',
+  '4.1.3': 'Statusberichten',
+  '2.5.5': 'Grootte van het aanwijsgebied (uitgebreid)',
+});
+
+/**
+ * @param {string} sc success criterion id, or '_other'
+ * @param {string} [lang] 'nl' for the official Dutch title
+ */
+export function getWcagScLabel(sc, lang = 'en') {
+  const dutch = lang === 'nl';
   if (!sc || sc === '_other') {
-    return { title: 'Other findings', level: '—' };
+    return { title: dutch ? 'Andere bevindingen' : 'Other findings', level: '—' };
   }
   const row = WCAG_SC_LABEL[sc];
-  if (row) return { title: row.title, level: row.level };
-  return { title: `Success Criterion ${sc}`, level: 'AA' };
+  if (row) return { title: (dutch && WCAG_SC_TITLE_NL[sc]) || row.title, level: row.level };
+  return { title: dutch ? `Succescriterium ${sc}` : `Success Criterion ${sc}`, level: 'AA' };
 }
 
 /** Sort keys like 1.3.1, 2.1.1, 10.2.3 */

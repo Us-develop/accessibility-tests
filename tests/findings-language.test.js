@@ -78,7 +78,7 @@ describe('one language per finding text', () => {
 });
 
 describe('documents generated from a Dutch scan', () => {
-  it('mark the Dutch check names inside the English developer guide', async () => {
+  it('are written in Dutch, with the English axe texts marked', async () => {
     const { mkdtempSync, readFileSync: readFile, rmSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
     const { generateDeveloperAdvice } = await import('../generate-deliverables.js');
@@ -97,8 +97,41 @@ describe('documents generated from a Dutch scan', () => {
         dir
       );
       const html = readFile(path, 'utf8');
-      assert.match(html, /<span lang="nl">Er is best een skiplink<\/span>/);
-      assert.doesNotMatch(html, /<span lang="en">Images must have alternative text<\/span>/);
+      assert.match(html, /<html lang="nl">/);
+      assert.match(html, /Dit lost u op, in deze volgorde\./);
+      assert.doesNotMatch(html, /<span lang="nl">Er is best een skiplink<\/span>/);
+      assert.match(html, /<span lang="en">Images must have alternative text<\/span>/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('accessibility statement files', () => {
+  it('are written in Dutch and English, with the scan language under the plain name', async () => {
+    const { mkdtempSync, readFileSync: readFile, rmSync, existsSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { generateAccessibilityStatement } = await import('../generate-deliverables.js');
+    const dir = mkdtempSync(join(tmpdir(), 'wcag-statement-'));
+    try {
+      generateAccessibilityStatement(
+        {
+          reportData: { generatedAt: '2026-10-15T08:00:00Z', lang: 'nl', urls: ['https://example.com/'], customResults: [], axeResults: {} },
+          fixOrderItems: [{ type: 'custom', id: 'img-alt', rule: 'Informatieve afbeeldingen moeten een tekstalternatief hebben', textLang: 'nl', wcag: ['1.1.1'], url: 'https://example.com/' }],
+          statementMeta: { orgName: 'Us' },
+        },
+        dir
+      );
+      const nl = readFile(join(dir, 'accessibility-statement.nl.html'), 'utf8');
+      const en = readFile(join(dir, 'accessibility-statement.en.html'), 'utf8');
+      assert.match(nl, /<html lang="nl">/);
+      assert.match(nl, /Toegankelijkheidsverklaring voor example\.com/);
+      // Official Dutch WCAG title, and the finding in its own language.
+      assert.match(nl, /1\.1\.1 Niet-tekstuele content – niveau A/);
+      assert.match(en, /1\.1\.1 Non-text Content – Level A/);
+      assert.match(en, /<span lang="nl">Informatieve afbeeldingen moeten een tekstalternatief hebben<\/span>/);
+      assert.equal(readFile(join(dir, 'accessibility-statement.html'), 'utf8'), nl);
+      assert.ok(existsSync(join(dir, 'accessibility-statement.en.html')));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -234,4 +234,99 @@ export default {
     'Voeg alle verplichte ARIA-attributen voor de rol toe (een combobox heeft bv. aria-expanded nodig).',
   'fix.axe.form-field-multiple-labels': 'Elk formulierveld heeft best één gekoppeld label.',
   'fix.default': 'Bekijk het probleem en pas een gepaste oplossing toe. Zie de WCAG-richtlijnen van W3C.',
+
+  // ── Dekking: toelichting en samenvatting (pagina WCAG-dekking) ────
+  'covnote.1.1.1':
+    'Controleert of afbeeldingen, SVG, canvas en image maps een alt-tekst of naam hebben, niet of die tekst zinvol is.',
+  'covnote.1.2.1': 'De kwaliteit van transcripties en audiodescriptie wordt niet getest.',
+  'covnote.1.2.2':
+    'Alleen ondertitelsporen van een eigen <video>. YouTube en Vimeo worden gemeld voor een mens. De kwaliteit wordt niet getest.',
+  'covnote.1.2.3': 'Audiodescriptie of een media-alternatief wordt niet getest.',
+  'covnote.1.2.4': 'Live-ondertiteling wordt niet getest.',
+  'covnote.1.2.5': 'Audiodescriptie bij vooraf opgenomen video wordt niet getest.',
+  'covnote.1.3.1':
+    'Landmarks, koppen, tabellen, lijsten en de axe-regels voor info en relaties. Programmatische relaties in eigen widgets worden vaak gemist.',
+  'covnote.1.3.2': 'Een betekenisvolle leesvolgorde vraagt een mens (en een schermlezer).',
+  'covnote.1.3.3': 'Instructies die steunen op vorm, grootte of plaats worden niet herkend.',
+  'covnote.1.3.4': 'Een vergrendelde weergavestand wordt niet getest.',
+  'covnote.1.3.5': 'Autocomplete en het doel van invoervelden worden niet getest.',
+  'covnote.1.4.1':
+    'Alleen een heuristiek die linkkleur met de lopende tekst vergelijkt. De meeste gevallen van "alleen kleur" vragen een mens.',
+  'covnote.1.4.2': 'Meldt automatisch afspelende <audio> en <video>; bewijst niet dat er een pauzeknop is.',
+  'covnote.1.4.3':
+    'Eigen contrastcontrole plus axe. Overgeslagen bij zeer grote DOM\'s (ter info). Een benadering, geen volledige visuele audit.',
+  'covnote.1.4.4': 'Controleert of de viewport zoomen toelaat. Test geen herschikking op 200%.',
+  'covnote.1.4.5': 'Afbeeldingen van tekst worden niet herkend.',
+  'covnote.1.4.10':
+    'Horizontale overloop op 320 px met een marge van 10 px. Bewijst niet dat scrollen in twee richtingen overal vermeden wordt.',
+  'covnote.1.4.11':
+    'Benadering van het contrast van niet-tekstuele content plus axe; dezelfde beperkingen als bij 1.4.3.',
+  'covnote.1.4.12': 'Tekstafstand (eigen CSS van de gebruiker) wordt niet getest.',
+  'covnote.1.4.13': 'Of inhoud bij hover of focus kan worden gesloten en aangewezen, wordt niet getest.',
+  'covnote.2.1.1':
+    'Waarschuwing bij een positieve tabindex en de axe-regels rond toetsenbordgebruik. Tabt niet door de pagina.',
+  'covnote.2.1.2': 'Er wordt niet naar toetsenbordvallen gezocht.',
+  'covnote.2.1.4': 'Sneltoetsen van één teken worden niet herkend.',
+  'covnote.2.2.1': 'Tijdslimieten worden niet getest.',
+  'covnote.2.2.2':
+    'Heuristiek voor meta refresh en automatisch verversen. Bewegende inhoud vraagt meestal een mens.',
+  'covnote.2.3.1': 'Alleen een controle op verouderde Flash-objecten. Flitsende inhoud wordt niet gemeten.',
+  'covnote.2.4.1':
+    'Aanwezigheid van een skiplink en landmarks. Andere manieren om blokken over te slaan worden mogelijk gemist.',
+  'covnote.2.4.2': 'Het title-element bestaat. Of de titel uniek en beschrijvend is, wordt niet getest.',
+  'covnote.2.4.3':
+    'Waarschuwing bij een positieve tabindex. De volgorde in de DOM tegenover de visuele volgorde wordt niet getest.',
+  'covnote.2.4.4':
+    'Heuristieken voor lege links en "klik hier". Het doel in de context vraagt vaak een mens.',
+  'covnote.2.4.5': 'Meerdere manieren om pagina\'s te vinden is een controle op siteniveau.',
+  'covnote.2.4.6':
+    'Heuristiek voor de opbouw van de koppen. Of de koppen het onderwerp beschrijven, wordt niet getest.',
+  'covnote.2.4.7': 'Heuristiek voor de focusindicator. Zichtbaarheid in alle toestanden vraagt een mens.',
+  'covnote.2.4.11': 'Of de focus bedekt wordt (vaste headers, cookiebalken), wordt niet getest.',
+  'covnote.2.5.1': 'Gebaren met een pad worden niet getest.',
+  'covnote.2.5.2': 'Het annuleren van een aanwijzeractie wordt niet getest.',
+  'covnote.2.5.3':
+    'Label in naam (zichtbare tekst tegenover toegankelijke naam) wordt hier niet als aparte controle getest.',
+  'covnote.2.5.4': 'Bediening door beweging wordt niet getest.',
+  'covnote.2.5.7': 'Sleepbewegingen worden niet getest.',
+  'covnote.2.5.8':
+    'Waarschuwing onder 24×24 CSS-pixels. De vermelde uitzonderingen (links in lopende tekst enz.) worden niet automatisch toegepast.',
+  'covnote.3.1.1':
+    'Lang-attribuut op <html>. Of de taalcode geldig is en de taal van onderdelen worden niet getest.',
+  'covnote.3.1.2': 'De taal van onderdelen wordt niet getest.',
+  'covnote.3.2.1': 'Contextwijzigingen bij focus worden niet getest.',
+  'covnote.3.2.2': 'Contextwijzigingen bij invoer worden niet getest.',
+  'covnote.3.2.3': 'Consistente navigatie is een menselijke controle over meerdere pagina\'s.',
+  'covnote.3.2.4': 'Consistente identificatie is een menselijke controle over meerdere pagina\'s.',
+  'covnote.3.2.6': 'Consistente hulp wordt niet getest.',
+  'covnote.3.3.1': 'Of fouten in tekst worden aangeduid, wordt niet automatisch getest.',
+  'covnote.3.3.2':
+    'Heuristieken voor labels en placeholders als label. De kwaliteit van instructies wordt niet getest.',
+  'covnote.3.3.3': 'Foutsuggesties worden niet getest.',
+  'covnote.3.3.4': 'Foutpreventie bij juridische en financiële gegevens wordt niet getest.',
+  'covnote.3.3.7': 'Overbodige invoer wordt niet getest.',
+  'covnote.3.3.8': 'Toegankelijke authenticatie wordt niet getest.',
+  'covnote.4.1.1': 'Dubbele id\'s en de axe-regels rond parsen. WCAG 2.2 noemt 4.1.1 verouderd.',
+  'covnote.4.1.2':
+    'Namen van bedieningselementen, iframes en SVG; naam, rol en waarde volgens axe. Eigen widgets vragen vaak een mens.',
+  'covnote.4.1.3':
+    'Heuristieken voor aria-live en statusrollen. Of meldingen correct worden voorgelezen, wordt niet nagegaan.',
+  'covtext.sc': '{id} {title} (niveau {level})',
+  'covtext.checked.intro':
+    'Deze scan probeerde automatische controles voor {attempted} van de {total} succescriteria van WCAG 2.2 op niveau A en AA ({all} in totaal). De automatische controles kijken naar aanwezigheid of gebruiken heuristieken: geslaagd betekent dat de machinecontrole niet faalde, niet dat aan het criterium is voldaan.',
+  'covtext.checked.fails': 'In deze scan raken automatische fouten of waarschuwingen nog aan: {list}.',
+  'covtext.checked.none':
+    'In deze scan toonde geen enkel gekoppeld succescriterium een automatische fout of waarschuwing. Dat betekent niet dat WCAG gehaald is.',
+  'covtext.notChecked':
+    '{n} succescriteria worden door deze scanner niet gecontroleerd. Voorbeelden zijn de kwaliteit van ondertitels, toetsenbordvallen, toegankelijke authenticatie en consistente navigatie. axe-core en onze eigen controles kunnen de meeste daarvan niet zien.',
+  'covtext.manual.intro':
+    'Van die niet-geteste criteria kunnen er {n} worden gedekt met de Handmatige controles in de app (toetsenbord, schermlezer, zoom, kwaliteit van ondertitels, zinvolle namen en verwante punten).',
+  'covtext.manual.list': 'Daaronder: {list}.',
+  'covtext.manual.honest': 'Een vinkje telt alleen als iemand die test echt heeft gedaan.',
+  'covtext.path':
+    'Als de automatische bevindingen opgelost zijn en de handmatige controles en de tests met hulptechnologie grondig gebeuren (echte tests met toetsenbord, schermlezer en zoom, niet alleen vinkjes), dan hebt u zowel gedekt wat deze scanner kan vinden als de menselijke controles die dit product bevat. Daarvoor is deze tool gemaakt, en het is nodig voor WCAG 2.2 AA. Op zich is het niet genoeg: {n} succescriteria vallen buiten deze checklist{examples}. Het product goed afwerken maakt de site op zich niet volledig conform.',
+  'covtext.path.examples': ' (waaronder {list})',
+  'covtext.disclaimer':
+    'Dit is geen officiële WCAG 2.2 AA-audit, geen EN 301 549-certificering en geen juridische goedkeuring onder de EAA. Neem contact op met Us of een andere bevoegde toegankelijkheidsprofessional voor een officiële evaluatie voordat u een conformiteitsverklaring publiceert.',
+  'covtext.otherFindings': 'eigen controle',
 };
