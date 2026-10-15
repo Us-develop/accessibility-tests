@@ -146,11 +146,11 @@ describe('a page only claims a language it is written in', () => {
     const layout = read('web/src/layouts/Layout.astro');
     assert.match(layout, /<html lang=\{tr\.lang\}/);
     assert.match(read('web/src/lib/page-lang.js'), /translator\(Astro\.locals\?\.pageLang \|\| 'en'\)/);
-    for (const page of ['pricing', 'contact', 'signup', 'index', 'loading', 'account', 'forgot', 'reset', 'verify', 'report/[domain]/[runId]/index', 'teaser/[token]', 'report/[domain]/[runId]/coverage', 'report/[domain]/history', 'audits', 'limitations']) {
+    for (const page of ['pricing', 'contact', 'signup', 'index', 'loading', 'account', 'forgot', 'reset', 'verify', 'report/[domain]/[runId]/index', 'teaser/[token]', 'report/[domain]/[runId]/coverage', 'report/[domain]/history', 'audits', 'limitations', 'report/[domain]/[runId]/sales', 'report/[domain]/[runId]/statement']) {
       assert.match(read(`web/src/pages/${page}.astro`), /const tr = usePageLang\(Astro\);/, page);
     }
     // Not translated yet: must not call usePageLang, so it stays lang="en".
-    assert.doesNotMatch(read('web/src/pages/report/[domain]/[runId]/statement.astro'), /usePageLang/);
+    assert.doesNotMatch(read('web/src/pages/privacy.astro'), /usePageLang/);
   });
 
   it('marks the parts that are still English inside a Dutch page', () => {
@@ -240,5 +240,34 @@ describe('sales report', () => {
     assert.match(sales, /const tr = usePageLang\(Astro\);/);
     assert.match(sales, /lang: tr\.lang,/);
     assert.match(deck, /<div lang=\{findingsAttr\}>/);
+  });
+});
+
+describe('accessibility statement', () => {
+  const page = read('web/src/pages/report/[domain]/[runId]/statement.astro');
+
+  it('offers the statement in Dutch and English, Dutch unless English is asked for', () => {
+    assert.match(page, /const docLang = normalizeLang\(Astro\.url\.searchParams\.get\('doc'\)\) \|\| 'nl';/);
+    assert.match(page, /href=\{`\$\{base\}\/statement\?doc=\$\{option\.code\}`\}/);
+    assert.match(page, /aria-current=\{option\.code === docLang \? 'page' : undefined\}/);
+    // The document says which language it is in when that differs from the page.
+    assert.match(page, /<article class="statement-doc" lang=\{docLangAttr\}>/);
+  });
+
+  it('writes the document in its own language and the page around it in the visitor’s', () => {
+    assert.match(page, /const tr = usePageLang\(Astro\);/);
+    assert.match(page, /const doc = translator\(docLang\);/);
+    assert.match(page, /buildAstroMainReportPayload\(json, \{ lang: docLang \}\)/);
+    assert.equal(t('nl', 'stmt.within.other', { n: 5 }), 'Binnen 5 werkdagen');
+    assert.equal(t('en', 'stmt.within.one', { n: 1 }), 'Within 1 business day');
+  });
+
+  it('no longer describes the errors score as the plain share of checks that passed', () => {
+    assert.doesNotMatch(page, /share of applicable automated checks that passed/);
+    assert.match(t('en', 'stmt.errorsScore', { score: 80 }), /weighted by severity/);
+  });
+
+  it('says the downloadable HTML is still English', () => {
+    assert.match(page, /hreflang="en" download>\{tr\('stmtui\.download'\)\} \{tr\('stmtui\.htmlEnglish'\)\}/);
   });
 });
