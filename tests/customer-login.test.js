@@ -91,11 +91,12 @@ describe('customer login HTTP', () => {
   });
 
   it('serves customer chrome on GET /login and defaults next away from /login', async () => {
-    const res = await fetch(`${origin}/login`);
+    const res = await fetch(`${origin}/login`, { headers: { cookie: 'wcag_lang=en' } });
     assert.equal(res.status, 200);
     const html = await res.text();
-    assert.match(html, /Sign in with the email you used to create your account/);
-    assert.match(html, />Email</);
+    assert.match(html, /<html lang="en">/);
+    assert.match(html, /Sign in with the email address you used to create your account/);
+    assert.match(html, />Email address</);
     assert.match(html, /href="\/"/);
     assert.match(html, /Create an account/);
     assert.match(html, /Forgot password/);
@@ -112,10 +113,20 @@ describe('customer login HTTP', () => {
   });
 
   it('renders the unverified message when signin=unverified', async () => {
-    const res = await fetch(`${origin}/login?signin=unverified`);
+    const res = await fetch(`${origin}/login?signin=unverified`, { headers: { cookie: 'wcag_lang=en' } });
     const html = await res.text();
-    assert.match(html, /Verify your email before signing in/);
+    assert.match(html, /Confirm your email address before signing in/);
     assert.match(html, /href="\/verify"/);
+  });
+
+  it('serves the customer sign-in page in Dutch by default, the staff page in English', async () => {
+    const html = await (await fetch(`${origin}/login?signin=failed`)).text();
+    assert.match(html, /<html lang="nl">/);
+    assert.match(html, /Meld u aan met het e-mailadres/);
+    assert.match(html, /Het e-mailadres of het wachtwoord is niet juist\./);
+    assert.match(html, />Wachtwoord vergeten</);
+    const staff = await (await fetch(`${origin}/auth/staff`)).text();
+    assert.match(staff, /<html lang="en">/);
   });
 
   it('keeps a staff-only page at /auth/staff', async () => {
@@ -145,13 +156,13 @@ describe('customer login HTTP', () => {
 
   it('drops staff-username copy from the customer modal and SMTP from forgot-password', () => {
     const modal = readFileSync(join(repoRoot, 'web/src/components/LoginModal.astro'), 'utf8');
-    assert.match(modal, /Sign in with the email you used to create your account/);
+    assert.match(modal, /tr\('login\.lead'\)/);
     assert.match(modal, /href="\/auth\/staff"/);
-    assert.match(modal, /Open the verification page/);
+    assert.match(modal, /tx\('login\.error\.verifyLink'\)/);
     assert.doesNotMatch(modal, /Email or staff username/);
     assert.doesNotMatch(modal, /Us staff use the agency username/);
     const forgot = readFileSync(join(repoRoot, 'web/src/pages/forgot.astro'), 'utf8');
-    assert.match(forgot, /If that account exists, we sent a reset link\./);
+    assert.match(forgot, /t\(pageLang\(\), 'forgot\.sent'\)/);
     assert.doesNotMatch(forgot, /SMTP/);
   });
 

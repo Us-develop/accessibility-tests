@@ -1,32 +1,35 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import { usePageLang } from '../lib/page-lang.js';
 export const prerender = false;
+const tr = usePageLang(Astro);
 const token = Astro.url.searchParams.get('token') || '';
 const resetError = Astro.url.searchParams.get('error') === '1';
 ---
-<Layout title="Set a new password · Us" description="Choose a new password for your Us accessibility scanner account." noindex={true} authMode="guest-ok">
+<Layout title={tr('reset.title')} description={tr('reset.description')} noindex={true} authMode="guest-ok">
   <div class="app-shell">
-    <AppHeader crumb="Password" />
+    <AppHeader crumb={tr('forgot.crumb')} />
     <main id="main" class="app-main" tabindex="-1">
       <article class="container-narrow page-article">
-        <h1>Set a new password</h1>
+        <h1>{tr('reset.h1')}</h1>
         <form id="reset-form" class="card stack-form stack-form-spaced" method="post" action="/api/auth/reset" data-astro-reload>
           <input type="hidden" name="token" value={token} />
           <div class="field">
-            <label class="field-label" for="password">New password</label>
-            <input class="input" id="password" name="password" type="password" minlength="10" required autocomplete="new-password" />
+            <label class="field-label" for="password">{tr('reset.label')}</label>
+            <input class="input" id="password" name="password" type="password" minlength="10" required autocomplete="new-password" aria-describedby="password-hint" />
+            <p id="password-hint" class="field-hint">{tr('signup.password.hint')}</p>
           </div>
-          <button class="btn btn-primary" type="submit">Save password</button>
-          <p id="reset-msg" class="muted" role={resetError ? 'alert' : 'status'}>
-          {resetError ? 'Could not reset password. The link may have expired.' : ''}
-          </p>
+          <button class="btn btn-primary" type="submit">{tr('reset.submit')}</button>
+          <p id="reset-msg" class="muted" role={resetError ? 'alert' : 'status'}>{resetError ? tr('reset.error') : ''}</p>
         </form>
       </article>
     </main>
   </div>
 </Layout>
 <script>
+  import { pageLang, t } from '../../../i18n/index.mjs';
+
   if (!globalThis.__wcagResetDelegated) {
     globalThis.__wcagResetDelegated = true;
     document.addEventListener('submit', async (event) => {
@@ -46,12 +49,15 @@ const resetError = Astro.url.searchParams.get('error') === '1';
       const password = document.getElementById('password');
       if (!res.ok) {
         if (msg) {
-          msg.textContent = data.error || 'Could not reset password.';
+          msg.textContent = data.error || t(pageLang(), 'reset.error');
           msg.setAttribute('role', 'alert');
+          // Server messages are English for now.
+          if (data.error && pageLang() !== 'en') msg.setAttribute('lang', 'en');
+          else msg.removeAttribute('lang');
         }
         if (password) {
           password.setAttribute('aria-invalid', 'true');
-          password.setAttribute('aria-describedby', 'reset-msg');
+          password.setAttribute('aria-describedby', 'reset-msg password-hint');
         }
         return;
       }
