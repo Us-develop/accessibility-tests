@@ -12,8 +12,10 @@ import { dbPool, dbGetRunByGuestToken } from '../../../../server/db.js';
 import { isValidGuestToken, readGuestTokenRecord } from '../../../../server/guest.mjs';
 import { MANUAL_TODO_GROUPS } from '../../../../manual-checklist.js';
 import { buildLockedDashboardData } from '../../../../server/teaser-payload.mjs';
+import { usePageLang } from '../../lib/page-lang.js';
 
 export const prerender = false;
+const tr = usePageLang(Astro);
 
 const token = String(Astro.params.token || '');
 
@@ -22,12 +24,12 @@ let loadError = null;
 let pending = false;
 /** @type {Record<string, unknown> | null} */
 let dashboardProps = null;
-let pageTitle = 'Your accessibility snapshot · Us';
+let pageTitle = tr('teaser.titleUnavailable');
 let notFound = false;
 
 if (!isValidGuestToken(token)) {
   notFound = true;
-  loadError = 'This snapshot link is invalid.';
+  loadError = tr('teaser.error.notFound');
 } else {
   let binding = readGuestTokenRecord(token);
   if (!binding && dbPool) {
@@ -35,27 +37,27 @@ if (!isValidGuestToken(token)) {
       const row = await dbGetRunByGuestToken(token);
       if (row) binding = { domain: row.domain, runId: row.runId, url: null };
     } catch {
-      loadError = 'We could not look up this scan.';
+      loadError = tr('teaser.error.load');
     }
   }
   if (!loadError && !binding) {
     notFound = true;
-    loadError = 'We could not find this scan.';
+    loadError = tr('teaser.error.notFound');
   } else if (!loadError && binding) {
     const domain = String(binding.domain || '');
     const runId = String(binding.runId || '');
     if (!isValidReportId(domain) || !isValidRunId(runId)) {
       notFound = true;
-      loadError = 'This snapshot link is invalid.';
+      loadError = tr('teaser.error.notFound');
     } else {
       const resultsPath = join(runDir(domain, runId), 'accessibility-results.json');
       if (!existsSync(resultsPath)) {
         pending = true;
-        pageTitle = 'Audit in progress · Us';
+        pageTitle = tr('teaser.titlePending');
       } else {
         try {
           const json = JSON.parse(readFileSync(resultsPath, 'utf8'));
-          const payload = buildAstroMainReportPayload(json);
+          const payload = buildAstroMainReportPayload(json, { lang: tr.lang });
           const principles = payload.principles || [];
           const disabilities = payload.disabilities || [];
           // Nothing real goes behind the blur: see buildLockedDashboardData.
@@ -63,9 +65,9 @@ if (!isValidGuestToken(token)) {
           const suggestedFixes = payload.suggestedFixes || { points: 0, tickets: [] };
           const trendDate = payload.auditedDate?.slice(0, 6) || 'now';
           const manualTotal = MANUAL_TODO_GROUPS.reduce((s, g) => s + g.items.length, 0);
-          pageTitle = `Accessibility snapshot · ${payload.primaryHost || domain}`;
+          pageTitle = tr('teaser.title', { site: payload.primaryHost || domain });
           dashboardProps = {
-            primaryHost: payload.primaryHost || domain.replace(/^www\./, '') || 'This scan',
+            primaryHost: payload.primaryHost || domain.replace(/^www\./, '') || tr('dash.thisScan'),
             auditedDate: payload.auditedDate,
             scoreClamp: payload.scoreClamp,
             pass: payload.pass,
@@ -106,9 +108,10 @@ if (!isValidGuestToken(token)) {
             coveredScCount: payload.coveredScCount ?? 0,
             locked: true,
             guestToken: token,
+            lang: tr.lang,
           };
         } catch {
-          loadError = 'Failed to read this snapshot.';
+          loadError = tr('teaser.error.read');
         }
       }
     }
@@ -121,40 +124,40 @@ if (notFound) {
 
 <Layout
   title={pageTitle}
-  description="A one-page accessibility snapshot. Create an account to unlock the full report."
+  description={tr('teaser.description')}
   noindex={true}
   authMode="guest-ok"
 >
   <div class="app-shell">
-    <AppHeader crumb="Snapshot" />
+    <AppHeader crumb={tr('teaser.crumb')} />
     <main id="main" class="app-main" tabindex="-1">
       {loadError ? (
         <div class="container-narrow" style="padding-block: clamp(32px, 5vw, 56px) clamp(48px, 8vw, 96px);">
           <div class="card" style="padding: 32px;">
-            <h1 style="font-size: 28px; margin-bottom: 8px;">Snapshot unavailable</h1>
+            <h1 style="font-size: 28px; margin-bottom: 8px;">{tr('teaser.unavailable')}</h1>
             <p class="muted">{loadError}</p>
-            <p style="margin-top: 16px;"><a class="link" href="/">Try another URL</a></p>
+            <p style="margin-top: 16px;"><a class="link" href="/">{tr('teaser.tryAnother')}</a></p>
           </div>
         </div>
       ) : pending ? (
-        <LoadingMonitor client:only="svelte" guestToken={token} />
+        <LoadingMonitor client:only="svelte" guestToken={token} lang={tr.lang} />
       ) : dashboardProps ? (
         <>
           <ResultsDashboard client:load {...dashboardProps} />
           <div class="container teaser-cta">
             <div class="card teaser-unlock">
-              <h2 style="font-size: 22px; margin: 0 0 8px;">Go beyond the free scan</h2>
-              <p class="muted">Get the full picture with a complete accessibility report. Buy tokens for individual scans, choose Pro for recurring scans and reporting, or work with our WCAG experts for manual testing and tailored support.</p>
+              <h2 style="font-size: 22px; margin: 0 0 8px;">{tr('teaser.next.h2')}</h2>
+              <p class="muted">{tr('teaser.next.body')}</p>
               <div class="guest-cta-row">
-                <a class="btn btn-primary" href="/pricing">Get a full report</a>
-                <a class="btn btn-secondary" href={`/contact?source=teaser&guest=${encodeURIComponent(token)}`}>Talk to a WCAG expert</a>
+                <a class="btn btn-primary" href="/pricing">{tr('teaser.next.report')}</a>
+                <a class="btn btn-secondary" href={`/contact?source=teaser&guest=${encodeURIComponent(token)}`}>{tr('cta.expert')}</a>
               </div>
             </div>
           </div>
         </>
       ) : (
         <div class="container-narrow" style="padding-block: clamp(32px, 5vw, 56px);">
-          <p class="muted">Could not load this snapshot.</p>
+          <p class="muted">{tr('teaser.error.load')}</p>
         </div>
       )}
     </main>

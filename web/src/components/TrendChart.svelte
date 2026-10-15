@@ -1,6 +1,8 @@
 <script>
-  /** @type {{ data: Array<{ date: string, score: number }>, width?: number, height?: number, showAxis?: boolean }} */
-  let { data, width = 320, height = 100, showAxis = true } = $props();
+  import { t } from '../../../i18n/index.mjs';
+
+  /** @type {{ data: Array<{ date: string, score: number }>, width?: number, height?: number, showAxis?: boolean, lang?: string }} */
+  let { data, width = 320, height = 100, showAxis = true, lang = 'en' } = $props();
 
   const min = 0;
   const max = 100;
@@ -20,11 +22,17 @@
       : ''
   );
   const chartLabel = $derived.by(() => {
-    if (!data.length) return 'Score trend, no data';
+    if (!data.length) return t(lang, 'dash.trend.empty');
     const first = data[0];
     const last = data[data.length - 1];
     const best = data.reduce((a, b) => (b.score > a.score ? b : a), first);
-    return `Score trend from ${first.score} on ${first.date} to ${last.score} on ${last.date}, best ${best.score}`;
+    return t(lang, 'dash.trend.label', {
+      first: first.score,
+      firstDate: first.date,
+      last: last.score,
+      lastDate: last.date,
+      best: best.score,
+    });
   });
 </script>
 

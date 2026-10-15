@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { t } from '../../../i18n/index.mjs';
 
   /**
    * @typedef {{ id: string, text: string, disabilities?: string[] }} ManualItem
@@ -14,9 +15,18 @@
    *   initialChecked?: string[],
    *   onProgress?: (info: { checked: string[], total: number, percent: number }) => void,
    *   readOnly?: boolean,
+   *   lang?: string,
    * }}
    */
-  let { domain, runId, groups, initialChecked = [], onProgress, readOnly = false } = $props();
+  let { domain, runId, groups, initialChecked = [], onProgress, readOnly = false, lang = 'en' } = $props();
+
+  const tr = (key, vars) => t(lang, key, vars);
+  /** A translated text for a known key, or the text as it came. */
+  const known = (key, fallback) => {
+    const text = tr(key);
+    return text === key ? fallback : text;
+  };
+  const tagKey = (name) => String(name).toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
 
   let checkedSet = $state(new Set(initialChecked));
   let saving = $state(false);
@@ -64,7 +74,7 @@
       const res = await persistChecked(payload);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Save failed (${res.status})`);
+        throw new Error(err.error || tr('manual.saveFailed'));
       }
       const data = await res.json().catch(() => null);
       if (!dirty && gen === saveGeneration && data && Array.isArray(data.checked)) {
@@ -130,33 +140,33 @@
 
   function formatTime(d) {
     if (!d) return '';
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString(lang === 'en' ? 'en-GB' : 'nl-BE', { hour: '2-digit', minute: '2-digit' });
   }
 </script>
 
 <section class="manual-section">
   <header class="manual-head">
     <div>
-      <span class="eyebrow"><span class="dot"></span>Human verification</span>
-      <h2 style="font-size: 28px; margin-top: 6px;">Manual &amp; assistive-tech checklist</h2>
+      <span class="eyebrow"><span class="dot"></span>{tr('manual.eyebrow')}</span>
+      <h2 style="font-size: 28px; margin-top: 6px;">{tr('manual.h')}</h2>
       <p class="muted" style="max-width: 640px; font-size: 15px;">
-        Automated tests can't catch everything. Walk through each item with a real assistive technology and tick when verified.
-        {readOnly ? 'Preview only — progress is not saved on a free snapshot.' : 'Ticks are saved for this domain and restored when you open a scan again.'}
+        {tr('manual.intro')}
+        {readOnly ? tr('manual.readOnly') : tr('manual.persisted')}
       </p>
     </div>
     <div class="manual-progress-card">
       <div class="manual-progress-num">{percent}%</div>
-      <div class="manual-progress-lbl">{checkedSet.size}/{total} verified</div>
+      <div class="manual-progress-lbl">{tr('manual.verified', { done: checkedSet.size, total })}</div>
       <div class="manual-progress-bar"><span style="width: {percent}%;"></span></div>
       <div class="manual-progress-meta">
-        {#if saving}Saving…{:else if saveError}<span style="color: var(--us-peach-text);">{saveError}</span>{:else if savedAt}Saved at {formatTime(savedAt)}{/if}
+        {#if saving}{tr('manual.saving')}{:else if saveError}<span style="color: var(--us-peach-text);">{saveError}</span>{:else if savedAt}{tr('manual.savedAt', { time: formatTime(savedAt) })}{/if}
       </div>
     </div>
   </header>
 
   {#each groups as group (group.label)}
     <div class="card-flat manual-group">
-      <h3>{group.label}</h3>
+      <h3>{group.key ? known(`manual.group.${group.key}`, group.label) : group.label}</h3>
       <ul class="manual-list">
         {#each group.items as item (item.id)}
           {@const isChecked = checkedSet.has(item.id)}
@@ -168,12 +178,12 @@
                 disabled={readOnly}
                 onchange={() => toggle(item.id)}
               />
-              <span class="manual-text">{item.text}</span>
+              <span class="manual-text">{known(`manual.item.${item.id}`, item.text)}</span>
             </label>
             {#if item.disabilities && item.disabilities.length > 0}
               <div class="manual-tags">
                 {#each item.disabilities as d (d)}
-                  <span class="tag-outline">{d}</span>
+                  <span class="tag-outline">{known(`manual.tag.${tagKey(d)}`, d)}</span>
                 {/each}
               </div>
             {/if}

@@ -36,12 +36,12 @@ describe('teaser, loading, and catalog CTAs', () => {
 
   it('shows the overall score and its three parts to guests too, never the errors score alone', () => {
     // A guest has not reviewed or ticked anything, so a clean scan must not read 100.
-    assert.match(dashboard, /\{combinedScore != null \? `\$\{combinedScore\}\/100` : 'n\/a'\}/);
+    assert.match(dashboard, /\{combinedScore != null \? `\$\{combinedScore\}\/100` : tr\('dash\.na'\)\}/);
     assert.match(dashboard, /<ScoreDonut score=\{combinedScore\}/);
     assert.match(dashboard, /\{#if scoreParts\.length > 0\}/);
     assert.doesNotMatch(dashboard, /locked \? 'Errors score'/);
     assert.doesNotMatch(dashboard, /The errors score is 100 when/);
-    assert.match(dashboard, /pagesScannedCount === 1 \? 'page' : 'pages'/);
+    assert.match(dashboard, /trn\('dash\.meta\.pages', pagesScannedCount\)/);
     // The teaser passes the number of findings to review, not their rule and page names.
     assert.match(teaser, /reviewKeys: \(payload\.scoreModel\?\.reviewKeys \|\| \[\]\)\.map\(\(_, i\) => `locked-\$\{i\}`\)/);
     assert.doesNotMatch(teaser, /reviewKeys: \[\]/);
@@ -50,14 +50,14 @@ describe('teaser, loading, and catalog CTAs', () => {
   });
 
   it('points locked tabs at account and tokens, and the expert link at the contact form with the snapshot', () => {
-    assert.match(dashboard, /href=\{signupHref\}>Create an account/);
-    assert.match(dashboard, /href="\/pricing">Buy tokens/);
-    assert.match(dashboard, /href=\{expertHref\}>Talk to a WCAG expert/);
+    assert.match(dashboard, /href=\{signupHref\}>\{tr\('dash\.veil\.signup'\)\}/);
+    assert.match(dashboard, /href="\/pricing">\{tr\('cta\.buyTokens'\)\}/);
+    assert.match(dashboard, /href=\{expertHref\}>\{tr\('cta\.expert'\)\}/);
     assert.match(dashboard, /`\/contact\?source=teaser&guest=\$\{encodeURIComponent\(guestToken\)\}`/);
     assert.doesNotMatch(dashboard, /#lead-form/);
     // One block after the snapshot: "Go beyond the free scan". The second expert form is gone.
-    assert.match(teaser, /Go beyond the free scan/);
-    assert.match(teaser, /href="\/pricing">Get a full report/);
+    assert.match(teaser, /tr\('teaser\.next\.h2'\)/);
+    assert.match(teaser, /href="\/pricing">\{tr\('teaser\.next\.report'\)\}/);
     assert.doesNotMatch(teaser, /GuestLeadForm/);
     assert.doesNotMatch(teaser, /btn-secondary" href="https:\/\/about-us\.be\/contact\/"/);
     // The contact page ties the request to the snapshot when the token is valid.
@@ -65,12 +65,27 @@ describe('teaser, loading, and catalog CTAs', () => {
     assert.match(contact, /token=\{guestToken\}/);
   });
 
-  it('explains the test and both scores of 100 behind the info button', () => {
-    assert.match(dashboard, /<strong style="display:block; margin-bottom: 6px;">About this test<\/strong>/);
-    assert.match(dashboard, /do not\s+confirm compliance with the European Accessibility Act \(EAA\)/);
-    assert.match(dashboard, /<strong>Errors score of 100<\/strong>/);
-    assert.match(dashboard, /<strong>Overall score of 100<\/strong>/);
-    assert.match(dashboard, /checks only a person can do/);
+  it('explains the test and both scores of 100 behind the info button', async () => {
+    const { t } = await import('../i18n/index.mjs');
+    assert.match(dashboard, /<strong style="display:block; margin-bottom: 6px;">\{tr\('dash\.info\.aboutH'\)\}<\/strong>/);
+    assert.match(dashboard, /<strong>\{tr\('dash\.info\.errors100H'\)\}<\/strong>/);
+    assert.match(dashboard, /<strong>\{tr\('dash\.info\.overall100H'\)\}<\/strong>/);
+    assert.match(t('en', 'dash.info.about'), /do not confirm compliance with the European Accessibility Act \(EAA\)/);
+    assert.match(t('en', 'dash.info.manual', { n: 23 }), /^23 checks only a person can do/);
+    assert.match(t('nl', 'dash.info.manual', { n: 23 }), /^23 controles die alleen een mens kan doen/);
+  });
+
+  it('shows the report and the snapshot in the page language, with findings marked as English', () => {
+    const report = readFileSync(join(repoRoot, 'web/src/pages/report/[domain]/[runId]/index.astro'), 'utf8');
+    assert.match(report, /const tr = usePageLang\(Astro\);/);
+    assert.match(report, /lang: tr\.lang,/);
+    assert.match(report, /findingsLang: 'en'/);
+    assert.match(teaser, /const tr = usePageLang\(Astro\);/);
+    assert.match(teaser, /lang: tr\.lang,/);
+    // Rule names and messages carry the language they were written in.
+    assert.match(dashboard, /const findingsAttr = \$derived\(findingsLang && findingsLang !== lang \? findingsLang : undefined\);/);
+    assert.match(dashboard, /lang=\{findingsAttr\}>\{item\.rule\}/);
+    assert.match(dashboard, /id="issue-drawer-title" style="font-size: 28px; margin-bottom: 14px;" lang=\{findingsAttr\}>\{selected\.rule\}/);
   });
 
   it('uses public catalog copy on home, pricing, account, and the footer', () => {

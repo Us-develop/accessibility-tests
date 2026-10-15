@@ -1,14 +1,17 @@
 <script>
-  /** @type {{ severity: 'error' | 'warning' | 'passed' | 'notice' }} */
-  let { severity } = $props();
+  import { t } from '../../../i18n/index.mjs';
+
+  /** @type {{ severity: 'error' | 'warning' | 'passed' | 'notice', lang?: string }} */
+  let { severity, lang = 'en' } = $props();
 
   const map = {
-    error: { cls: 'tag-error', label: 'Error', dot: 'error' },
-    warning: { cls: 'tag-warning', label: 'Warning', dot: 'warning' },
-    passed: { cls: 'tag-success', label: 'Passed', dot: 'success' },
-    notice: { cls: 'tag-info', label: 'Notice', dot: 'notice' },
+    error: { cls: 'tag-error', dot: 'error' },
+    warning: { cls: 'tag-warning', dot: 'warning' },
+    passed: { cls: 'tag-success', dot: 'success' },
+    notice: { cls: 'tag-info', dot: 'notice' },
   };
-  const m = $derived(map[severity] || map.notice);
+  const key = $derived(map[severity] ? severity : 'notice');
+  const m = $derived(map[key]);
 </script>
 
-<span class="tag {m.cls}"><span class="dot dot-{m.dot}"></span>{m.label}</span>
+<span class="tag {m.cls}"><span class="dot dot-{m.dot}"></span>{t(lang, `severity.${key}`)}</span>

@@ -191,9 +191,9 @@ describe('what the pages show', () => {
   it('hides the sales buttons for a plan without them and says why', () => {
     const dashboard = read('web/src/components/ResultsDashboard.svelte');
     assert.match(dashboard, /\{#if !locked && hasLoadedPages && entitlements\.salesReport\}/);
-    assert.match(dashboard, /\{#if entitlements\.salesReport\}\s*<button class="btn btn-cream" onclick=\{gotoSales\}>Sales report<\/button>/);
+    assert.match(dashboard, /\{#if entitlements\.salesReport\}\s*<button class="btn btn-cream" onclick=\{gotoSales\}>\{tr\('dash\.deliverables\.sales'\)\}<\/button>/);
     assert.match(dashboard, /\{#if !entitlements\.salesReport\}/);
-    assert.match(dashboard, /href="\/pricing#pro">See what Pro includes<\/a>/);
+    assert.match(dashboard, /href="\/pricing#pro">\{tr\('dash\.deliverables\.proLink'\)\}<\/a>/);
     assert.match(read('web/src/pages/report/[domain]/[runId]/index.astro'), /entitlements: await entitlementsFor\(Astro\.locals\.access\)/);
     assert.match(read('web/src/pages/report/[domain]/[runId]/sales.astro'), /accessAllows\(Astro\.locals\.access, 'salesReport'\)/);
   });
