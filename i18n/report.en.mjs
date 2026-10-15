@@ -539,4 +539,64 @@ export default {
   'pe.keyboard.zero': 'No automated keyboard or target-size failures on these pages.',
   'pe.keyboard.some.one': '{n} page has keyboard, focus, reflow or target-size issues.',
   'pe.keyboard.some.other': '{n} pages have keyboard, focus, reflow or target-size issues.',
+
+  // ── Statement page ────────────────────────────────────────────────
+  'stmtui.title': 'Accessibility statement · {company}',
+  'stmtui.description':
+    'Draft accessibility statement for {company}, generated from an automated scan. Not a legal conformance claim.',
+  'stmtui.notReady': 'The accessibility statement is not ready',
+  'stmtui.draft': 'Generated draft · do not publish it as it is',
+  'stmtui.openHtml': 'Open static HTML',
+  'stmtui.download': 'Download HTML',
+  'stmtui.htmlEnglish': '(English)',
+  'stmtui.htmlNote': 'The HTML file is in English for now; a Dutch version follows.',
+  'stmtui.langLabel': 'Language of the statement',
+  'stmtui.back': '← Back to results',
+  'stmtui.developer': 'Developer fix list →',
+
+  // ── Statement document (in the language chosen for it) ────────────
+  'stmt.kicker': 'Accessibility statement',
+  'stmt.updated': 'Last updated',
+  'stmt.coordinatorDefault': 'Accessibility coordinator',
+  'stmt.h.commitment': '1. Commitment',
+  'stmt.commitment.aims': '{legal} aims to make its website usable by as many people as possible.',
+  'stmt.commitment.standard':
+    'The target technical standard is WCAG 2.2 Level AA (and EN 301 549 where the EAA applies).',
+  'stmt.commitment.draft':
+    'This page is an automated draft. It is not a published accessibility statement and not a legal conformance claim.',
+  'stmt.h.status': '2. Conformance status',
+  'stmt.conformance': 'Draft: not a conformance claim',
+  'stmt.errorsScore':
+    'Errors score in this scan: {score}/100. It is the share of automated checks that passed, weighted by severity, not WCAG 2.2 AA conformance.',
+  'stmt.statusNote':
+    'A published statement should only use the official EU and EN 301 549 wording (fully, partially or not compliant) after a human evaluation. Automated findings that still need work are listed below.',
+  'stmt.h.nonAccessible': '3. Non-accessible content',
+  'stmt.noErrors':
+    'This automated scan recorded no outstanding errors. That is not a WCAG 2.2 AA pass: complete manual and assistive-technology testing before publishing a statement.',
+  'stmt.findingsIntro':
+    'Automated findings that probably fall short of WCAG 2.2 AA (verify them before publishing):',
+  'stmt.more': '…and {n} more in the full report.',
+  'stmt.h.preparation': '4. Preparation of this statement',
+  'stmt.prep.one':
+    'This draft was generated on {date} from an automated scan ({n} page). It does not include a complete manual or assistive-technology review.',
+  'stmt.prep.other':
+    'This draft was generated on {date} from an automated scan ({n} pages). It does not include a complete manual or assistive-technology review.',
+  'stmt.prep.review': 'Plan a human review; a suggested date is {date}.',
+  'stmt.prep.previous': 'The previous audit was carried out on {date}.',
+  'stmt.h.contact': '5. Feedback and contact',
+  'stmt.contact.intro': 'If you run into a barrier, please tell us. We want to fix it.',
+  'stmt.kv.email': 'Email',
+  'stmt.kv.phone': 'Phone',
+  'stmt.kv.visitor': 'Visitor address',
+  'stmt.kv.postal': 'Postal address',
+  'stmt.kv.response': 'Response time',
+  'stmt.within.one': 'Within {n} business day',
+  'stmt.within.other': 'Within {n} business days',
+  'stmt.h.enforcement': '6. Enforcement procedure',
+  'stmt.enforcement.one':
+    'If we do not respond satisfactorily within {n} business day, you can escalate to your local accessibility regulator. In Belgium, that is the Federal Public Service Policy and Support (BOSA).',
+  'stmt.enforcement.other':
+    'If we do not respond satisfactorily within {n} business days, you can escalate to your local accessibility regulator. In Belgium, that is the Federal Public Service Policy and Support (BOSA).',
+  'stmt.footer.generated': 'Generated automatically · audit {id}',
+  'stmt.footer.with': 'Generated with',
 };

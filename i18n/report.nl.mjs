@@ -548,4 +548,64 @@ export default {
   'pe.keyboard.some.one': '{n} pagina heeft problemen met toetsenbord, focus, herschikking of klikdoelen.',
   'pe.keyboard.some.other':
     '{n} pagina\'s hebben problemen met toetsenbord, focus, herschikking of klikdoelen.',
+
+  // ── Pagina met de verklaring ──────────────────────────────────────
+  'stmtui.title': 'Toegankelijkheidsverklaring · {company}',
+  'stmtui.description':
+    'Ontwerp van een toegankelijkheidsverklaring voor {company}, opgesteld op basis van een automatische scan. Geen juridische conformiteitsverklaring.',
+  'stmtui.notReady': 'De toegankelijkheidsverklaring is nog niet beschikbaar',
+  'stmtui.draft': 'Automatisch ontwerp · niet zo publiceren',
+  'stmtui.openHtml': 'Statische HTML openen',
+  'stmtui.download': 'HTML downloaden',
+  'stmtui.htmlEnglish': '(Engels)',
+  'stmtui.htmlNote': 'Het HTML-bestand is voorlopig in het Engels; een Nederlandse versie volgt.',
+  'stmtui.langLabel': 'Taal van de verklaring',
+  'stmtui.back': '← Terug naar de resultaten',
+  'stmtui.developer': 'Herstellijst voor ontwikkelaars →',
+
+  // ── Tekst van de verklaring (in de gekozen taal) ──────────────────
+  'stmt.kicker': 'Toegankelijkheidsverklaring',
+  'stmt.updated': 'Laatst bijgewerkt',
+  'stmt.coordinatorDefault': 'Toegankelijkheidscoördinator',
+  'stmt.h.commitment': '1. Engagement',
+  'stmt.commitment.aims': '{legal} wil zijn website bruikbaar maken voor zoveel mogelijk mensen.',
+  'stmt.commitment.standard':
+    'De technische norm die we nastreven is WCAG 2.2 niveau AA (en EN 301 549 waar de EAA van toepassing is).',
+  'stmt.commitment.draft':
+    'Deze pagina is een automatisch ontwerp. Het is geen gepubliceerde toegankelijkheidsverklaring en geen juridische conformiteitsverklaring.',
+  'stmt.h.status': '2. Nalevingsstatus',
+  'stmt.conformance': 'Ontwerp: geen conformiteitsverklaring',
+  'stmt.errorsScore':
+    'Foutenscore in deze scan: {score}/100. Dat is het aandeel geslaagde automatische controles, gewogen naar ernst, en geen conformiteit met WCAG 2.2 AA.',
+  'stmt.statusNote':
+    'Een gepubliceerde verklaring gebruikt de officiële bewoording van de EU en EN 301 549 (volledig, gedeeltelijk of niet conform) pas na een menselijke evaluatie. Automatische bevindingen waaraan nog gewerkt moet worden, staan hieronder.',
+  'stmt.h.nonAccessible': '3. Niet-toegankelijke inhoud',
+  'stmt.noErrors':
+    'Deze automatische scan registreerde geen openstaande fouten. Dat betekent niet dat WCAG 2.2 AA gehaald is: rond de handmatige tests en de tests met hulptechnologie af voordat u een verklaring publiceert.',
+  'stmt.findingsIntro':
+    'Automatische bevindingen die waarschijnlijk niet aan WCAG 2.2 AA voldoen (controleer ze voor publicatie):',
+  'stmt.more': '…en nog {n} in het volledige rapport.',
+  'stmt.h.preparation': '4. Opstelling van deze verklaring',
+  'stmt.prep.one':
+    'Dit ontwerp werd op {date} opgesteld op basis van een automatische scan ({n} pagina). Het omvat geen volledige controle met de hand of met hulptechnologie.',
+  'stmt.prep.other':
+    'Dit ontwerp werd op {date} opgesteld op basis van een automatische scan ({n} pagina\'s). Het omvat geen volledige controle met de hand of met hulptechnologie.',
+  'stmt.prep.review': 'Plan een menselijke controle; een voorgestelde datum is {date}.',
+  'stmt.prep.previous': 'De vorige audit vond plaats op {date}.',
+  'stmt.h.contact': '5. Feedback en contact',
+  'stmt.contact.intro': 'Stuit u op een drempel? Laat het ons weten. We willen het oplossen.',
+  'stmt.kv.email': 'E-mail',
+  'stmt.kv.phone': 'Telefoon',
+  'stmt.kv.visitor': 'Bezoekadres',
+  'stmt.kv.postal': 'Postadres',
+  'stmt.kv.response': 'Reactietermijn',
+  'stmt.within.one': 'Binnen {n} werkdag',
+  'stmt.within.other': 'Binnen {n} werkdagen',
+  'stmt.h.enforcement': '6. Handhavingsprocedure',
+  'stmt.enforcement.one':
+    'Krijgt u binnen {n} werkdag geen bevredigend antwoord, dan kunt u zich wenden tot de toezichthouder voor toegankelijkheid. In België is dat de FOD Beleid en Ondersteuning (BOSA).',
+  'stmt.enforcement.other':
+    'Krijgt u binnen {n} werkdagen geen bevredigend antwoord, dan kunt u zich wenden tot de toezichthouder voor toegankelijkheid. In België is dat de FOD Beleid en Ondersteuning (BOSA).',
+  'stmt.footer.generated': 'Automatisch opgesteld · audit {id}',
+  'stmt.footer.with': 'Gemaakt met',
 };

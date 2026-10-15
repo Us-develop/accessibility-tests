@@ -8,8 +8,20 @@ import { join } from 'node:path';
 import { buildAstroMainReportPayload } from '../../../../../../report-astro-payload.js';
 import { isValidReportId } from '../../../../../../server/fs-utils.js';
 import { runDir, isValidRunId } from '../../../../../../server/run-ids.js';
+import { usePageLang } from '../../../../lib/page-lang.js';
+import { normalizeLang, translator } from '../../../../../../i18n/index.mjs';
 
 export const prerender = false;
+// The page around the statement follows the visitor's language.
+const tr = usePageLang(Astro);
+// The statement itself is a document the customer publishes: its language is
+// chosen on this page (?doc=nl|en), Dutch unless English is asked for.
+const docLang = normalizeLang(Astro.url.searchParams.get('doc')) || 'nl';
+const doc = translator(docLang);
+// The statement sits in a page of another language: say so.
+const docLangAttr = docLang === tr.lang ? undefined : docLang;
+// Rule names in the findings list come from the scan, in English for now.
+const findingsAttr = docLang === 'en' ? undefined : 'en';
 
 const rawDomain = Astro.params.domain ?? '';
 const rawRunId = Astro.params.runId ?? '';
@@ -23,11 +35,12 @@ if (!isValidReportId(domain) || !isValidRunId(runId)) {
 const reportDir = runDir(domain, runId);
 const resultsPath = join(reportDir, 'accessibility-results.json');
 if (!existsSync(resultsPath)) {
-  return new Response('Report not found', { status: 404 });
+  return new Response(tr('report.notFound.title'), { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 }
 
 const json = JSON.parse(readFileSync(resultsPath, 'utf8'));
-const payload = buildAstroMainReportPayload(json);
+// Dates in the statement are written in the statement's language.
+const payload = buildAstroMainReportPayload(json, { lang: docLang });
 const pagesLoaded = payload.pagesLoaded === true;
 
 const statementMetaPath = join(reportDir, 'statement-meta.json');
@@ -41,29 +54,33 @@ try {
 const company = statementMeta.organizationShortName || statementMeta.organizationName || payload.primaryHost;
 const legal = statementMeta.organizationName || company;
 const website = statementMeta.website || `https://${payload.primaryHost}`;
-const coordinator = statementMeta.contactName || statementMeta.coordinator || 'Accessibility coordinator';
+const coordinator = statementMeta.contactName || statementMeta.coordinator || doc('stmt.coordinatorDefault');
 const email = statementMeta.contactEmail || statementMeta.email || `accessibility@${payload.primaryHost}`;
 const phone = statementMeta.phone || '';
 const visitorAddress = statementMeta.visitorAddress || statementMeta.address || '';
 const postalAddress = statementMeta.postalAddress || '';
 const responseDays = Number(statementMeta.responseDays || 5);
-const responseTime = `${responseDays} business day${responseDays === 1 ? '' : 's'}`;
 const lastAudit = statementMeta.lastAuditDate || '';
 const auditDate = payload.auditedDate || new Date().toISOString().slice(0, 10);
 
-const conformance = 'Draft — not a conformance claim';
-
 const errorIssues = (payload.fixOrderItems || []).filter((i) => i.status === 'fail' || i.status === 'violation' || i.type === 'violation');
 
-function nextYear(s: string): string {
-  const d = new Date(s);
+function nextYear(value: string): string {
+  const d = json.generatedAt ? new Date(json.generatedAt) : new Date(value);
   if (Number.isNaN(d.getTime())) return '';
   d.setFullYear(d.getFullYear() + 1);
   return d.toISOString().slice(0, 10);
 }
+const reviewDate = nextYear(auditDate);
+
+const base = `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}`;
+const docLangs = [
+  { code: 'nl', label: 'Nederlands' },
+  { code: 'en', label: 'English' },
+];
 ---
 
-<Layout title={`Accessibility statement · ${company}`} description={`Draft automated accessibility statement for ${company}. Not a legal conformance claim.`}>
+<Layout title={tr('stmtui.title', { company })} description={tr('stmtui.description', { company })}>
   <div class="app-shell">
     <AppHeader domain={domain} runId={runId} active="statement" />
     <main id="main" class="app-main" tabindex="-1">
@@ -73,28 +90,45 @@ function nextYear(s: string): string {
           runId={runId}
           primaryHost={payload.primaryHost || domain}
           loadFailures={payload.loadFailures || []}
-          title="Accessibility statement is not ready"
+          title={tr('stmtui.notReady')}
+          lang={tr.lang}
         />
       ) : (
       <div data-screen-label="05 Accessibility statement" style="background: var(--us-cream); min-height: calc(100dvh - 65px); min-height: calc(100vh - 65px);">
         <div class="container-narrow statement-page-inner">
           <div class="statement-toolbar">
             <div style="display: flex; flex-direction: column; gap: 6px;">
-              <a class="btn btn-ghost btn-sm" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`} style="align-self: flex-start;">← Back to report</a>
-              <span class="eyebrow"><span class="dot"></span>Auto-generated draft · not for publication as-is</span>
+              <a class="btn btn-ghost btn-sm" href={`${base}/`} style="align-self: flex-start;">{tr('cov.back')}</a>
+              <span class="eyebrow"><span class="dot"></span>{tr('stmtui.draft')}</span>
             </div>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-              <a class="btn btn-secondary btn-sm" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/accessibility-statement.html`}>Open static HTML</a>
-              <a class="btn btn-primary btn-sm" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/accessibility-statement.html`} download>Download HTML</a>
+            <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
+              <nav class="statement-langs" aria-label={tr('stmtui.langLabel')}>
+                <span class="muted" style="font-size: 13px;">{tr('stmtui.langLabel')}:</span>
+                {docLangs.map((option) => (
+                  <a
+                    class={`btn btn-sm ${option.code === docLang ? 'btn-primary' : 'btn-ghost'}`}
+                    href={`${base}/statement?doc=${option.code}`}
+                    hreflang={option.code}
+                    lang={option.code === tr.lang ? undefined : option.code}
+                    aria-current={option.code === docLang ? 'page' : undefined}
+                    data-astro-prefetch="false"
+                  >{option.label}</a>
+                ))}
+              </nav>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+                <a class="btn btn-secondary btn-sm" href={`${base}/accessibility-statement.html`} hreflang="en">{tr('stmtui.openHtml')} {tr('stmtui.htmlEnglish')}</a>
+                <a class="btn btn-primary btn-sm" href={`${base}/accessibility-statement.html`} hreflang="en" download>{tr('stmtui.download')} {tr('stmtui.htmlEnglish')}</a>
+              </div>
+              {docLang !== 'en' ? <p class="muted" style="font-size: 12px; margin: 0;">{tr('stmtui.htmlNote')}</p> : null}
             </div>
           </div>
 
-          <article class="statement-doc">
+          <article class="statement-doc" lang={docLangAttr}>
             <header style="border-bottom: 1px solid var(--border-subtle); padding-bottom: 28px; margin-bottom: 32px;">
-              <div class="muted" style="font-size: 13px; margin-bottom: 8px;">Accessibility statement</div>
+              <div class="muted" style="font-size: 13px; margin-bottom: 8px;">{doc('stmt.kicker')}</div>
               <h1 class="statement-h1">{company}</h1>
               <div style="display: flex; gap: 18px; font-size: 14px; color: var(--fg-2); flex-wrap: wrap;">
-                <span>Last updated <strong>{auditDate}</strong></span>
+                <span>{doc('stmt.updated')} <strong>{auditDate}</strong></span>
                 <span>·</span>
                 <span>{legal}</span>
                 <span>·</span>
@@ -103,40 +137,34 @@ function nextYear(s: string): string {
             </header>
 
             <section style="margin-bottom: 28px;">
-              <h2 class="statement-h2">1. Commitment</h2>
+              <h2 class="statement-h2">{doc('stmt.h.commitment')}</h2>
               <p>
-                <strong>{legal}</strong> aims to make its website usable by as many people as possible.
-                The target technical standard is <em>WCAG 2.2 Level AA</em> (and EN 301 549 where the EAA applies).
-                This page is an <strong>automated draft</strong>. It is not a published accessibility statement and not a legal conformance claim.
+                {doc('stmt.commitment.aims', { legal })}
+                {doc('stmt.commitment.standard')}
+                <strong>{doc('stmt.commitment.draft')}</strong>
               </p>
             </section>
 
             <section style="margin-bottom: 28px;">
-              <h2 class="statement-h2">2. Conformance status</h2>
+              <h2 class="statement-h2">{doc('stmt.h.status')}</h2>
               <div class="conformance-row">
                 <ScoreDonut score={payload.scoreClamp} size={84} stroke={8} showLabel={false} />
                 <div>
-                  <div style="font-family: var(--font-display); font-weight: 700; font-size: 22px; margin-bottom: 2px;">{conformance}</div>
-                  <div style="font-size: 14px; color: var(--fg-2);">
-                    Errors score on this run: {payload.scoreClamp}/100.
-                    That number is the share of applicable automated checks that passed — not WCAG 2.2 AA compliance.
-                  </div>
+                  <div style="font-family: var(--font-display); font-weight: 700; font-size: 22px; margin-bottom: 2px;">{doc('stmt.conformance')}</div>
+                  <div style="font-size: 14px; color: var(--fg-2);">{doc('stmt.errorsScore', { score: payload.scoreClamp })}</div>
                 </div>
               </div>
-              <p>
-                A published statement should use the official EU/EN 301 549 wording (fully / partially / not compliant) only after a human evaluation.
-                Automated findings that still need work are listed below.
-              </p>
+              <p>{doc('stmt.statusNote')}</p>
             </section>
 
             <section style="margin-bottom: 28px;">
-              <h2 class="statement-h2">3. Non-accessible content</h2>
+              <h2 class="statement-h2">{doc('stmt.h.nonAccessible')}</h2>
               {errorIssues.length === 0 ? (
-                <p class="muted">This automated run recorded no outstanding errors. That is not a WCAG 2.2 AA pass — complete manual and assistive-technology testing before publishing a statement.</p>
+                <p class="muted">{doc('stmt.noErrors')}</p>
               ) : (
                 <Fragment>
-                  <p style="margin-bottom: 12px;">Automated findings that likely fall short of WCAG 2.2 AA (verify before publishing):</p>
-                  <ol style="padding-left: 22px; display: flex; flex-direction: column; gap: 8px;">
+                  <p style="margin-bottom: 12px;">{doc('stmt.findingsIntro')}</p>
+                  <ol style="padding-left: 22px; display: flex; flex-direction: column; gap: 8px;" lang={findingsAttr}>
                     {errorIssues.slice(0, 12).map((i) => (
                       <li style="font-size: 14px;">
                         <strong>{i.rule || i.id}</strong>
@@ -147,81 +175,76 @@ function nextYear(s: string): string {
                     ))}
                   </ol>
                   {errorIssues.length > 12 && (
-                    <p class="muted" style="margin-top: 8px; font-size: 13px;">…and {errorIssues.length - 12} more in the full report.</p>
+                    <p class="muted" style="margin-top: 8px; font-size: 13px;">{doc('stmt.more', { n: errorIssues.length - 12 })}</p>
                   )}
                 </Fragment>
               )}
             </section>
 
             <section style="margin-bottom: 28px;">
-              <h2 class="statement-h2">4. Preparation of this statement</h2>
+              <h2 class="statement-h2">{doc('stmt.h.preparation')}</h2>
               <p>
-                This draft was generated on <strong>{auditDate}</strong> from an automated scan
-                ({payload.urls.length} page{payload.urls.length === 1 ? '' : 's'}).
-                It does not include a complete manual or assistive-technology review.
-                {nextYear(auditDate) ? <Fragment> A human review should be scheduled; a suggested date is {nextYear(auditDate)}.</Fragment> : null}
+                {doc.n('stmt.prep', payload.urls.length, { date: auditDate })}
+                {reviewDate ? <Fragment> {doc('stmt.prep.review', { date: reviewDate })}</Fragment> : null}
               </p>
               {lastAudit && (
-                <p>The previous audit was conducted on <strong>{lastAudit}</strong>.</p>
+                <p>{doc('stmt.prep.previous', { date: lastAudit })}</p>
               )}
             </section>
 
             <section style="margin-bottom: 28px;">
-              <h2 class="statement-h2">5. Feedback and contact</h2>
-              <p>If you encounter a barrier, please tell us — we want to fix it.</p>
+              <h2 class="statement-h2">{doc('stmt.h.contact')}</h2>
+              <p>{doc('stmt.contact.intro')}</p>
               <div class="contact-grid">
                 <div>
-                  <div class="kv-label">Accessibility coordinator</div>
+                  <div class="kv-label">{doc('stmt.coordinatorDefault')}</div>
                   <div class="kv-value">{coordinator}</div>
                 </div>
                 <div>
-                  <div class="kv-label">Email</div>
+                  <div class="kv-label">{doc('stmt.kv.email')}</div>
                   <div class="kv-value"><a class="link" href={`mailto:${email}`}>{email}</a></div>
                 </div>
                 {phone && (
                   <div>
-                    <div class="kv-label">Phone</div>
+                    <div class="kv-label">{doc('stmt.kv.phone')}</div>
                     <div class="kv-value">{phone}</div>
                   </div>
                 )}
                 {visitorAddress && (
                   <div>
-                    <div class="kv-label">Visitor address</div>
+                    <div class="kv-label">{doc('stmt.kv.visitor')}</div>
                     <div class="kv-value">{visitorAddress}</div>
                   </div>
                 )}
                 {postalAddress && (
                   <div>
-                    <div class="kv-label">Postal address</div>
+                    <div class="kv-label">{doc('stmt.kv.postal')}</div>
                     <div class="kv-value">{postalAddress}</div>
                   </div>
                 )}
                 <div>
-                  <div class="kv-label">Response time</div>
-                  <div class="kv-value">Within {responseTime}</div>
+                  <div class="kv-label">{doc('stmt.kv.response')}</div>
+                  <div class="kv-value">{doc.n('stmt.within', responseDays)}</div>
                 </div>
               </div>
             </section>
 
             <section style="margin-bottom: 28px;">
-              <h2 class="statement-h2">6. Enforcement procedure</h2>
-              <p>
-                If we don't respond satisfactorily within <strong>{responseTime}</strong>, you can escalate to your local
-                accessibility regulator. In Belgium, that's the Federal Public Service Policy and Support (BOSA).
-              </p>
+              <h2 class="statement-h2">{doc('stmt.h.enforcement')}</h2>
+              <p>{doc.n('stmt.enforcement', responseDays)}</p>
             </section>
 
             <footer style="margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--fg-3); flex-wrap: wrap; gap: 8px;">
-              <span class="mono">Generated automatically · audit {domain}/{runId}</span>
+              <span class="mono">{doc('stmt.footer.generated', { id: `${domain}/${runId}` })}</span>
               <span style="display: flex; align-items: center; gap: 6px;">
-                Generated with <img src="/assets/us-logo.png" width="83" height="40" alt="Us" style="height: 18px; width: auto; border-radius: 4px;" />
+                {doc('stmt.footer.with')} <img src="/assets/us-logo.png" width="83" height="40" alt="Us" style="height: 18px; width: auto; border-radius: 4px;" />
               </span>
             </footer>
           </article>
 
           <div class="statement-cta-row" style="margin-top: 32px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-            <a class="btn btn-secondary" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`}>← Back to results</a>
-            <a class="btn btn-primary" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/accessibility-developers.html`}>Developer next-steps →</a>
+            <a class="btn btn-secondary" href={`${base}/`}>{tr('stmtui.back')}</a>
+            <a class="btn btn-primary" href={`${base}/accessibility-developers.html`}>{tr('stmtui.developer')}</a>
           </div>
         </div>
       </div>
@@ -233,6 +256,13 @@ function nextYear(s: string): string {
 <style>
   .statement-page-inner {
     padding: clamp(32px, 6vw, 56px) 0 clamp(48px, 8vw, 96px);
+  }
+  /* The two language buttons sit in a row with their label. */
+  .statement-langs {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
   }
   .statement-toolbar {
     display: flex;
