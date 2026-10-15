@@ -149,7 +149,7 @@ describe('own product accessibility markup', () => {
 
   it('uses the reverse-charge VAT copy on pricing and terms', async () => {
     const copy =
-      'Businesses outside Belgium with a valid EU VAT number are charged without VAT under the reverse-charge rule. Belgian businesses pay 21 % VAT. Prices shown include Belgian VAT; consumers in other EU countries see their local rate at checkout.';
+      'Prices include Belgian VAT. Belgian businesses pay 21% VAT. EU businesses with a valid VAT number are charged without VAT under the reverse-charge rule. For EU consumers, the correct local VAT rate is applied at checkout.';
     // Pricing takes the sentence from the dictionary; terms still has it inline.
     assert.match(pricingAstro, /tr\('pricing\.vatNote'\)/);
     assert.equal((await import('../i18n/en.mjs')).default['pricing.vatNote'], copy);

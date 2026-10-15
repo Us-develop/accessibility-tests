@@ -3,6 +3,7 @@
    * Polls /api/status and shows real page progress from the worker.
    */
   import { onMount, onDestroy } from 'svelte';
+  import { t, tn } from '../../../i18n/index.mjs';
 
   function wcUrl(path) {
     if (typeof globalThis !== 'undefined' && typeof globalThis.wcagApiUrl === 'function') {
@@ -17,8 +18,13 @@
     return 'same-origin';
   }
 
-  /** @type {{ domain?: string, runId?: string, guestToken?: string, sampleUrls?: string[] }} */
-  let { domain = '', runId = '', guestToken = '', sampleUrls = [] } = $props();
+  /**
+   * `lang` is the language of the page it sits on: the snapshot page is not
+   * translated yet and passes nothing.
+   * @type {{ domain?: string, runId?: string, guestToken?: string, sampleUrls?: string[], lang?: string }}
+   */
+  let { domain = '', runId = '', guestToken = '', sampleUrls = [], lang = 'en' } = $props();
+  const tr = (key, vars) => t(lang, key, vars);
 
   let pollTimer;
   let progress = $state(2);
@@ -26,19 +32,23 @@
   let processedPages = $state(0);
   let currentUrl = $state(sampleUrls[0] || '');
   let errorMsg = $state('');
+  /** "en" when the error text came from the server, which answers in English for now. */
+  let errorLang = $state('');
 
   let runStatus = $state('');
-  let liveMessage = $state('Starting scan');
+  let liveMessage = $state(tr('loading.stage.starting'));
   let completeAnnounced = $state(false);
 
   const currentStage = $derived(
     progress >= 100
-      ? { label: 'Compiling report' }
+      ? { label: tr('loading.stage.compiling') }
       : runStatus === 'queued'
-        ? { label: 'Waiting in the scan queue' }
+        ? { label: tr('loading.stage.queued') }
         : processedPages === 0
-          ? { label: 'Starting scan' }
-          : { label: `Scanning page ${Math.min(processedPages, totalPages)} of ${totalPages}` }
+          ? { label: tr('loading.stage.starting') }
+          : totalPages === 1
+            ? { label: tr('loading.stage.scanning') }
+            : { label: tr('loading.stage.page', { n: Math.min(processedPages, totalPages), total: totalPages }) }
   );
 
   $effect(() => {
@@ -53,12 +63,15 @@
     if (data.scannedPages != null) processedPages = Number(data.scannedPages);
     else if (data.status === 'running' && data.currentUrl) processedPages = Math.max(processedPages, 1);
     if (data.currentUrl) currentUrl = String(data.currentUrl);
-    if (data.error) errorMsg = String(data.error);
+    if (data.error) {
+      errorMsg = String(data.error);
+      errorLang = lang === 'en' ? '' : 'en';
+    }
       if (data.status === 'done') {
         processedPages = totalPages;
         progress = 100;
         completeAnnounced = true;
-        liveMessage = 'Scan complete. Opening the report.';
+        liveMessage = tr('loading.done');
       } else if (totalPages > 0) {
       const pct = Math.round((processedPages / totalPages) * 90);
       progress = Math.max(4, Math.min(90, pct || 4));
@@ -76,10 +89,12 @@
       });
       if (!res.ok) {
         if (res.status === 404) {
-          errorMsg = 'Run not found.';
+          errorMsg = tr('loading.error.notFound');
+          errorLang = '';
         }
         if (res.status === 401) {
-          errorMsg = 'Session expired — sign in again.';
+          errorMsg = tr('loading.error.session');
+          errorLang = '';
           const next = typeof window !== 'undefined' ? window.location.href : '';
           window.location.href = wcUrl('/login') + '?next=' + encodeURIComponent(next || '/loading');
         }
@@ -125,25 +140,21 @@
     <div>
       <span class="eyebrow">
         <span class="dot" style="background: var(--us-mint-text);"></span>
-        {runStatus === 'queued' ? 'Waiting for a scanner slot' : 'Audit in progress'} &middot; automated WCAG 2.2 AA checks
+        {runStatus === 'queued' ? tr('loading.eyebrow.queued') : tr('loading.eyebrow.running')} &middot; {tr('loading.eyebrow.checks')}
       </span>
       <h1 class="loading-title">
-        {#if runStatus === 'queued'}
-          You're in the <em>queue</em>.
-        {:else}
-          Reading every <em>pixel</em>, line, and aria.
-        {/if}
+        {runStatus === 'queued' ? tr('loading.h1.queued') : tn(lang, 'loading.h1', totalPages)}
       </h1>
       <p class="p-large muted loading-lead">
         {#if runStatus === 'queued'}
-          Other scans are using the scanners right now. This tab will start automatically — you can leave it open.
+          {tr('loading.lead.queued')}
         {:else if guestToken}
-          We're scanning this page with automated WCAG 2.2 AA checks. A snapshot of the top issues will appear next. This is not a full audit.
+          {tr('loading.lead.guest')}
         {:else}
-          We're scanning {totalPages} page{totalPages === 1 ? '' : 's'} with automated WCAG 2.2 AA checks.
-          You can close this tab — we'll email when it's done if you asked us to.
+          {tn(lang, 'loading.lead', totalPages)}
         {/if}
       </p>
+      <p class="muted">{tr('loading.snapshot')}</p>
 
       <div class="progress-row">
         <div class="progress-meta">
@@ -166,26 +177,28 @@
       <div class="live-log">
         <div class="log-line log-ok">
           <span>&check;</span>
-          <span>{totalPages} URL{totalPages === 1 ? '' : 's'} queued</span>
+          <span>{tn(lang, 'loading.urls', totalPages)}</span>
         </div>
         <div class="log-line log-active">
           <span>&rarr;</span>
           <span>
-            {processedPages > 0
-              ? `page ${Math.min(processedPages, totalPages)} of ${totalPages}`
-              : 'waiting for first page'}
+            {#if processedPages > 0 && totalPages > 1}
+              {tr('loading.pageOf', { n: Math.min(processedPages, totalPages), total: totalPages })} &middot;
+            {/if}
             {#if currentUrl}
-              &middot; <strong class="break-anywhere">{currentUrl}</strong>
+              {tr('loading.current')} <strong class="break-anywhere">{currentUrl}</strong>
+            {:else if processedPages === 0}
+              {tr('loading.waiting')}
             {/if}
           </span>
         </div>
         <div class="log-line">
           <span>·</span>
-          <span>Issue counts appear when the scan finishes — we do not invent them while it runs.</span>
+          <span>{tr('loading.counts')}</span>
         </div>
         {#if errorMsg}
           <div class="log-line log-error" role="alert">
-            <span>&#x2715;</span><span>{errorMsg}</span>
+            <span>&#x2715;</span><span lang={errorLang || undefined}>{errorMsg}</span>
           </div>
         {/if}
       </div>
@@ -245,12 +258,10 @@
   </div>
 
   <div class="loading-footer">
-    {#if guestToken}
-      Free check in progress · Keep this tab until the snapshot link appears — closing it loses the URL.
-    {:else if domain && runId}
-      Audit ID: {domain} / {runId} &middot; You can safely close this tab.
+    {#if domain && runId && !guestToken}
+      {tr('loading.footer.run', { id: `${domain} / ${runId}` })}
     {:else}
-      Free check in progress · Keep this tab until the snapshot link appears.
+      {tr('loading.footer.guest')}
     {/if}
   </div>
 </div>
