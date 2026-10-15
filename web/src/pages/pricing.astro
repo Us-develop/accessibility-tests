@@ -1,7 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
-import { NONE_PLAN_ID, PRO_PLAN_ID, TOKEN_PACKS, planFeatureList } from '../../../server/plan-catalog.mjs';
+import { MAX_PAGES_PER_CUSTOMER_RUN, NONE_PLAN_ID, PRO_PAGES_PER_MONTH, PRO_PLAN_ID, TOKEN_PACKS, planFeatureList } from '../../../server/plan-catalog.mjs';
 import { billingPublicConfig } from '../../../server/stripe.mjs';
 import { usePageLang } from '../lib/page-lang.js';
 import { formatVatInclusivePrice } from '../../../server/vat-display.mjs';
@@ -25,6 +25,13 @@ const proYear = formatVatInclusivePrice(49000);
 const siteOrigin = String(Astro.site ?? 'https://wcag.about-us.be').replace(/\/$/, '');
 const tokenFeatures = planFeatureList(NONE_PLAN_ID);
 const proFeatures = planFeatureList(PRO_PLAN_ID);
+const proLimits = [
+  tr('pricing.pro.pages', { n: PRO_PAGES_PER_MONTH }),
+  tr('pricing.pro.perRun', { n: MAX_PAGES_PER_CUSTOMER_RUN }),
+  tr('pricing.pro.oneAtATime'),
+  tr('pricing.pro.projects'),
+  tr('pricing.pro.support'),
+];
 // What can actually be bought right now. A button whose price is not connected
 // to Stripe would only answer "503"; say so instead of offering it.
 const billing = await billingPublicConfig();
@@ -43,7 +50,7 @@ const jsonLd = {
   offers: [
     {
       '@type': 'Offer',
-      name: 'Gratis snapshot',
+      name: 'Free scan',
       price: '0',
       priceCurrency: 'EUR',
       url: `${siteOrigin}/`,
@@ -106,8 +113,8 @@ const jsonLd = {
             <p class="muted">{tr('pricing.tokens.body')}</p>
             <ul class="pricing-packs">
               <li>{tr('pricing.tokens.pack', { n: 10, price: pack10Price })}</li>
-              <li>{tr('pricing.tokens.packDiscount', { n: 50, price: pack50Price, discount: '−10%' })}</li>
-              <li>{tr('pricing.tokens.packDiscount', { n: 100, price: pack100Price, discount: '−20%' })}</li>
+              <li>{tr('pricing.tokens.pack', { n: 50, price: pack50Price })}</li>
+              <li>{tr('pricing.tokens.pack', { n: 100, price: pack100Price })}</li>
             </ul>
             <h3 style="font-size: 16px; margin: 16px 0 8px;">{tr('pricing.includes')}</h3>
             <ul class="pricing-packs" style="list-style: none; padding-left: 0;">
@@ -142,9 +149,11 @@ const jsonLd = {
           <section class="card pricing-card" id="pro" data-checkout-scope>
             <h2>{tr('pricing.pro.h2')}</h2>
             <p class="pricing-price">{proMonth} <span>{tr('pricing.pro.perMonth')}</span></p>
-            <p class="muted">{tr('pricing.pro.body', { yearly: proYear })}</p>
-            <h3 style="font-size: 16px; margin: 16px 0 8px;">{tr('pricing.includes')}</h3>
+            <p class="muted">{tr('pricing.pro.yearlyNote', { yearly: proYear })}</p>
             <ul class="pricing-packs" style="list-style: none; padding-left: 0;">
+              {proLimits.map((label) => (
+                <li><span aria-hidden="true">✓</span> {label}</li>
+              ))}
               {proFeatures.map((feature) => (
                 <li class={feature.included ? undefined : 'muted'}>
                   <span aria-hidden="true">{feature.included ? '✓' : '–'}</span>
@@ -174,7 +183,6 @@ const jsonLd = {
 
           <section class="card pricing-card" id="us-diensten">
             <h2>{tr('pricing.services.h2')}</h2>
-            <p class="pricing-price">{tr('pricing.services.price')}</p>
             <p class="muted">{tr('pricing.services.body')}</p>
             <div class="pricing-cta">
               <a class="btn btn-secondary" href="/contact?source=pricing">{tr('cta.expert')}</a>

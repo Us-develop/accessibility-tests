@@ -169,6 +169,10 @@
   const showDensitySwitcher = $derived(tab === 'overview' || tab === 'issues');
   const contentLocked = $derived(locked && tab !== 'overview');
   const signupHref = $derived(guestToken ? `/signup?guest=${encodeURIComponent(guestToken)}` : '/signup');
+  /** The contact form, tied to this snapshot so the team sees which scan the request is about. */
+  const expertHref = $derived(
+    guestToken ? `/contact?source=teaser&guest=${encodeURIComponent(guestToken)}` : '/contact?source=report'
+  );
 
   const totalChecks = $derived(severityCounts.errors + severityCounts.warnings + severityCounts.passed + severityCounts.notice);
   const pctPassed = $derived(totalChecks > 0 ? Math.round((severityCounts.passed / totalChecks) * 100) : 0);
@@ -407,35 +411,43 @@
 <div data-screen-label="03 Results - Dashboard" style="background: var(--us-cream);">
   <!-- HERO -->
   <div class="hero">
-    <div aria-hidden="true" class="hero-blob"></div>
+    <div aria-hidden="true" class="hero-blob-clip"><div class="hero-blob"></div></div>
     <div class="container hero-grid">
       <div class="hero-scores">
         <div class="hero-score-block">
           <div class="hero-score-donut-wrap">
             <ScoreDonut score={combinedScore} size={130} stroke={12} {threshold} label="" />
-            <details class="score-info" aria-label="How is the score calculated?">
-              <summary aria-label="Score formula">i</summary>
+            <details class="score-info">
+              <summary aria-label="About this test and how the score works">i</summary>
               <div class="score-info-pop">
+                <strong style="display:block; margin-bottom: 6px;">About this test</strong>
+                <p style="margin: 0 0 12px; font-size: 12px;">
+                  These results are based on automated checks only. They give you a clear indication of
+                  potential accessibility issues, but they are not a full WCAG 2.2 AA audit and do not
+                  confirm compliance with the European Accessibility Act (EAA).
+                </p>
                 <strong style="display:block; margin-bottom: 6px;">How the score works</strong>
                 <p style="margin: 0 0 8px; font-size: 12px;">
-                  <strong>Errors (60%)</strong>: automated failures. Each rule counts once per page,
-                  weighted by severity, averaged over the pages scanned. Fix them and re-scan.
+                  <strong>Errors (60%)</strong>: problems our automated checks found. Each rule counts
+                  once per page, weighted by severity. Fix them and scan again.
                 </p>
                 <p style="margin: 0 0 8px; font-size: 12px;">
-                  <strong>To review (15%)</strong>: findings the tool cannot decide by itself.
-                  Fix them or mark them as reviewed.
+                  <strong>To review (15%)</strong>: warnings our checks cannot decide by themselves.
+                  Fix them, or check them and mark them as reviewed.
                 </p>
                 <p style="margin: 0 0 8px; font-size: 12px;">
-                  <strong>Manual checks (25%)</strong>: the {manualTotal} human checks.
+                  <strong>Manual checks (25%)</strong>: {manualTotal} checks only a person can do, such as
+                  using the page with only a keyboard. Tick each check that passes in the Manual checks tab.
                 </p>
                 <p style="margin: 0 0 8px; font-size: 12px;">
-                  The overall score is 100 only when all three are 100, and stays at {CRITICAL_CAP} or
-                  below while a critical error remains.
+                  <strong>Errors score of 100</strong>: our automated checks found no errors in the latest scan.
+                </p>
+                <p style="margin: 0 0 8px; font-size: 12px;">
+                  <strong>Overall score of 100</strong>: no automated errors, every warning fixed or
+                  reviewed, and every item in the manual checklist marked as passed.
                 </p>
                 <p style="margin: 0; font-size: 12px;">
-                  100 means nothing is left that this tool can find and the manual checks are done.
-                  It is not WCAG 2.2 AA or EAA conformance: automation and this checklist do not
-                  cover every success criterion.
+                  While a critical error remains, the overall score stays at {CRITICAL_CAP} or below.
                 </p>
               </div>
             </details>
@@ -483,9 +495,8 @@
           </span>
         </div>
         <p class="hero-disclaimer">
-          Not a WCAG 2.2 AA or EAA conformance claim.
-          The overall score is 100 when a re-scan finds no automated errors, every finding to review is
-          fixed or reviewed, and every manual check is ticked.
+          Based on automated checks only: not a full WCAG 2.2 AA audit, and no confirmation of
+          compliance with the European Accessibility Act (EAA).
           <a class="link" href="/limitations" style="color: inherit; text-decoration: underline;">What we can and cannot test</a>
           {#if !locked && hasLoadedPages}
             ·
@@ -517,7 +528,7 @@
         or
         <a class="link" href="/pricing">buy tokens</a>
         for the full readable report.
-        <a class="link" href="#lead-form">Talk to a WCAG expert</a>
+        <a class="link" href={expertHref}>Talk to a WCAG expert</a>
         is optional.
       </p>
     {/if}
@@ -910,9 +921,9 @@
         </div>
       {:else if tab === 'manual'}
         <p class="muted" style="font-size: 14px; margin-bottom: 16px; max-width: 720px;">
-          Checklist ticks do not change the automated score. They raise the “with manual checks”
-          score. That second score reaches 100 only if a re-scan has no automated errors/warnings
-          <strong>and</strong> every item here is ticked. Ticking is not a full WCAG audit.
+          These are the checks only a person can do. Tick a check when the page passes it: the
+          Manual checks part counts for 25% of the overall score. Ticking every item is not a full
+          WCAG audit.
           See <button type="button" class="link" style="background:none;border:0;padding:0;font:inherit;cursor:pointer;" onclick={gotoCoverage}>WCAG coverage</button> for which success criteria these checks can cover.
         </p>
         <ManualChecklist
@@ -936,7 +947,7 @@
           <div class="guest-cta-row">
             <a class="btn btn-primary" href={signupHref}>Create an account</a>
             <a class="btn btn-ghost" href="/pricing">Buy tokens</a>
-            <a class="btn btn-secondary" href="#lead-form">Talk to a WCAG expert</a>
+            <a class="btn btn-secondary" href={expertHref}>Talk to a WCAG expert</a>
           </div>
         </div>
       </div>
@@ -1111,7 +1122,13 @@
     color: var(--us-cream);
     padding: 32px 0;
     position: relative;
+  }
+  /* Only the decoration is clipped, so the score info can open past the hero. */
+  .hero-blob-clip {
+    position: absolute;
+    inset: 0;
     overflow: hidden;
+    pointer-events: none;
   }
   .hero-blob {
     position: absolute;
@@ -1273,9 +1290,10 @@
   .score-info-pop {
     position: absolute;
     top: 30px;
-    right: 0;
-    width: min(320px, calc(100vw - 24px));
-    max-width: calc(100vw - 24px);
+    /* Opens to the right from the donut's left edge (donut 130px wide, button on its right
+       edge), so it stays on screen at the left of the page, phones included. */
+    left: -102px;
+    width: min(360px, calc(100vw - 32px));
     background: var(--us-cream);
     color: var(--fg-1);
     border-radius: 12px;

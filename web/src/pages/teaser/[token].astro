@@ -2,7 +2,6 @@
 import Layout from '../../layouts/Layout.astro';
 import AppHeader from '../../components/AppHeader.astro';
 import ResultsDashboard from '../../components/ResultsDashboard.svelte';
-import GuestLeadForm from '../../components/GuestLeadForm.svelte';
 import LoadingMonitor from '../../components/LoadingMonitor.svelte';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -144,14 +143,13 @@ if (notFound) {
           <ResultsDashboard client:load {...dashboardProps} />
           <div class="container teaser-cta">
             <div class="card teaser-unlock">
-              <h2 style="font-size: 22px; margin: 0 0 8px;">Keep going with a full report</h2>
-              <p class="muted">Create an account, buy tokens, or subscribe to Pro for stats, action items, a developer plan, and an accessibility statement. Or ask Us for manual testing.</p>
+              <h2 style="font-size: 22px; margin: 0 0 8px;">Go beyond the free scan</h2>
+              <p class="muted">Get the full picture with a complete accessibility report. Buy tokens for individual scans, choose Pro for recurring scans and reporting, or work with our WCAG experts for manual testing and tailored support.</p>
               <div class="guest-cta-row">
-                <a class="btn btn-primary" href={`/signup?guest=${token}`}>Create an account</a>
-                <a class="btn btn-ghost" href="/pricing">Buy tokens or subscribe</a>
+                <a class="btn btn-primary" href="/pricing">Get a full report</a>
+                <a class="btn btn-secondary" href={`/contact?source=teaser&guest=${encodeURIComponent(token)}`}>Talk to a WCAG expert</a>
               </div>
             </div>
-            <GuestLeadForm client:visible token={token} />
           </div>
         </>
       ) : (

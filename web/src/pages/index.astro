@@ -2,7 +2,11 @@
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 import { companyIdentity } from '../../../server/company.mjs';
+import { usePageLang } from '../lib/page-lang.js';
 
+// Guest and customer parts are translated. The staff tool is internal and stays
+// English: its parts carry lang="en".
+const tr = usePageLang(Astro);
 const access = Astro.locals?.access;
 const ssrStaff = access?.role === 'staff';
 const ssrCustomer = access?.role === 'customer';
@@ -31,8 +35,8 @@ const jsonLd = {
 export const prerender = false;
 ---
 <Layout
-  title="Run a free accessibility check · Us"
-  description="Run a free one-page WCAG 2.2 AA accessibility snapshot. See a score and the top issues before you buy tokens or subscribe to Pro."
+  title={tr('home.title')}
+  description={tr('home.description')}
   noindex={false}
   authMode="guest-ok"
 >
@@ -40,7 +44,7 @@ export const prerender = false;
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
   </Fragment>
   <div class="app-shell">
-    <AppHeader crumb={ssrStaff ? 'New scan' : ssrCustomer ? 'Your scan' : 'Free check'} />
+    <AppHeader crumb={ssrStaff ? tr('header.crumb.newScan') : ssrCustomer ? tr('home.crumb.customer') : tr('home.crumb.guest')} />
     <main id="main" class="app-main" tabindex="-1">
       <div class="container-narrow run-audit-page" style="position: relative; overflow: hidden; padding-block: clamp(32px, 5vw, 56px) clamp(48px, 8vw, 96px);">
         <div
@@ -50,14 +54,9 @@ export const prerender = false;
         >
         </div>
         <div class="fade-up guest-only" hidden={ssrSignedIn} style="text-align: left; margin-bottom: 40px;">
-          <span class="eyebrow"><span class="dot"></span>Free snapshot · 1 page · automated WCAG 2.2 AA checks</span>
-          <h1 class="run-hero-title">
-            Run a free accessibility check on your page
-          </h1>
-          <p class="p-large muted" style="max-width: 620px;">
-            Enter a public URL. One free snapshot per person — guests and new accounts share that same free scan.
-            This is not a full audit or legal sign-off.
-          </p>
+          <span class="eyebrow"><span class="dot"></span>{tr('home.guest.eyebrow')}</span>
+          <h1 class="run-hero-title">{tr('home.guest.h1')}</h1>
+          <p class="p-large muted" style="max-width: 620px;">{tr('home.guest.lead')}</p>
         </div>
 
         <form
@@ -70,7 +69,7 @@ export const prerender = false;
           style="padding: 0; overflow: hidden;"
         >
           <div style="padding: 32px 32px 28px;">
-            <label class="field-label" for="guest-url">Page URL</label>
+            <label class="field-label" for="guest-url">{tr('home.guest.label')}</label>
             <input
               id="guest-url"
               name="url"
@@ -82,62 +81,52 @@ export const prerender = false;
               required
             />
             <div id="guest-freebie-used" class="guest-freebie-used" role="alert" tabindex="-1" hidden style="margin-top: 14px;">
-              <p style="font-weight: 600; margin-bottom: 6px;">You have already used your free scan.</p>
-              <p class="muted" style="font-size: 14px; margin-bottom: 12px;">
-                To scan again, buy tokens (one token is one page), subscribe to Pro, or sign in if you already have an account.
-              </p>
+              <p style="font-weight: 600; margin-bottom: 6px;">{tr('home.guest.used.title')}</p>
+              <p class="muted" style="font-size: 14px; margin-bottom: 12px;">{tr('home.guest.used.body')}</p>
               <div class="guest-cta-row">
-                <a class="btn btn-primary btn-sm" href="/pricing#tokens">Buy tokens</a>
-                <a class="btn btn-secondary btn-sm" href="/pricing#pro">Subscribe to Pro</a>
-                <button type="button" class="btn btn-ghost btn-sm" data-open-login>Sign in</button>
+                <a class="btn btn-primary btn-sm" href="/pricing#tokens">{tr('cta.buyTokens')}</a>
+                <a class="btn btn-secondary btn-sm" href="/pricing#pro">{tr('cta.subscribePro')}</a>
+                <button type="button" class="btn btn-ghost btn-sm" data-open-login>{tr('cta.signIn')}</button>
               </div>
             </div>
-            <p class="muted" style="font-size: 13px; margin-top: 12px;">
-              One free snapshot per visitor. By starting a scan you confirm you are allowed to request this URL.
-            </p>
             <div id="guest-turnstile" style="margin-top: 18px;"></div>
           </div>
           <div
             style="background: var(--us-ink); color: var(--us-cream); padding: 24px 32px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;"
           >
             <div>
-              <div style="font-family: var(--font-display); font-size: 20px; font-weight: 700; letter-spacing: -0.01em;">
-                Scan one page for free
-              </div>
-              <div style="opacity: 0.7; font-size: 13px; margin-top: 4px;">No account. Results as soon as the scan is complete.</div>
+              <div style="opacity: 0.85; font-size: 14px; max-width: 420px;">{tr('home.guest.note')}</div>
+              <a class="link" href="/limitations" style="color: inherit; font-size: 13px;">{tr('home.limitations')}</a>
             </div>
             <button type="submit" class="btn btn-grad btn-lg" style="min-width: 200px;" id="guest-submit-btn">
-              Scan this page for free
+              {tr('home.guest.submit')}
             </button>
           </div>
         </form>
 
         <div class="guest-only" hidden={ssrSignedIn} style="margin-top: 24px; text-align: center;">
-          <p class="muted" style="font-size: 14px; margin-bottom: 12px;">Need more than one page, or the full report?</p>
+          <p class="muted" style="font-size: 14px; margin-bottom: 12px;">{tr('home.more')}</p>
           <div class="guest-cta-row" style="justify-content: center;">
-            <a class="btn btn-secondary" href="/pricing#tokens">Buy tokens</a>
-            <a class="btn btn-secondary" href="/pricing#pro">Subscribe to Pro</a>
+            <a class="btn btn-secondary" href="/pricing#tokens">{tr('cta.buyTokens')}</a>
+            <a class="btn btn-secondary" href="/pricing#pro">{tr('cta.subscribePro')}</a>
           </div>
-          <p class="muted" style="font-size: 13px; margin-top: 16px;">
-            <a class="link" href="/contact?source=home">Talk to a WCAG expert</a>
-            ·
-            <a class="link" href="/signup">Create an account</a>
-          </p>
+          <p class="muted" style="font-size: 14px; margin: 24px 0 12px;">{tr('home.help')}</p>
+          <div class="guest-cta-row" style="justify-content: center;">
+            <a class="btn btn-ghost" href="/contact?source=home">{tr('cta.expert')}</a>
+          </div>
         </div>
 
         <div class="fade-up customer-only" hidden={!ssrCustomer} style="text-align: left; margin-bottom: 40px;">
-          <span class="eyebrow"><span class="dot"></span>Your account · Pro pages or tokens</span>
-          <h1 class="run-hero-title">Scan pages into your account</h1>
-            <p class="p-large muted" style="max-width: 620px;">
-            Signed-in scans use your one freebie scan first (if unused), then Pro’s monthly page budget, then paid tokens. Each URL is one page-scan. Up to 50 URLs per run.
-          </p>
+          <span class="eyebrow"><span class="dot"></span>{tr('home.customer.eyebrow')}</span>
+          <h1 class="run-hero-title">{tr('home.customer.h1')}</h1>
+          <p class="p-large muted" style="max-width: 620px;">{tr('home.customer.lead')}</p>
           <p id="customer-usage" class="muted" style="max-width: 620px; margin-top: 8px;"></p>
           <p class="muted" style="font-size: 13px; margin-top: 8px;">
-            <a class="link" href="/pricing">Pricing</a>
+            <a class="link" href="/pricing">{tr('home.customer.pricing')}</a>
             ·
-            <a class="link" href="/account">Buy extra tokens</a>
+            <a class="link" href="/account#tokens">{tr('home.customer.buyTokens')}</a>
             ·
-            <a class="link" href="/contact?source=home">Talk to a WCAG expert</a>
+            <a class="link" href="/contact?source=home">{tr('cta.expert')}</a>
           </p>
         </div>
 
@@ -151,7 +140,7 @@ export const prerender = false;
           style="padding: 0; overflow: hidden;"
         >
           <div style="padding: 32px 32px 28px;">
-            <label class="field-label" for="customer-url">Page URLs</label>
+            <label class="field-label" for="customer-url">{tr('home.customer.label')}</label>
             <textarea
               id="customer-url"
               name="urls"
@@ -160,9 +149,7 @@ export const prerender = false;
               required
               style="min-height: 96px;"
             ></textarea>
-            <p class="muted" style="font-size: 13px; margin-top: 12px;">
-              One public URL per line, same domain. Pro includes 300 pages/month; extra pages spend tokens.
-            </p>
+            <p class="muted" style="font-size: 13px; margin-top: 12px;">{tr('home.customer.hint')}</p>
             <input type="hidden" name="csrfToken" class="wcag-csrf-field" value="" />
           </div>
           <div
@@ -170,27 +157,27 @@ export const prerender = false;
           >
             <div>
               <div style="font-family: var(--font-display); font-size: 20px; font-weight: 700; letter-spacing: -0.01em;">
-                Save this page to your account
+                {tr('home.customer.barTitle')}
               </div>
-              <div style="opacity: 0.7; font-size: 13px; margin-top: 4px;">Full report, keyed to your email and this domain.</div>
+              <div style="opacity: 0.7; font-size: 13px; margin-top: 4px;">{tr('home.customer.barBody')}</div>
             </div>
             <button type="submit" class="btn btn-grad btn-lg" style="min-width: 200px;" id="customer-submit-btn">
-              Scan this page
+              {tr('home.customer.submit')}
             </button>
           </div>
         </form>
 
         <p class="muted customer-only" hidden={!ssrCustomer} style="font-size: 12px; margin-top: 14px; text-align: center;">
-          <a href="/account" class="link">Account</a>
+          <a href="/account" class="link">{tr('home.customer.account')}</a>
           ·
-          <a href="/pricing" class="link">Pricing</a>
+          <a href="/pricing" class="link">{tr('home.customer.pricing')}</a>
           ·
-          <a href="/account" class="link">Your projects</a>
+          <a href="/account#projects" class="link">{tr('home.customer.projects')}</a>
         </p>
 
         {ssrStaff ? (
           <>
-        <div class="fade-up staff-only" hidden={!ssrStaff} style="text-align: left; margin-bottom: 40px;">
+        <div class="fade-up staff-only" lang="en" hidden={!ssrStaff} style="text-align: left; margin-bottom: 40px;">
           <span class="eyebrow"><span class="dot"></span>Automated WCAG 2.2 AA checks · EN 301 549 informed</span>
           <h1 class="run-hero-title">
             Scan your website for accessibility
@@ -204,6 +191,7 @@ export const prerender = false;
         <form
           id="run-form"
           class="card staff-only"
+          lang="en"
           method="post"
           action="/api/run"
           data-astro-reload
@@ -331,12 +319,12 @@ export const prerender = false;
 
         <p id="form-err" class="muted" role="alert" hidden style="font-size: 14px; margin-top: 14px; color: var(--status-error);"></p>
 
-        <p class="muted" style="font-size: 12px; margin-top: 14px; text-align: center;">
-          <a href="/limitations" class="link">What this scan can and cannot test</a>
+        <p class="muted" hidden={!ssrSignedIn} style="font-size: 12px; margin-top: 14px; text-align: center;">
+          <a href="/limitations" class="link">{tr('home.limitations')}</a>
         </p>
 
         {ssrStaff ? (
-        <p class="muted staff-only" hidden={!ssrStaff} style="font-size: 12px; margin-top: 14px; text-align: center;">
+        <p class="muted staff-only" lang="en" hidden={!ssrStaff} style="font-size: 12px; margin-top: 14px; text-align: center;">
           <a href="/audits" class="link">All domain audits</a>
           ·
           <a href="/admin/leads" class="link">Leads</a>
@@ -349,6 +337,9 @@ export const prerender = false;
 
 <script>
   import { balanceEmpty, balanceFromUsage, balanceLong } from '../lib/balance.js';
+  import { pageLang, t } from '../../../i18n/index.mjs';
+
+  const tx = (key, vars) => t(pageLang(), key, vars);
 
   function wcUrl(path) {
     return typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(path) : path;
@@ -415,18 +406,27 @@ export const prerender = false;
     }
   }
 
-  function showFormError(message, ctas, fieldId) {
+  /**
+   * @param {string} message
+   * @param {object | null} ctas
+   * @param {string} fieldId
+   * @param {boolean} [english] the message is English (server messages, the staff tool): marked as such on a Dutch page
+   */
+  function showFormError(message, ctas, fieldId, english = false) {
     const errEl = formErrorEl();
     if (!errEl) return;
     errEl.replaceChildren();
-    errEl.append(document.createTextNode(message || 'Request failed'));
+    const text = document.createElement('span');
+    text.textContent = message || tx('home.error.generic');
+    if (english && message && pageLang() !== 'en') text.lang = 'en';
+    errEl.append(text);
     if (ctas && (ctas.tokens || ctas.pro || ctas.services || ctas.signin)) {
       errEl.append(document.createTextNode(' '));
       const links = [
-        ctas.signin ? ['Sign in', 'signin'] : null,
-        ctas.tokens ? ['Buy tokens', ctas.tokens] : null,
-        ctas.pro ? ['Subscribe to Pro', ctas.pro] : null,
-        ctas.services ? ['Talk to a WCAG expert', ctas.services] : null,
+        ctas.signin ? [tx('cta.signIn'), 'signin'] : null,
+        ctas.tokens ? [tx('cta.buyTokens'), ctas.tokens] : null,
+        ctas.pro ? [tx('cta.subscribePro'), ctas.pro] : null,
+        ctas.services ? [tx('cta.expert'), ctas.services] : null,
       ].filter(Boolean);
       links.forEach((pair, index) => {
         if (index) errEl.append(document.createTextNode(' · '));
@@ -542,9 +542,10 @@ export const prerender = false;
         return;
       }
       const balance = balanceFromUsage(await res.json().catch(() => ({})));
+      const text = balanceLong(balance);
       el.textContent = balanceEmpty(balance)
-        ? `${balanceLong(balance)}. Buy tokens or subscribe to Pro to scan again.`
-        : `${balance.pro ? 'Pro' : 'No Pro'} · ${balanceLong(balance)}`;
+        ? tx('home.usage.empty', { balance: text })
+        : tx(balance.pro ? 'home.usage.pro' : 'home.usage.noPro', { balance: text });
     } catch {
       el.textContent = '';
     }
@@ -635,7 +636,7 @@ export const prerender = false;
       const data = await parseJsonResponse(res);
       if (res.status === 401) {
         document.dispatchEvent(new CustomEvent('wcag:login-required'));
-        showFormError(data.error || 'Sign in to run an audit.', null, 'urls');
+        showFormError(data.error || 'Sign in to run an audit.', null, 'urls', true);
         return;
       }
       if (!res.ok) {
@@ -644,16 +645,17 @@ export const prerender = false;
             data.error ||
               'This request was refused. Reload the page and try again.',
             null,
-            'urls'
+            'urls',
+            true
           );
         } else {
-          showFormError(data.error || res.statusText || 'Request failed', null, 'urls');
+          showFormError(data.error || res.statusText || 'Request failed', null, 'urls', true);
         }
         return;
       }
-      if (!goToRun(data)) showFormError('Could not start the audit.', null, 'urls');
+      if (!goToRun(data)) showFormError('Could not start the audit.', null, 'urls', true);
     } catch {
-      showFormError('We could not reach the server. Check your connection and try again.', null, 'urls');
+      showFormError('We could not reach the server. Check your connection and try again.', null, 'urls', true);
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -669,7 +671,7 @@ export const prerender = false;
     if (!(form instanceof HTMLFormElement) || form.dataset.freebieUsed !== '1') return;
     delete form.dataset.freebieUsed;
     const btn = document.getElementById('guest-submit-btn');
-    if (btn) btn.textContent = btn.dataset.label || 'Scan this page for free';
+    if (btn) btn.textContent = btn.dataset.label || tx('home.guest.submit');
   }
 
   async function submitGuestForm(form) {
@@ -704,24 +706,27 @@ export const prerender = false;
           showFreebieUsed();
           if (btn) {
             btn.dataset.label = btn.dataset.label || btn.textContent.trim();
-            btn.textContent = 'See pricing';
+            btn.textContent = tx('home.seePricing');
           }
           form.dataset.freebieUsed = '1';
           if (window.turnstile && turnstileWidgetId != null) window.turnstile.reset(turnstileWidgetId);
           return;
         }
         const ctas = { ...(data.ctas || {}), signin: true };
-        showFormError(data.error || res.statusText || 'Request failed', ctas, 'guest-url');
+        showFormError(data.error || tx('home.error.generic'), ctas, 'guest-url', Boolean(data.error));
         if (res.status === 429) {
-          if (btn) btn.textContent = 'See pricing';
+          if (btn) {
+            btn.dataset.label = btn.dataset.label || btn.textContent.trim();
+            btn.textContent = tx('home.seePricing');
+          }
           form.dataset.freebieUsed = '1';
         }
         if (window.turnstile && turnstileWidgetId != null) window.turnstile.reset(turnstileWidgetId);
         return;
       }
-      if (!goToRun(data, { guestFallback: true })) showFormError('Could not start the free scan.', null, 'guest-url');
+      if (!goToRun(data, { guestFallback: true })) showFormError(tx('home.error.freeScan'), null, 'guest-url');
     } catch {
-      showFormError('We could not reach the server. Check your connection and try again.', null, 'guest-url');
+      showFormError(tx('home.error.network'), null, 'guest-url');
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -747,16 +752,16 @@ export const prerender = false;
       const data = await parseJsonResponse(res);
       if (res.status === 401) {
         document.dispatchEvent(new CustomEvent('wcag:login-required'));
-        showFormError(data.error || 'Sign in to run a scan.', null, 'customer-url');
+        showFormError(data.error || tx('home.error.signIn'), null, 'customer-url', Boolean(data.error));
         return;
       }
       if (!res.ok) {
-        showFormError(data.error || res.statusText || 'Request failed', data.ctas, 'customer-url');
+        showFormError(data.error || tx('home.error.generic'), data.ctas, 'customer-url', Boolean(data.error));
         return;
       }
-      if (!goToRun(data, { guestFallback: true })) showFormError('Could not start the scan.', null, 'customer-url');
+      if (!goToRun(data, { guestFallback: true })) showFormError(tx('home.error.scan'), null, 'customer-url');
     } catch {
-      showFormError('We could not reach the server. Check your connection and try again.', null, 'customer-url');
+      showFormError(tx('home.error.network'), null, 'customer-url');
     } finally {
       if (btn) btn.disabled = false;
     }

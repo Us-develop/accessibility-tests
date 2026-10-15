@@ -144,8 +144,8 @@ describe('free scan used and result actions', () => {
     const submit = home.indexOf('id="guest-submit-btn"');
     assert.ok(field > 0 && box > field && box < submit, 'the message sits between the field and the submit button');
     assert.match(home, /id="guest-freebie-used" class="guest-freebie-used" role="alert" tabindex="-1" hidden/);
-    assert.match(home, /href="\/pricing#tokens">Buy tokens/);
-    assert.match(home, /data-open-login>Sign in/);
+    assert.match(home, /href="\/pricing#tokens">\{tr\('cta\.buyTokens'\)\}/);
+    assert.match(home, /data-open-login>\{tr\('cta\.signIn'\)\}/);
     assert.match(home, /data\.code === 'guest_freebie_used'/);
     assert.match(read('web/src/components/AppHeader.astro'), /\[data-open-login\]/);
   });

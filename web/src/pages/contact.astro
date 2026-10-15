@@ -3,6 +3,7 @@ import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 import GuestLeadForm from '../components/GuestLeadForm.svelte';
 import { LEAD_SOURCES } from '../../../server/plan-catalog.mjs';
+import { isValidGuestToken } from '../../../server/guest.mjs';
 import { usePageLang } from '../lib/page-lang.js';
 
 export const prerender = false;
@@ -11,6 +12,9 @@ const tr = usePageLang(Astro);
 // Where the visitor came from, so the team knows the context of the request.
 const requested = String(Astro.url.searchParams.get('source') || '');
 const source = LEAD_SOURCES.includes(requested) ? requested : 'contact';
+// From a free snapshot: the request is tied to that scan, as the form on the snapshot page used to do.
+const requestedGuest = String(Astro.url.searchParams.get('guest') || '');
+const guestToken = isValidGuestToken(requestedGuest) ? requestedGuest : '';
 ---
 
 <Layout
@@ -29,6 +33,7 @@ const source = LEAD_SOURCES.includes(requested) ? requested : 'contact';
         <GuestLeadForm
           client:load
           source={source}
+          token={guestToken}
           lang={tr.lang}
           heading={tr('contact.form.heading')}
           intro={tr('contact.form.intro')}

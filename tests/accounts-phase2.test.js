@@ -615,7 +615,7 @@ describe('account HTTP', () => {
     assert.equal(st.role, 'guest');
   });
 
-  it('posts the login form so passwords cannot land in the query string', () => {
+  it('posts the login form so passwords cannot land in the query string', async () => {
     const src = readFileSync(join(repoRoot, 'web/src/components/LoginModal.astro'), 'utf8');
     assert.match(src, /id="wcag-login-form"/);
     assert.match(src, /method="post"/);
@@ -634,7 +634,8 @@ describe('account HTTP', () => {
     const home = readFileSync(join(repoRoot, 'web/src/pages/index.astro'), 'utf8');
     assert.match(home, /id="customer-usage"/);
     const loading = readFileSync(join(repoRoot, 'web/src/components/LoadingMonitor.svelte'), 'utf8');
-    assert.match(loading, /Waiting in the scan queue/);
+    assert.match(loading, /tr\('loading\.stage\.queued'\)/);
+    assert.equal((await import('../i18n/en.mjs')).default['loading.stage.queued'], 'Waiting in the scan queue');
   });
 
   it('redirects a GET of the login API to the site instead of JSON', async () => {

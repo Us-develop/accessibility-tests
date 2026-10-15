@@ -162,8 +162,9 @@ describe('page SEO markup', () => {
     const teaser = readFileSync(join(pagesDir, 'teaser/[token].astro'), 'utf8');
     assert.match(teaser, /noindex=\{true\}/);
     assert.match(teaser, /Astro\.response\.status = 404/);
-    assert.match(teaser, /client:visible/);
-    assert.doesNotMatch(teaser, /GuestLeadForm client:load/);
+    // The expert form lives on /contact; the snapshot links there with its token.
+    assert.doesNotMatch(teaser, /GuestLeadForm/);
+    assert.match(teaser, /\/contact\?source=teaser&guest=/);
   });
 });
 

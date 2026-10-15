@@ -103,8 +103,8 @@ describe('getting around', () => {
   });
 
   it('offers both paid plans as buttons to guests on the homepage', () => {
-    assert.match(home, /class="btn btn-secondary" href="\/pricing#tokens">Buy tokens<\/a>/);
-    assert.match(home, /class="btn btn-secondary" href="\/pricing#pro">Subscribe to Pro<\/a>/);
+    assert.match(home, /class="btn btn-secondary" href="\/pricing#tokens">\{tr\('cta\.buyTokens'\)\}<\/a>/);
+    assert.match(home, /class="btn btn-secondary" href="\/pricing#pro">\{tr\('cta\.subscribePro'\)\}<\/a>/);
     const pricing = read('web/src/pages/pricing.astro');
     assert.match(pricing, /id="tokens"/);
     assert.match(pricing, /id="pro"/);

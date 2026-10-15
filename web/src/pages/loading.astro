@@ -2,8 +2,10 @@
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 import LoadingMonitor from '../components/LoadingMonitor.svelte';
+import { usePageLang } from '../lib/page-lang.js';
 
 export const prerender = false;
+const tr = usePageLang(Astro);
 
 const url = new URL(Astro.request.url);
 const domain = url.searchParams.get('domain') || url.searchParams.get('id') || '';
@@ -15,19 +17,19 @@ if (!token && (!domain || !runId)) {
 }
 ---
 
-<Layout title={`Audit in progress · ${domain || 'Us'}`} description="Your accessibility scan is running. This page updates when the report is ready." noindex={true} authMode="guest-ok">
+<Layout title={tr('loading.title', { site: domain || 'Us' })} description={tr('loading.description')} noindex={true} authMode="guest-ok">
   <div class="app-shell">
-    <AppHeader domain={domain || null} runId={runId || null} active={null} crumb="Running" />
+    <AppHeader domain={domain || null} runId={runId || null} active={null} crumb={tr('loading.crumb')} />
     <main id="main" class="app-main" tabindex="-1">
       {token ? (
-        <LoadingMonitor client:only="svelte" guestToken={token} />
+        <LoadingMonitor client:only="svelte" guestToken={token} lang={tr.lang} />
       ) : domain && runId ? (
-        <LoadingMonitor client:only="svelte" domain={domain} runId={runId} />
+        <LoadingMonitor client:only="svelte" domain={domain} runId={runId} lang={tr.lang} />
       ) : (
         <div class="container-narrow" style="padding: clamp(32px, 6vw, 64px) 0;">
-          <h1>Missing run id</h1>
+          <h1>{tr('loading.missing.h1')}</h1>
           <p class="p-large muted" style="margin-top: 12px;">
-            We could not find a run id in the URL. Go back to the <a class="link" href="/">free check</a> to start again.
+            {tr('loading.missing.before')} <a class="link" href="/">{tr('loading.missing.link')}</a> {tr('loading.missing.after')}
           </p>
         </div>
       )}

@@ -76,13 +76,13 @@ const PRO_TIER_FEATURES = Object.freeze({ ...TOKEN_TIER_FEATURES, salesReport: t
 
 /** Order and wording of the feature list on the pricing page. */
 export const PLAN_FEATURE_LABELS = Object.freeze([
-  ['fullReport', 'Full report: every issue, where it is and how to fix it'],
-  ['developerGuide', 'Developer fix list'],
-  ['statement', 'Draft accessibility statement'],
-  ['manualChecklist', 'Manual checklist and overall score'],
-  ['history', 'Scan history and score trend'],
-  ['salesReport', 'Sales report and PDF export'],
-  ['jira', 'Export fixes to Jira'],
+  ['fullReport', 'Dashboard access: every issue, where it is and how to fix it'],
+  ['history', 'Scan history: your earlier scans and how your score changes'],
+  ['statement', 'Accessibility statement: a draft to complete and publish'],
+  ['salesReport', 'Sales report: a PDF summary for management or clients'],
+  ['developerGuide', 'Developer guide: a fix list for your developers'],
+  ['manualChecklist', 'Manual testing checklist: the checks only a person can do'],
+  ['jira', 'Jira integration: send fixes to Jira as issues'],
 ]);
 
 /**
