@@ -90,8 +90,8 @@ describe('account page layout', () => {
 
 describe('all scans page', () => {
   it('speaks to customers, not only staff', () => {
-    assert.match(audits, /<h1 class="audits-title">All scans<\/h1>/);
-    assert.match(audits, /Start new scan/);
+    assert.match(audits, /<h1 class="audits-title">\{tr\('scans\.h1'\)\}<\/h1>/);
+    assert.match(audits, /tr\('header\.startScan'\)/);
     assert.doesNotMatch(audits, /Staff list/);
     assert.doesNotMatch(audits, /staff sign in/);
     assert.doesNotMatch(audits, /\/report\/&lt;domain&gt;/);

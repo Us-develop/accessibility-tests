@@ -8,8 +8,10 @@ import { join } from 'node:path';
 import { isValidReportId } from '../../../../../../server/fs-utils.js';
 import { runDir, isValidRunId } from '../../../../../../server/run-ids.js';
 import { buildAstroMainReportPayload } from '../../../../../../report-astro-payload.js';
+import { usePageLang } from '../../../../lib/page-lang.js';
 
 export const prerender = false;
+const tr = usePageLang(Astro);
 
 const rawDomain = Astro.params.domain ?? '';
 const rawRunId = Astro.params.runId ?? '';
@@ -26,12 +28,12 @@ if (!existsSync(resultsPath)) {
 }
 
 const json = JSON.parse(readFileSync(resultsPath, 'utf8'));
-const payload = buildAstroMainReportPayload(json);
+const payload = buildAstroMainReportPayload(json, { lang: tr.lang });
 const pagesLoaded = payload.pagesLoaded === true;
 const primaryHost = payload.primaryHost || domain.replace(/^www\./, '');
 ---
 
-<Layout title={`WCAG coverage · ${primaryHost}`} description={`WCAG 2.2 coverage matrix for ${primaryHost} from this automated run.`}>
+<Layout title={tr('cov.title', { site: primaryHost })} description={tr('cov.description', { site: primaryHost })}>
   <div class="app-shell">
     <AppHeader domain={domain} runId={runId} active="coverage" />
     <main id="main" class="app-main" tabindex="-1">
@@ -42,18 +44,16 @@ const primaryHost = payload.primaryHost || domain.replace(/^www\./, '');
             runId={runId}
             primaryHost={primaryHost}
             loadFailures={payload.loadFailures || []}
-            title="WCAG coverage is not ready"
+            title={tr('cov.notReady')}
+            lang={tr.lang}
           />
         ) : (
         <div class="container-narrow" style="padding: clamp(28px, 4vw, 48px) 0 80px;">
-          <a class="btn btn-ghost btn-sm" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`}>← Back to report</a>
+          <a class="btn btn-ghost btn-sm" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`}>{tr('cov.back')}</a>
           <span class="eyebrow" style="display: inline-flex; margin: 18px 0 8px;"><span class="dot"></span>WCAG 2.2 A + AA · {primaryHost}</span>
-          <h1 style="font-size: clamp(28px, 4vw, 40px); margin: 0 0 10px;">What was checked — and what was not</h1>
-          <p class="muted" style="max-width: 640px; margin-bottom: 28px;">
-            The table is computed from this run. The written analysis uses Anthropic when an API key is configured; otherwise it uses the same matrix in plain language.
-            Neither is an official WCAG or EAA audit.
-          </p>
-          <WcagCoverage client:load {domain} {runId} {primaryHost} />
+          <h1 style="font-size: clamp(28px, 4vw, 40px); margin: 0 0 10px;">{tr('cov.h1')}</h1>
+          <p class="muted" style="max-width: 640px; margin-bottom: 28px;">{tr('cov.lead')}</p>
+          <WcagCoverage client:load {domain} {runId} {primaryHost} lang={tr.lang} />
         </div>
         )}
       </div>

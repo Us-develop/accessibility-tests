@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { t, tn } from '../../../i18n/index.mjs';
 
   /**
    * @typedef {{
@@ -20,8 +21,19 @@
    * }} Criterion
    */
 
-  /** @type {{ domain: string, runId: string, primaryHost: string }} */
-  let { domain, runId, primaryHost } = $props();
+  /** @type {{ domain: string, runId: string, primaryHost: string, lang?: string }} */
+  let { domain, runId, primaryHost, lang = 'en' } = $props();
+
+  const tr = (key, vars) => t(lang, key, vars);
+  const known = (key, fallback) => {
+    const text = tr(key);
+    return text === key ? fallback : text;
+  };
+  /**
+   * Criterion titles, notes, findings and the written analysis come from the
+   * server in English for now: marked as such on a page in another language.
+   */
+  const contentLang = $derived(lang === 'en' ? undefined : 'en');
 
   let loading = $state(true);
   let generating = $state(false);
@@ -35,13 +47,13 @@
   );
 
   /** @type {Array<{ key: string, label: string }>} */
-  const filters = [
-    { key: 'all', label: 'All' },
-    { key: 'auto', label: 'Automated' },
-    { key: 'not-auto', label: 'Not automated' },
-    { key: 'manual', label: 'Manual can cover' },
-    { key: 'pro', label: 'Needs a professional' },
-  ];
+  const filters = $derived([
+    { key: 'all', label: tr('cov.filter.all') },
+    { key: 'auto', label: tr('cov.filter.auto') },
+    { key: 'not-auto', label: tr('cov.filter.notAuto') },
+    { key: 'manual', label: tr('cov.filter.manual') },
+    { key: 'pro', label: tr('cov.filter.pro') },
+  ]);
 
   const visible = $derived.by(() => {
     const list = /** @type {Criterion[]} */ (data?.criteria || []);
@@ -53,39 +65,15 @@
   });
 
   function runLabel(status) {
-    switch (status) {
-      case 'fail':
-        return 'Failed on this run';
-      case 'warn':
-        return 'Warning on this run';
-      case 'incomplete':
-        return 'Needs review';
-      case 'pass':
-        return 'Automated check passed';
-      case 'not-checked':
-        return 'Not automated';
-      case 'not-run':
-        return 'No finding this run';
-      default: {
-        const _exhaustive = status;
-        return String(_exhaustive);
-      }
-    }
+    return known(`cov.run.${status}`, String(status));
   }
 
   function autoLabel(auto) {
-    switch (auto) {
-      case 'partial':
-        return 'Partial auto';
-      case 'presence':
-        return 'Presence auto';
-      case 'none':
-        return 'Not automated';
-      default: {
-        const _exhaustive = auto;
-        return String(_exhaustive);
-      }
-    }
+    return known(`cov.auto.${auto}`, String(auto));
+  }
+
+  function manualText(item) {
+    return known(`manual.item.${item.id}`, item.text);
   }
 
   async function load(kind) {
@@ -103,7 +91,7 @@
           : undefined,
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+      if (!res.ok) throw new Error(body.error || tr('cov.error'));
       data = body;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -129,67 +117,65 @@
 </script>
 
 {#if loading && !data}
-  <p class="muted">Building the WCAG 2.2 A/AA coverage matrix…</p>
+  <p class="muted" role="status">{tr('cov.loading')}</p>
 {:else if error && !data}
   <p class="muted" role="alert">{error}</p>
 {:else if data}
   <div class="coverage-kpis">
     <div class="coverage-kpi">
-      <div class="muted coverage-kpi-label">Automated</div>
+      <div class="muted coverage-kpi-label">{tr('cov.kpi.auto')}</div>
       <div class="coverage-kpi-value">{data.counts.autoAttempted}/{data.total}</div>
-      <div class="muted" style="font-size: 12px;">criteria this scan can attempt</div>
+      <div class="muted" style="font-size: 12px;">{tr('cov.kpi.autoSub')}</div>
     </div>
     <div class="coverage-kpi">
-      <div class="muted coverage-kpi-label">Not automated</div>
+      <div class="muted coverage-kpi-label">{tr('cov.kpi.notAuto')}</div>
       <div class="coverage-kpi-value">{data.counts.autoNotChecked}</div>
-      <div class="muted" style="font-size: 12px;">need a human or a professional</div>
+      <div class="muted" style="font-size: 12px;">{tr('cov.kpi.notAutoSub')}</div>
     </div>
     <div class="coverage-kpi">
-      <div class="muted coverage-kpi-label">Manual can cover</div>
+      <div class="muted coverage-kpi-label">{tr('cov.kpi.manual')}</div>
       <div class="coverage-kpi-value">{data.counts.manualCanCover}</div>
-      <div class="muted" style="font-size: 12px;">of those via in-app checks</div>
+      <div class="muted" style="font-size: 12px;">{tr('cov.kpi.manualSub')}</div>
     </div>
     <div class="coverage-kpi">
-      <div class="muted coverage-kpi-label">Outside this product</div>
+      <div class="muted coverage-kpi-label">{tr('cov.kpi.outside')}</div>
       <div class="coverage-kpi-value">{data.counts.outsideProduct}</div>
-      <div class="muted" style="font-size: 12px;">still need a professional</div>
+      <div class="muted" style="font-size: 12px;">{tr('cov.kpi.outsideSub')}</div>
     </div>
   </div>
 
   <section class="card-flat coverage-narrative">
     <p class="eyebrow"><span class="dot"></span>
-      {data.source === 'anthropic' ? 'Written with Anthropic from this run’s matrix' : 'Structured summary from this run’s matrix'}
+      {data.source === 'anthropic' ? tr('cov.source.anthropic') : tr('cov.source.static')}
     </p>
     {#if generating}
-      <p class="muted" style="font-size: 13px;">Asking Anthropic to explain the matrix…</p>
+      <p class="muted" style="font-size: 13px;" role="status">{tr('cov.generating')}</p>
     {/if}
     {#if error}
-      <p class="muted" role="alert" style="font-size: 13px;">{error} Showing the structured summary instead.</p>
+      <p class="muted" role="alert" style="font-size: 13px;"><span lang={contentLang}>{error}</span> {tr('cov.fallback')}</p>
     {/if}
-    <h2>What this scan checked</h2>
-    <p>{data.narrative.checked}</p>
-    <h2>What was not checked automatically</h2>
-    <p>{data.narrative.notChecked}</p>
-    <h2>What the manual checks can cover</h2>
-    <p>{data.narrative.manualCanCover}</p>
-    <h2>If the manual checks are done well</h2>
-    <p>{data.narrative.pathToConformance}</p>
+    <h2>{tr('cov.h.checked')}</h2>
+    <p lang={contentLang}>{data.narrative.checked}</p>
+    <h2>{tr('cov.h.notChecked')}</h2>
+    <p lang={contentLang}>{data.narrative.notChecked}</p>
+    <h2>{tr('cov.h.manual')}</h2>
+    <p lang={contentLang}>{data.narrative.manualCanCover}</p>
+    <h2>{tr('cov.h.path')}</h2>
+    <p lang={contentLang}>{data.narrative.pathToConformance}</p>
     <div class="coverage-disclaimer">
-      <strong>Not an official audit.</strong>
-      {data.narrative.disclaimer}
+      <strong>{tr('cov.notOfficial')}</strong>
+      <span lang={contentLang}>{data.narrative.disclaimer}</span>
     </div>
     {#if data.llmAvailable}
       <button class="btn btn-secondary btn-sm" type="button" disabled={generating} onclick={() => load('post')}>
-        {generating ? 'Writing…' : 'Rewrite analysis'}
+        {generating ? tr('cov.writing') : tr('cov.rewrite')}
       </button>
     {:else}
-      <p class="muted" style="font-size: 12px; margin-top: 12px;">
-        A written analysis is not available for this report. The matrix below is always computed from the scan.
-      </p>
+      <p class="muted" style="font-size: 12px; margin-top: 12px;">{tr('cov.noLlm')}</p>
     {/if}
   </section>
 
-  <div class="coverage-filters" role="group" aria-label="Filter success criteria">
+  <div class="coverage-filters" role="group" aria-label={tr('cov.filterLabel')}>
     {#each filters as f}
       <button
         type="button"
@@ -209,35 +195,33 @@
           <a class="coverage-sc" href={c.url} target="_blank" rel="noopener">
             {c.id}
           </a>
-          <strong>{c.title}</strong>
-          <span class="tag tag-outline">Level {c.level}</span>
+          <strong lang={contentLang}>{c.title}</strong>
+          <span class="tag tag-outline">{tr('cov.level', { level: c.level })}</span>
           <span class="tag {c.auto === 'none' ? 'tag-warning' : 'tag-outline'}">{autoLabel(c.auto)}</span>
           <span class="tag {c.thisRun === 'fail' ? 'tag-error' : c.thisRun === 'warn' ? 'tag-warning' : 'tag-outline'}">{runLabel(c.thisRun)}</span>
         </div>
-        <p class="muted" style="font-size: 13px; margin: 6px 0 0;">{c.autoNote}</p>
+        <p class="muted" style="font-size: 13px; margin: 6px 0 0;" lang={contentLang}>{c.autoNote}</p>
         {#if c.findings.length}
           <p style="font-size: 13px; margin: 6px 0 0;">
-            This run: {c.findings.map((f) => f.label).slice(0, 4).join('; ')}
+            {tr('cov.thisRun')} <span lang={contentLang}>{c.findings.map((f) => f.label).slice(0, 4).join('; ')}</span>
           </p>
         {/if}
         {#if c.manualCanCover}
           <p style="font-size: 13px; margin: 8px 0 0;">
-            Manual check{c.manualItems.length === 1 ? '' : 's'}
-            {c.manualChecked ? 'completed' : c.manualPartial ? 'partly ticked' : 'not ticked'}:
-            {c.manualItems.map((i) => (i.checked ? '✓ ' : '○ ') + i.text).join(' · ')}
+            {tn(lang, 'cov.manual', c.manualItems.length)}
+            {c.manualChecked ? tr('cov.manual.done') : c.manualPartial ? tr('cov.manual.partial') : tr('cov.manual.open')}:
+            {c.manualItems.map((i) => (i.checked ? '✓ ' : '○ ') + manualText(i)).join(' · ')}
           </p>
         {:else if c.needsProfessional}
-          <p class="muted" style="font-size: 13px; margin: 8px 0 0;">
-            Not in this product’s automation or checklist — include in a professional evaluation.
-          </p>
+          <p class="muted" style="font-size: 13px; margin: 8px 0 0;">{tr('cov.pro')}</p>
         {/if}
       </li>
     {/each}
   </ol>
 
   <p class="muted" style="font-size: 12px; margin-top: 24px;">
-    {primaryHost} · {visible.length} of {data.total} WCAG 2.2 A/AA success criteria shown.
-    <a class="link" href="/limitations">Limitations</a>
+    {tr('cov.footer', { site: primaryHost, shown: visible.length, total: data.total })}
+    <a class="link" href="/limitations">{tr('cov.limitations')}</a>
   </p>
 {/if}
 
