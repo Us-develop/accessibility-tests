@@ -1,51 +1,26 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import { usePageLang } from '../lib/page-lang.js';
 
 export const prerender = false;
+const tr = usePageLang(Astro);
+const faq = [1, 2, 3, 4].map((n) => ({
+  '@type': 'Question',
+  name: tr(`lim.faq.q${n}`),
+  acceptedAnswer: { '@type': 'Answer', text: tr(`lim.faq.a${n}`) },
+}));
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
-  mainEntity: [
-    {
-      '@type': 'Question',
-      name: 'What does this scanner run?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: 'axe-core rules tagged WCAG 2.0 / 2.1 / 2.2 Level A and AA, plus custom checks for structure, images, contrast, 320px reflow, forms, names, and a few dynamic-content heuristics. Axe incomplete items are marked needs review, not passes.',
-      },
-    },
-    {
-      '@type': 'Question',
-      name: 'What cannot this tool test automatically?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: 'Real screen-reader, keyboard, and cognitive testing with people; most of WCAG 2.2’s 56 Level A and AA success criteria; client-rendered SPAs if content is not in the DOM at scan time; embedded players; and pages behind login, CAPTCHA, or bot protection.',
-      },
-    },
-    {
-      '@type': 'Question',
-      name: 'How should I read the score?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: 'The 0–100 figure is the share of applicable automated checks that passed on this run. A high score does not mean the site conforms. A low score does not mean it fails every criterion.',
-      },
-    },
-    {
-      '@type': 'Question',
-      name: 'Does this certify European Accessibility Act compliance?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: 'No. The EAA applies to listed consumer services in the EU, with a micro-enterprise exemption. This tool helps you find issues; it does not certify EAA compliance.',
-      },
-    },
-  ],
+  inLanguage: tr.lang,
+  mainEntity: faq,
 };
 ---
 
 <Layout
-  title="What this scan can and cannot test · Us"
-  description="What this automated WCAG 2.2 AA scanner can and cannot test, how to read the score, and how it relates to the European Accessibility Act."
+  title={tr('lim.title')}
+  description={tr('lim.description')}
   noindex={false}
   authMode="guest-ok"
 >
@@ -53,56 +28,46 @@ const jsonLd = {
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
   </Fragment>
   <div class="app-shell">
-    <AppHeader crumb="Limitations" />
+    <AppHeader crumb={tr('lim.crumb')} />
     <main id="main" class="app-main" tabindex="-1">
       <article class="container-narrow" style="padding: clamp(32px, 5vw, 56px) 0 clamp(48px, 8vw, 96px);">
         <span class="eyebrow"><span class="dot"></span>WCAG 2.2 AA · EN 301 549</span>
-        <h1 style="font-size: clamp(32px, 4.5vw, 48px); margin: 12px 0 16px;">What this tool can and cannot claim</h1>
-        <p class="p-large muted" style="max-width: 640px;">
-          This product is an <strong>assisted automated scanner</strong>. It finds many issues that machines can find.
-          It is <strong>not</strong> a complete WCAG 2.2 AA audit, not EN 301 549 certification, and not an EAA legal sign-off.
-        </p>
+        <h1 style="font-size: clamp(32px, 4.5vw, 48px); margin: 12px 0 16px;">{tr('lim.h1')}</h1>
+        <p class="p-large muted" style="max-width: 640px;">{tr('lim.lead')}</p>
 
         <section style="margin-top: 40px;">
-          <h2 style="font-size: 22px; margin-bottom: 10px;">What we run</h2>
+          <h2 style="font-size: 22px; margin-bottom: 10px;">{tr('lim.run.h')}</h2>
           <ul class="muted" style="padding-left: 20px; display: flex; flex-direction: column; gap: 8px; max-width: 640px;">
-            <li>axe-core rules tagged WCAG 2.0 / 2.1 / 2.2 Level A and AA (not best-practice-as-AA).</li>
-            <li>Custom checks for structure, images, contrast, 320px reflow, forms, names, and a few dynamic-content heuristics.</li>
-            <li>Axe “incomplete” items as <em>needs review</em>, not as passes.</li>
+            <li>{tr('lim.run.1')}</li>
+            <li>{tr('lim.run.2')}</li>
+            <li>{tr('lim.run.3')}</li>
           </ul>
         </section>
 
         <section style="margin-top: 32px;">
-          <h2 style="font-size: 22px; margin-bottom: 10px;">What we cannot test automatically</h2>
+          <h2 style="font-size: 22px; margin-bottom: 10px;">{tr('lim.cannot.h')}</h2>
           <ul class="muted" style="padding-left: 20px; display: flex; flex-direction: column; gap: 8px; max-width: 640px;">
-            <li>Real screen-reader, keyboard, and cognitive testing with people.</li>
-            <li>Most of WCAG 2.2’s 56 Level A and AA success criteria (captions quality, meaningful sequence, language of parts, accessible authentication, and more).</li>
-            <li>Client-rendered SPAs if content is not in the DOM at scan time.</li>
-            <li>YouTube / Vimeo and other embedded players (captions must be checked by a human).</li>
-            <li>Pages behind login, CAPTCHA, or bot protection.</li>
+            <li>{tr('lim.cannot.1')}</li>
+            <li>{tr('lim.cannot.2')}</li>
+            <li>{tr('lim.cannot.3')}</li>
+            <li>{tr('lim.cannot.4')}</li>
+            <li>{tr('lim.cannot.5')}</li>
           </ul>
         </section>
 
         <section style="margin-top: 32px;">
-          <h2 style="font-size: 22px; margin-bottom: 10px;">How to read the score</h2>
-          <p class="muted" style="max-width: 640px;">
-            The 0–100 figure is the share of <em>applicable automated checks that passed</em> on this run.
-            Easy environment checks (for example “no meta refresh”) are excluded so they do not inflate the number.
-            A high score does not mean the site conforms. A low score does not mean it fails every criterion.
-          </p>
+          <h2 style="font-size: 22px; margin-bottom: 10px;">{tr('lim.score.h')}</h2>
+          <p class="muted" style="max-width: 640px;">{tr('lim.score.body')}</p>
+          <p class="muted" style="max-width: 640px;">{tr('lim.score.caveat')}</p>
         </section>
 
         <section style="margin-top: 32px;">
-          <h2 style="font-size: 22px; margin-bottom: 10px;">European Accessibility Act</h2>
-          <p class="muted" style="max-width: 640px;">
-            Since 28 June 2025 the EAA applies to listed consumer services in the EU (for example e-commerce),
-            with a micro-enterprise exemption. It does <strong>not</strong> automatically apply to every website.
-            EN 301 549 is the usual technical reference. This tool helps you find issues; it does not certify EAA compliance.
-          </p>
+          <h2 style="font-size: 22px; margin-bottom: 10px;">{tr('lim.eaa.h')}</h2>
+          <p class="muted" style="max-width: 640px;">{tr('lim.eaa.body')}</p>
         </section>
 
         <p style="margin-top: 40px;">
-          <a class="btn btn-primary" href="/">Scan one page for free</a>
+          <a class="btn btn-primary" href="/">{tr('lim.cta')}</a>
         </p>
       </article>
     </main>

@@ -146,11 +146,11 @@ describe('a page only claims a language it is written in', () => {
     const layout = read('web/src/layouts/Layout.astro');
     assert.match(layout, /<html lang=\{tr\.lang\}/);
     assert.match(read('web/src/lib/page-lang.js'), /translator\(Astro\.locals\?\.pageLang \|\| 'en'\)/);
-    for (const page of ['pricing', 'contact', 'signup', 'index', 'loading', 'account', 'forgot', 'reset', 'verify', 'report/[domain]/[runId]/index', 'teaser/[token]']) {
+    for (const page of ['pricing', 'contact', 'signup', 'index', 'loading', 'account', 'forgot', 'reset', 'verify', 'report/[domain]/[runId]/index', 'teaser/[token]', 'report/[domain]/[runId]/coverage', 'report/[domain]/history', 'audits', 'limitations']) {
       assert.match(read(`web/src/pages/${page}.astro`), /const tr = usePageLang\(Astro\);/, page);
     }
     // Not translated yet: must not call usePageLang, so it stays lang="en".
-    assert.doesNotMatch(read('web/src/pages/audits.astro'), /usePageLang/);
+    assert.doesNotMatch(read('web/src/pages/report/[domain]/[runId]/statement.astro'), /usePageLang/);
   });
 
   it('marks the parts that are still English inside a Dutch page', () => {
@@ -202,5 +202,22 @@ describe('language switch', () => {
     assert.match(header, /name="lang"\s+value=\{code\}\s+lang=\{code\}/);
     assert.match(header, /aria-pressed=\{Astro\.locals\?\.lang === code \? 'true' : 'false'\}/);
     assert.doesNotMatch(header, /href=\{`\/lang\//);
+  });
+});
+
+describe('report pages from phase F', () => {
+  it('explain the three-part score on the limitations page in both languages', () => {
+    assert.match(t('en', 'lim.score.body'), /three parts: automated errors \(60%\), warnings to review \(15%\) and the manual checks \(25%\)/);
+    assert.match(t('nl', 'lim.score.body'), /drie delen: automatische fouten \(60%\), na te kijken waarschuwingen \(15%\) en de handmatige controles \(25%\)/);
+    assert.doesNotMatch(read('web/src/pages/limitations.astro'), /share of applicable automated checks/);
+  });
+
+  it('mark coverage content that is still English when the page is not', () => {
+    const coverage = read('web/src/components/WcagCoverage.svelte');
+    assert.match(coverage, /const contentLang = \$derived\(lang === 'en' \? undefined : 'en'\);/);
+    assert.match(coverage, /<strong lang=\{contentLang\}>\{c\.title\}<\/strong>/);
+    assert.match(coverage, /<p lang=\{contentLang\}>\{data\.narrative\.checked\}<\/p>/);
+    // Manual checks it lists come from the translated checklist.
+    assert.match(coverage, /known\(`manual\.item\.\$\{item\.id\}`, item\.text\)/);
   });
 });

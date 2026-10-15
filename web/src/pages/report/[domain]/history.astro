@@ -7,8 +7,16 @@ import { listVisibleRunsForDomain, viewerFromAstro } from '../../../../../server
 import { dbPool } from '../../../../../server/db.js';
 import { REPORTS_BASE } from '../../../../../server/paths.js';
 import { isValidReportId } from '../../../../../server/fs-utils.js';
+import { usePageLang } from '../../../lib/page-lang.js';
 
 export const prerender = false;
+const tr = usePageLang(Astro);
+/** Run status in the page language, or as it came when unknown. */
+function statusLabel(status: string): string {
+  const key = `acct.status.${status}`;
+  const text = tr(key);
+  return text === key ? status : text;
+}
 
 const rawDomain = Astro.params.domain ?? '';
 const domain = typeof rawDomain === 'string' ? rawDomain : String(rawDomain);
@@ -44,7 +52,7 @@ function formatRunId(runId: string): string {
 }
 ---
 
-<Layout title={`${domain} · audit history`} description={`Audit history and score trend for ${domain}.`}>
+<Layout title={tr('hist.title', { site: domain })} description={tr('hist.description', { site: domain })}>
   <div class="app-shell">
     <AppHeader domain={domain} runId={null} active="history" />
     <main id="main" class="app-main" tabindex="-1">
@@ -54,40 +62,40 @@ function formatRunId(runId: string): string {
         <div class="container" style="padding: clamp(32px, 5vw, 56px) 0 clamp(56px, 8vw, 96px); position: relative;">
           <div class="history-head">
             <div>
-              <span class="eyebrow"><span class="dot"></span>Audit history · /report/{domain}</span>
+              <span class="eyebrow"><span class="dot"></span>{tr('hist.eyebrow', { site: domain })}</span>
               <h1 class="history-title">{domain}</h1>
               <p class="p-large muted" style="max-width: 640px;">
-                {runs.length} audit{runs.length === 1 ? '' : 's'} on this domain
+                {tr.n('hist.count', runs.length)}
                 {latest && typeof latest.score === 'number' ? (
                   <Fragment>
-                    {' · latest score '}
+                    {` · ${tr('hist.latestScore')} `}
                     <strong style="color: var(--fg-1);">{latest.score}/100</strong>
                   </Fragment>
                 ) : null}
                 {latestDelta != null ? (
                   <Fragment>
-                    {' '}({latestDelta >= 0 ? '↑' : '↓'} {Math.abs(latestDelta)} vs previous)
+                    {' '}{tr('hist.vsPrevious', { arrow: latestDelta >= 0 ? '↑' : '↓', n: Math.abs(latestDelta) })}
                   </Fragment>
                 ) : null}
               </p>
             </div>
             <div class="guest-cta-row">
               <a class="btn btn-primary btn-lg" href={`/?url=${encodeURIComponent(`https://${domain}`)}`}>
-              Run new audit
+              {tr('hist.newScan')}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
             </a>
-              <a class="btn btn-secondary btn-lg" href="/contact?source=history">Talk to a WCAG expert</a>
+              <a class="btn btn-secondary btn-lg" href="/contact?source=history">{tr('cta.expert')}</a>
             </div>
           </div>
 
           {trendPoints.length > 0 && (
             <div class="card-flat" style="padding: 28px; margin-bottom: 28px;">
               <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px;">
-                <h2 style="font-size: 18px;">Score over time</h2>
-                <span class="muted" style="font-size: 13px;">{trendPoints.length} audits</span>
+                <h2 style="font-size: 18px;">{tr('hist.trendH')}</h2>
+                <span class="muted" style="font-size: 13px;">{tr.n('hist.trendCount', trendPoints.length)}</span>
               </div>
             <div class="history-trend-wrap">
-              <TrendChart data={trendPoints} width={1180} height={180} />
+              <TrendChart data={trendPoints} width={1180} height={180} lang={tr.lang} />
             </div>
             </div>
           )}
@@ -97,37 +105,37 @@ function formatRunId(runId: string): string {
               <ScoreDonut score={latest.score ?? 0} size={88} stroke={9} showLabel={false} />
               <div>
                 <div class="eyebrow" style="color: rgba(255,255,255,0.6);">
-                  <span class="dot" style="background: #8DFFB7;"></span>Latest audit
+                  <span class="dot" style="background: #8DFFB7;"></span>{tr('hist.latest')}
                 </div>
                 <div style="font-family: var(--font-display); font-size: 24px; font-weight: 700; margin-top: 4px;">
                   {formatDate(latest.updatedAt)} · <span class="mono" style="font-size: 16px;">{formatRunId(latest.runId)}</span>
                 </div>
                 <div style="opacity: 0.65; font-size: 13px; margin-top: 2px;">
-                  {latest.issues} issues · {latest.pages} pages
+                  {tr('hist.latestMeta', { issues: latest.issues, pages: latest.pages })}
                 </div>
               </div>
               {latestDelta != null ? (
                 <span class={`tag ${latestDelta >= 0 ? 'tag-success' : 'tag-error'}`}>
-                  {latestDelta >= 0 ? '↑' : '↓'} {Math.abs(latestDelta)} pts
+                  {tr('hist.delta', { arrow: latestDelta >= 0 ? '↑' : '↓', n: Math.abs(latestDelta) })}
                 </span>
               ) : (
                 <span></span>
               )}
-              <a class="btn btn-cream btn-sm" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(latest.runId)}/`}>Open report →</a>
+              <a class="btn btn-cream btn-sm" href={`/report/${encodeURIComponent(domain)}/${encodeURIComponent(latest.runId)}/`}>{tr('hist.open')}</a>
             </div>
           )}
 
-          <h2 style="font-size: 22px; margin-bottom: 14px;">All audits</h2>
+          <h2 style="font-size: 22px; margin-bottom: 14px;">{tr('hist.allH')}</h2>
 
           {runs.length === 0 ? (
             <div class="card-flat" style="padding: 32px; text-align: center;">
-              <p class="muted" style="margin-bottom: 16px;">No audits stored for {domain} yet.</p>
-              <a class="btn btn-primary btn-sm" href="/">Run the first audit</a>
+              <p class="muted" style="margin-bottom: 16px;">{tr('hist.empty', { site: domain })}</p>
+              <a class="btn btn-primary btn-sm" href="/">{tr('hist.first')}</a>
             </div>
           ) : (
             <div class="card-flat" style="padding: 0;">
               <div class="list-row history-row history-row--head" style="background: var(--us-n-20); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--fg-3); font-weight: 600;">
-                <span>Date</span><span>Run ID</span><span>Issues</span><span>Pages</span><span>Score</span><span></span>
+                <span>{tr('hist.col.date')}</span><span>{tr('hist.col.run')}</span><span>{tr('hist.col.issues')}</span><span>{tr('hist.col.pages')}</span><span>{tr('hist.col.score')}</span><span></span>
               </div>
               {sortedNewestFirst.map((r, i) => {
                 const next = sortedNewestFirst[i + 1];
@@ -137,7 +145,7 @@ function formatRunId(runId: string): string {
                     <span class="mono" style="font-size: 12px; font-weight: 500;">{formatDate(r.updatedAt)}</span>
                     <div>
                       <div class="mono" style="font-weight: 500; font-size: 13px;">{formatRunId(r.runId)}</div>
-                      <div class="muted" style="font-size: 12px;">{r.status}</div>
+                      <div class="muted" style="font-size: 12px;">{statusLabel(r.status)}</div>
                     </div>
                     <span class="tag tag-error">{r.issues}</span>
                     <span class="muted mono" style="font-size: 12px;">{r.pages}</span>
@@ -157,8 +165,7 @@ function formatRunId(runId: string): string {
           )}
 
           <p class="muted" style="font-size: 12px; margin-top: 18px; text-align: center;">
-            Each domain has its own permanent URL. Customers only see scans attached to their account;
-            staff can review the full domain history.
+            {tr('hist.footnote')}
           </p>
         </div>
       </div>
