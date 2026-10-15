@@ -129,11 +129,11 @@ describe('a page only claims a language it is written in', () => {
     const layout = read('web/src/layouts/Layout.astro');
     assert.match(layout, /<html lang=\{tr\.lang\}/);
     assert.match(read('web/src/lib/page-lang.js'), /translator\(Astro\.locals\?\.pageLang \|\| 'en'\)/);
-    for (const page of ['pricing', 'contact', 'signup']) {
+    for (const page of ['pricing', 'contact', 'signup', 'index', 'loading', 'account']) {
       assert.match(read(`web/src/pages/${page}.astro`), /const tr = usePageLang\(Astro\);/, page);
     }
     // Not translated yet: must not call usePageLang, so it stays lang="en".
-    assert.doesNotMatch(read('web/src/pages/account.astro'), /usePageLang/);
+    assert.doesNotMatch(read('web/src/pages/audits.astro'), /usePageLang/);
   });
 
   it('marks the parts that are still English inside a Dutch page', () => {

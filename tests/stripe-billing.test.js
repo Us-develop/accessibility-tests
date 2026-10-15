@@ -476,9 +476,9 @@ describe('stripe HTTP', () => {
     assert.match(account, /id="manage-billing-btn"/);
     assert.match(account, /token-buy/);
     assert.match(account, /pricing-checkout/);
-    assert.match(account, /Subscribe monthly/);
+    assert.match(account, /tr\('pricing\.pro\.monthly'\)/);
     assert.match(account, /id="account-billing-msg"/);
-    assert.match(account, /Cancel at the end of the billing period/);
+    assert.match(account, /tr\('acct\.sub\.cancelNote'\)/);
     assert.doesNotMatch(account, /pause/i);
     assert.doesNotMatch(account, /href="\/pricing#pro"/);
     assert.match(pricing, /bindCheckout\(\)/);

@@ -269,6 +269,8 @@ export async function initDb() {
   await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT`);
   await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS postal_code TEXT`);
   await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT`);
+  await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT`);
   await txQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS customer_type TEXT NOT NULL DEFAULT 'consumer'`);
   await txQuery(`
     DO $$ BEGIN
@@ -819,6 +821,8 @@ function mapUserRow(row) {
     id: row.id,
     email: row.email,
     name: row.name || '',
+    firstName: row.first_name || '',
+    lastName: row.last_name || '',
     role: row.role || 'customer',
     passwordHash: row.password_hash,
     emailVerified: !!row.email_verified,
@@ -847,7 +851,7 @@ function mapUserRow(row) {
 const USER_COLUMNS = `id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
             reset_token, reset_expires_at, phone, company, vat_number, address_line1, address_line2,
             city, postal_code, country, customer_type, session_version, pending_email, pending_email_token,
-            pending_email_expires_at, created_at, updated_at`;
+            pending_email_expires_at, created_at, updated_at, first_name, last_name`;
 
 export async function dbGetUserById(id) {
   if (!dbPool || !id) return null;
@@ -870,12 +874,12 @@ export async function dbUpsertUser(user) {
         id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
         reset_token, reset_expires_at, phone, company, vat_number, address_line1, address_line2,
         city, postal_code, country, customer_type, session_version, pending_email, pending_email_token,
-        pending_email_expires_at, created_at, updated_at
+        pending_email_expires_at, created_at, updated_at, first_name, last_name
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13, $14, $15,
         $16, $17, $18, $19, $20, $21, $22,
-        $23, COALESCE($24::timestamptz, NOW()), NOW()
+        $23, COALESCE($24::timestamptz, NOW()), NOW(), $25, $26
       )
       ON CONFLICT (id) DO UPDATE SET
         email = EXCLUDED.email,
@@ -900,6 +904,8 @@ export async function dbUpsertUser(user) {
         pending_email = EXCLUDED.pending_email,
         pending_email_token = EXCLUDED.pending_email_token,
         pending_email_expires_at = EXCLUDED.pending_email_expires_at,
+        first_name = EXCLUDED.first_name,
+        last_name = EXCLUDED.last_name,
         updated_at = NOW()
       RETURNING ${USER_COLUMNS}
     `,
@@ -1732,6 +1738,8 @@ function userInsertValues(user) {
     user.pendingEmailToken || null,
     user.pendingEmailExpiresAt || null,
     user.createdAt || null,
+    user.firstName || '',
+    user.lastName || '',
   ];
 }
 
@@ -1757,12 +1765,12 @@ export async function migrateJsonStoresToPostgres(options = {}) {
             id, email, name, role, password_hash, email_verified, verify_token, verify_expires_at,
             reset_token, reset_expires_at, phone, company, vat_number, address_line1, address_line2,
             city, postal_code, country, customer_type, session_version, pending_email, pending_email_token,
-            pending_email_expires_at, created_at, updated_at
+            pending_email_expires_at, created_at, updated_at, first_name, last_name
           ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8,
             $9, $10, $11, $12, $13, $14, $15,
             $16, $17, $18, $19, $20, $21, $22,
-            $23, COALESCE($24::timestamptz, NOW()), NOW()
+            $23, COALESCE($24::timestamptz, NOW()), NOW(), $25, $26
           )
           ON CONFLICT DO NOTHING
         `,

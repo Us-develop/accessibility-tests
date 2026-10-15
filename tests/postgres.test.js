@@ -14,6 +14,8 @@ const {
   dbApplyTokenLotClawback,
   dbInsertTokenLot,
   withUserLedgerLock,
+  dbUpsertUser,
+  dbGetUserById,
 } = await import('../server/db.js');
 
 const haveDb = Boolean(dbPool);
@@ -38,6 +40,24 @@ describe('postgres-backed paths', { skip: !haveDb }, () => {
     assert.ok(swept.swept >= 1);
     const stale = await dbGetRun('stale.example', staleRun);
     assert.equal(stale?.status, 'error');
+  });
+
+  it('stores first and last name on a user', async () => {
+    await initDb();
+    const id = `names-${Date.now()}`;
+    await dbUpsertUser({
+      id,
+      email: `${id}@example.com`,
+      name: 'Jan de Vries',
+      firstName: 'Jan',
+      lastName: 'de Vries',
+      passwordHash: 'x',
+    });
+    const saved = await dbGetUserById(id);
+    assert.equal(saved?.firstName, 'Jan');
+    assert.equal(saved?.lastName, 'de Vries');
+    await dbUpsertUser({ ...saved, lastName: 'Peeters' });
+    assert.equal((await dbGetUserById(id))?.lastName, 'Peeters');
   });
 
   it('claims a stripe event only once', async () => {

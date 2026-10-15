@@ -244,6 +244,8 @@ export function registerAccountRoutes(app, ctx) {
         email: req.body?.email,
         password: req.body?.password,
         name: req.body?.name,
+        firstName: req.body?.firstName,
+        lastName: req.body?.lastName,
         company: req.body?.company,
         vatNumber: req.body?.vatNumber || req.body?.vat_number,
         customerType: buyingForBusiness ? 'business' : 'consumer',
@@ -432,7 +434,7 @@ export function registerAccountRoutes(app, ctx) {
         projects: [],
         plan: null,
         usage: null,
-        tokens: { tokens: 0, nextExpiresAt: null, lots: [] },
+        tokens: { tokens: 0, granted: 0, nextExpiresAt: null, lots: [] },
         payments: [],
         scans: [],
       });

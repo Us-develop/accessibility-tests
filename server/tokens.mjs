@@ -61,12 +61,24 @@ export async function listTokenLots(userId) {
     .sort((a, b) => String(a.expiresAt || '').localeCompare(String(b.expiresAt || '')));
 }
 
+/**
+ * Tokens the customer received in the packs they are still using: what each
+ * lot granted, less what a refund took back. The account page shows
+ * "24 of 50 tokens remaining" from `tokens` and this.
+ */
+export function tokensGrantedIn(lots) {
+  return (lots || []).reduce(
+    (sum, lot) => sum + Math.max(0, Number(lot.tokensGranted || 0) - Number(lot.tokensClawedBack || 0)),
+    0
+  );
+}
+
 export async function getTokenBalance(userId, now = new Date()) {
-  if (!userId) return { tokens: 0, nextExpiresAt: null, lots: [] };
+  if (!userId) return { tokens: 0, granted: 0, nextExpiresAt: null, lots: [] };
   const lots = (await listTokenLots(userId)).filter((lot) => isUnexpired(lot, now));
   const tokens = lots.reduce((sum, lot) => sum + Number(lot.tokensRemaining || 0), 0);
   const nextExpiresAt = lots[0]?.expiresAt || null;
-  return { tokens, nextExpiresAt, lots };
+  return { tokens, granted: Math.max(tokens, tokensGrantedIn(lots)), nextExpiresAt, lots };
 }
 
 export async function findTokenLotByCheckoutSession(sessionId) {
