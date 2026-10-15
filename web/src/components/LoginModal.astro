@@ -184,13 +184,14 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
 
 <script>
   import { isSafeRelativePath } from '../../../server/safe-path.mjs';
-  import { pageLang, t } from '../../../i18n/index.mjs';
+  import { pageLang, serverMessageLang, t } from '../../../i18n/index.mjs';
 
   const tx = (key) => t(pageLang(), key);
-  /** Server messages are English for now: mark them on a Dutch page. */
-  function showServerText(el, text) {
-    el.textContent = text;
-    if (pageLang() !== 'en') el.setAttribute('lang', 'en');
+  /** A server message; marked when it is not in the page language (some are still English). */
+  function showServerText(el, data) {
+    const messageLang = serverMessageLang(data);
+    el.textContent = data.error;
+    if (messageLang !== pageLang()) el.setAttribute('lang', messageLang);
     else el.removeAttribute('lang');
   }
   function showOwnText(el, key) {
@@ -510,7 +511,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
             showUnverifiedLoginError(errEl);
           } else {
             if (res.status === 401) showOwnText(errEl, 'login.error.failed');
-            else if (data.error) showServerText(errEl, data.error);
+            else if (data.error) showServerText(errEl, data);
             else showOwnText(errEl, 'login.error.generic');
             errEl.hidden = false;
           }
@@ -572,7 +573,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (errEl) {
-          if (data.error) showServerText(errEl, data.error);
+          if (data.error) showServerText(errEl, data);
           else showOwnText(errEl, 'login.request.error');
           errEl.hidden = false;
         }

@@ -59,6 +59,7 @@ import { carryReviewedForward, readReviewed, writeReviewed } from './reviewed.mj
 import { accessAllows } from './entitlements.mjs';
 import { isSafeRelativePath } from './safe-path.mjs';
 import { langFromCookieHeader, langSetCookie, normalizeLang, t } from '../i18n/index.mjs';
+import { localizeJsonMessages } from './server-messages.mjs';
 import { buildTeaserPayload } from './teaser-payload.mjs';
 import {
   clearSessionCookies,
@@ -650,6 +651,8 @@ export function createAccessibilityApp(repoRoot, options = {}) {
   patchAppAsyncHandlers(app);
   app.use(requestIdMiddleware);
   app.use(securityHeadersMiddleware);
+  // Error messages in JSON answers in the visitor's language (server/server-messages.mjs).
+  app.use(localizeJsonMessages);
   app.use((req, res, next) => {
     if (req.method === 'GET' || req.method === 'HEAD') {
       ensureCsrfCookie(req, res, AUTH_COOKIE_SAMESITE);

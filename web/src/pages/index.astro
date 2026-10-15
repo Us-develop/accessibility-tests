@@ -337,7 +337,7 @@ export const prerender = false;
 
 <script>
   import { balanceEmpty, balanceFromUsage, balanceLong } from '../lib/balance.js';
-  import { pageLang, t } from '../../../i18n/index.mjs';
+  import { pageLang, serverMessageLang, t } from '../../../i18n/index.mjs';
 
   const tx = (key, vars) => t(pageLang(), key, vars);
 
@@ -410,15 +410,15 @@ export const prerender = false;
    * @param {string} message
    * @param {object | null} ctas
    * @param {string} fieldId
-   * @param {boolean} [english] the message is English (server messages, the staff tool): marked as such on a Dutch page
+   * @param {string} [messageLang] language the message is in when it is not the page's (server messages, the staff tool)
    */
-  function showFormError(message, ctas, fieldId, english = false) {
+  function showFormError(message, ctas, fieldId, messageLang = '') {
     const errEl = formErrorEl();
     if (!errEl) return;
     errEl.replaceChildren();
     const text = document.createElement('span');
     text.textContent = message || tx('home.error.generic');
-    if (english && message && pageLang() !== 'en') text.lang = 'en';
+    if (messageLang && message && messageLang !== pageLang()) text.lang = messageLang;
     errEl.append(text);
     if (ctas && (ctas.tokens || ctas.pro || ctas.services || ctas.signin)) {
       errEl.append(document.createTextNode(' '));
@@ -636,7 +636,7 @@ export const prerender = false;
       const data = await parseJsonResponse(res);
       if (res.status === 401) {
         document.dispatchEvent(new CustomEvent('wcag:login-required'));
-        showFormError(data.error || 'Sign in to run an audit.', null, 'urls', true);
+        showFormError(data.error || 'Sign in to run an audit.', null, 'urls', 'en');
         return;
       }
       if (!res.ok) {
@@ -646,16 +646,16 @@ export const prerender = false;
               'This request was refused. Reload the page and try again.',
             null,
             'urls',
-            true
+            'en'
           );
         } else {
-          showFormError(data.error || res.statusText || 'Request failed', null, 'urls', true);
+          showFormError(data.error || res.statusText || 'Request failed', null, 'urls', 'en');
         }
         return;
       }
-      if (!goToRun(data)) showFormError('Could not start the audit.', null, 'urls', true);
+      if (!goToRun(data)) showFormError('Could not start the audit.', null, 'urls', 'en');
     } catch {
-      showFormError('We could not reach the server. Check your connection and try again.', null, 'urls', true);
+      showFormError('We could not reach the server. Check your connection and try again.', null, 'urls', 'en');
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -713,7 +713,7 @@ export const prerender = false;
           return;
         }
         const ctas = { ...(data.ctas || {}), signin: true };
-        showFormError(data.error || tx('home.error.generic'), ctas, 'guest-url', Boolean(data.error));
+        showFormError(data.error || tx('home.error.generic'), ctas, 'guest-url', data.error ? serverMessageLang(data) : '');
         if (res.status === 429) {
           if (btn) {
             btn.dataset.label = btn.dataset.label || btn.textContent.trim();
@@ -752,11 +752,11 @@ export const prerender = false;
       const data = await parseJsonResponse(res);
       if (res.status === 401) {
         document.dispatchEvent(new CustomEvent('wcag:login-required'));
-        showFormError(data.error || tx('home.error.signIn'), null, 'customer-url', Boolean(data.error));
+        showFormError(data.error || tx('home.error.signIn'), null, 'customer-url', data.error ? serverMessageLang(data) : '');
         return;
       }
       if (!res.ok) {
-        showFormError(data.error || tx('home.error.generic'), data.ctas, 'customer-url', Boolean(data.error));
+        showFormError(data.error || tx('home.error.generic'), data.ctas, 'customer-url', data.error ? serverMessageLang(data) : '');
         return;
       }
       if (!goToRun(data, { guestFallback: true })) showFormError(tx('home.error.scan'), null, 'customer-url');

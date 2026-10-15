@@ -1,5 +1,5 @@
 import { readAccessFromCookies } from '../../server/session.mjs';
-import { langFromCookieHeader } from '../../i18n/index.mjs';
+import { LANG_COOKIE, langFromCookieHeader, langSetCookie } from '../../i18n/index.mjs';
 
 /**
  * Standalone @astrojs/node ignores Express locals. Re-read the signed session
@@ -13,5 +13,19 @@ export async function onRequest({ locals, request }, next) {
   // The visitor's language (wcag_lang cookie, Dutch by default). Pages that are
   // translated pick it up with usePageLang().
   locals.lang = langFromCookieHeader(cookie);
-  return next();
+  const response = await next();
+  // First visit: remember the language the page was shown in, so the browser's
+  // later requests carry it and the server answers them in the same language.
+  if (!new RegExp(`(?:^|;\\s*)${LANG_COOKIE}=`).test(cookie) && isHtml(response)) {
+    try {
+      response.headers.append('Set-Cookie', langSetCookie(locals.lang, { secure: process.env.NODE_ENV === 'production' }));
+    } catch {
+      // Some responses have immutable headers; the cookie is then set on the next page.
+    }
+  }
+  return response;
+}
+
+function isHtml(response) {
+  return String(response?.headers?.get?.('content-type') || '').includes('text/html');
 }

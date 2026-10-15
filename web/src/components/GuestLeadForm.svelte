@@ -1,6 +1,6 @@
 <script>
   import { tick } from 'svelte';
-  import { t } from '../../../i18n/index.mjs';
+  import { serverMessageLang, t } from '../../../i18n/index.mjs';
 
   /**
    * The one contact form of the app ("Talk to a WCAG expert"). Used on the scan
@@ -56,7 +56,8 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         err = data.error || tr('lead.error.generic');
-        errLang = data.error && lang !== 'en' ? 'en' : '';
+        const messageLang = data.error ? serverMessageLang(data) : '';
+        errLang = messageLang && messageLang !== lang ? messageLang : '';
         return;
       }
       // The form is replaced by a confirmation, and focus goes to it: a form

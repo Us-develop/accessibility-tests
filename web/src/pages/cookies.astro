@@ -60,6 +60,12 @@ export const prerender = false;
                 <td>1 year</td>
                 <td>HttpOnly; Path=/; SameSite as the session; Secure in production</td>
               </tr>
+              <tr>
+                <td><code>wcag_lang</code></td>
+                <td>The language you see the site in (Dutch or English). Set on your first visit and when you switch language.</td>
+                <td>1 year</td>
+                <td>Path=/; SameSite=Lax; Secure in production; not HttpOnly</td>
+              </tr>
             </tbody>
           </table>
         </div>

@@ -114,12 +114,12 @@ const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
 </Layout>
 <script>
   import { isSafeRelativePath } from '../../../server/safe-path.mjs';
-  import { pageLang, t } from '../../../i18n/index.mjs';
+  import { pageLang, serverMessageLang, t } from '../../../i18n/index.mjs';
 
-  /** Server messages are English for now: mark them when the page is not. */
-  function markServerText(el, fromServer) {
+  /** Mark a message written in another language than the page (some server messages are still English). */
+  function markServerText(el, messageLang) {
     if (!el) return;
-    if (fromServer && pageLang() !== 'en') el.setAttribute('lang', 'en');
+    if (messageLang && messageLang !== pageLang()) el.setAttribute('lang', messageLang);
     else el.removeAttribute('lang');
   }
 
@@ -150,7 +150,7 @@ const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
         }
       }
     }
-    function showSignupFieldError(field, message) {
+    function showSignupFieldError(field, message, messageLang = '') {
       const inputId = SIGNUP_FIELD_IDS[field];
       if (!inputId) return;
       if (field === 'company' || field === 'vatNumber') {
@@ -161,7 +161,7 @@ const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
       const hint = document.getElementById(`${field}-error`);
       if (hint) {
         hint.textContent = message;
-        markServerText(hint, true);
+        markServerText(hint, messageLang);
         hint.hidden = false;
       }
       if (input) {
@@ -230,9 +230,9 @@ const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
         if (msg) {
           msg.textContent = error;
           msg.setAttribute('role', 'alert');
-          markServerText(msg, Boolean(data.error));
+          markServerText(msg, data.error ? serverMessageLang(data) : '');
         }
-        showSignupFieldError(data.field, error);
+        showSignupFieldError(data.field, error, data.error ? serverMessageLang(data) : '');
         return;
       }
       if (data.needsVerification) {

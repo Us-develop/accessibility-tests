@@ -3,7 +3,7 @@
    * Polls /api/status and shows real page progress from the worker.
    */
   import { onMount, onDestroy } from 'svelte';
-  import { t, tn } from '../../../i18n/index.mjs';
+  import { serverMessageLang, t, tn } from '../../../i18n/index.mjs';
 
   function wcUrl(path) {
     if (typeof globalThis !== 'undefined' && typeof globalThis.wcagApiUrl === 'function') {
@@ -32,7 +32,7 @@
   let processedPages = $state(0);
   let currentUrl = $state(sampleUrls[0] || '');
   let errorMsg = $state('');
-  /** "en" when the error text came from the server, which answers in English for now. */
+  /** Language of the error text when it is not the page's (some server messages are still English). */
   let errorLang = $state('');
 
   let runStatus = $state('');
@@ -65,7 +65,8 @@
     if (data.currentUrl) currentUrl = String(data.currentUrl);
     if (data.error) {
       errorMsg = String(data.error);
-      errorLang = lang === 'en' ? '' : 'en';
+      const messageLang = serverMessageLang(data);
+      errorLang = messageLang === lang ? '' : messageLang;
     }
       if (data.status === 'done') {
         processedPages = totalPages;

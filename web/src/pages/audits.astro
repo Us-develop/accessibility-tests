@@ -59,7 +59,7 @@ const tr = usePageLang(Astro);
 </Layout>
 
 <script>
-  import { dateLocale, pageLang, t } from '../../../i18n/index.mjs';
+  import { dateLocale, pageLang, serverMessageLang, t } from '../../../i18n/index.mjs';
 
   const tx = (key: string, vars?: Record<string, unknown>) => t(pageLang(), key, vars);
 
@@ -120,8 +120,9 @@ const tr = usePageLang(Astro);
         const serverError = (data as { error?: string }).error;
         if (msgEl) {
           msgEl.textContent = serverError || tx('scans.failed');
-          // Server messages are English for now.
-          if (serverError && pageLang() !== 'en') msgEl.setAttribute('lang', 'en');
+          // Some server messages are still English.
+          const messageLang = serverError ? serverMessageLang(data) : '';
+          if (messageLang && messageLang !== pageLang()) msgEl.setAttribute('lang', messageLang);
           else msgEl.removeAttribute('lang');
         }
         rowsEl.innerHTML = '';

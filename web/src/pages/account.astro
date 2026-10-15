@@ -286,7 +286,7 @@ const packs = [
 <script>
   import { announceBalanceChanged, balanceFromUsage, balanceLong } from '../lib/balance.js';
   import { bindCheckout, watchPaymentLanding } from '../lib/checkout.js';
-  import { dateLocale, pageLang, t, tn } from '../../../i18n/index.mjs';
+  import { dateLocale, pageLang, serverMessageLang, t, tn } from '../../../i18n/index.mjs';
 
   const lang = () => pageLang();
   const tx = (key, vars) => t(lang(), key, vars);
@@ -310,19 +310,19 @@ const packs = [
    * so a confirmation appears where the person is looking. `targetId` defaults
    * to the general line under the page title.
    */
-  function setMsg(text, isError = false, targetId = 'account-msg', english = false) {
+  function setMsg(text, isError = false, targetId = 'account-msg', messageLang = '') {
     const msg = document.getElementById(targetId) || document.getElementById('account-msg');
     if (!msg) return;
     msg.textContent = text || '';
     msg.setAttribute('role', isError ? 'alert' : 'status');
-    // Server messages are English for now: say so on a Dutch page.
-    if (english && text && lang() !== 'en') msg.setAttribute('lang', 'en');
+    // Some server messages are still English: say so on a page in another language.
+    if (messageLang && text && messageLang !== lang()) msg.setAttribute('lang', messageLang);
     else msg.removeAttribute('lang');
   }
 
   /** Messages from the server, or our own text when it sent none. */
   function serverMsg(data, fallbackKey, isError, targetId) {
-    setMsg(data?.error || tx(fallbackKey), isError, targetId, Boolean(data?.error));
+    setMsg(data?.error || tx(fallbackKey), isError, targetId, data?.error ? serverMessageLang(data) : '');
   }
 
   function escapeHtml(s) {
