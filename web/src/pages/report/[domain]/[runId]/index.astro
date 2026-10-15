@@ -13,8 +13,11 @@ import { REPORTS_BASE } from '../../../../../../server/paths.js';
 import { MANUAL_TODO_GROUPS, normalizeManualProgress } from '../../../../../../manual-checklist.js';
 import { readReviewed } from '../../../../../../server/reviewed.mjs';
 import { entitlementsFor } from '../../../../../../server/entitlements.mjs';
+import { usePageLang } from '../../../../lib/page-lang.js';
+import { dateLocale } from '../../../../../../i18n/index.mjs';
 
 export const prerender = false;
+const tr = usePageLang(Astro);
 
 const rawDomain = Astro.params.domain ?? '';
 const rawRunId = Astro.params.runId ?? '';
@@ -28,7 +31,7 @@ if (!isValidReportId(domain) || !isValidRunId(runId)) {
 const resultsPath = join(runDir(domain, runId), 'accessibility-results.json');
 if (!existsSync(resultsPath)) {
   return new Response(
-    `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><title>Report not found</title><link rel="stylesheet" href="/styles/tokens.css"/><link rel="stylesheet" href="/styles/app.css"/></head><body><div class="container" style="padding:64px 32px;"><h1>Report not found</h1><p class="muted">No results for <code>${domain}/${runId}</code>. <a class="link" href="/report/${domain}/history">View history</a> or <a class="link" href="/">start a new audit</a>.</p></div></body></html>`,
+    `<!DOCTYPE html><html lang="${tr.lang}"><head><meta charset="utf-8"/><title>${tr('report.notFound.title')}</title><link rel="stylesheet" href="/styles/tokens.css"/><link rel="stylesheet" href="/styles/app.css"/></head><body><div class="container" style="padding:64px 32px;"><h1>${tr('report.notFound.title')}</h1><p class="muted">${tr('report.notFound.before')} <code>${domain}/${runId}</code>. <a class="link" href="/report/${domain}/history">${tr('report.notFound.history')}</a> ${tr('report.notFound.or')} <a class="link" href="/">${tr('report.notFound.start')}</a>.</p></div></body></html>`,
     { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
   );
 }
@@ -36,7 +39,7 @@ if (!existsSync(resultsPath)) {
 let payload;
 try {
   const json = JSON.parse(readFileSync(resultsPath, 'utf8'));
-  payload = buildAstroMainReportPayload(json);
+  payload = buildAstroMainReportPayload(json, { lang: tr.lang });
 } catch {
   return new Response('Failed to read or parse report data.', {
     status: 500,
@@ -57,7 +60,7 @@ const trend = allRuns
   .map((r) => {
     const d = r.updatedAt ? new Date(r.updatedAt) : null;
     const label = d && !Number.isNaN(d.getTime())
-      ? d.toLocaleString('en-GB', { month: 'short', day: '2-digit' })
+      ? d.toLocaleString(dateLocale(tr.lang), { month: 'short', day: '2-digit' })
       : r.runId.slice(5, 10);
     return { date: label, score: r.score as number };
   });
@@ -81,7 +84,7 @@ if (existsSync(manualProgressPath)) {
 const manualTotal = MANUAL_TODO_GROUPS.reduce((s, g) => s + g.items.length, 0);
 
 const dashboardProps = {
-  primaryHost: payload.primaryHost || domain.replace(/^www\./, '') || 'This scan',
+  primaryHost: payload.primaryHost || domain.replace(/^www\./, '') || tr('dash.thisScan'),
   auditedDate: payload.auditedDate,
   scoreClamp: payload.scoreClamp,
   pass: payload.pass,
@@ -118,10 +121,13 @@ const dashboardProps = {
   entitlements: await entitlementsFor(Astro.locals.access),
   coveredScCount: payload.coveredScCount ?? 0,
   wcagAaCount: payload.wcagAaCount ?? 56,
+  lang: tr.lang,
+  // Findings are written in the language the scan ran in; English for now.
+  findingsLang: 'en',
 };
 ---
 
-<Layout title={`Accessibility report · ${payload.primaryHost || domain}`} description={`Automated WCAG 2.2 AA report for ${payload.primaryHost || domain}.`}>
+<Layout title={tr('report.title', { site: payload.primaryHost || domain })} description={tr('report.description', { site: payload.primaryHost || domain })}>
   <div class="app-shell">
     <AppHeader domain={domain} runId={runId} active="results" />
     <main id="main" class="app-main" tabindex="-1">

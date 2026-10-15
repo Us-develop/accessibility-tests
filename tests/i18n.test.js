@@ -51,6 +51,23 @@ describe('dictionaries', () => {
     }
   });
 
+  it('keep each key in one file only, so one part cannot silently override another', async () => {
+    const { DICTIONARY_PARTS } = await import('../i18n/index.mjs');
+    for (const lang of ['nl', 'en']) {
+      const seen = new Map();
+      for (const [part, entries] of Object.entries(DICTIONARY_PARTS[lang])) {
+        for (const key of Object.keys(entries)) {
+          assert.ok(!seen.has(key), `${lang}: ${key} is in both ${seen.get(key)} and ${part}`);
+          seen.set(key, part);
+        }
+      }
+      // Each part has the same keys in both languages.
+      for (const part of Object.keys(DICTIONARY_PARTS.en)) {
+        assert.deepEqual(Object.keys(DICTIONARY_PARTS.nl[part]).sort(), Object.keys(DICTIONARY_PARTS.en[part]).sort(), part);
+      }
+    }
+  });
+
   it('give every plural key both forms', () => {
     for (const key of Object.keys(en)) {
       if (key.endsWith('.one')) assert.ok(`${key.slice(0, -4)}.other` in en, key);
@@ -129,7 +146,7 @@ describe('a page only claims a language it is written in', () => {
     const layout = read('web/src/layouts/Layout.astro');
     assert.match(layout, /<html lang=\{tr\.lang\}/);
     assert.match(read('web/src/lib/page-lang.js'), /translator\(Astro\.locals\?\.pageLang \|\| 'en'\)/);
-    for (const page of ['pricing', 'contact', 'signup', 'index', 'loading', 'account', 'forgot', 'reset', 'verify']) {
+    for (const page of ['pricing', 'contact', 'signup', 'index', 'loading', 'account', 'forgot', 'reset', 'verify', 'report/[domain]/[runId]/index', 'teaser/[token]']) {
       assert.match(read(`web/src/pages/${page}.astro`), /const tr = usePageLang\(Astro\);/, page);
     }
     // Not translated yet: must not call usePageLang, so it stays lang="en".

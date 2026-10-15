@@ -118,7 +118,11 @@ function buildOccurrenceIndex(reportData) {
   return idx;
 }
 
-export function buildAstroMainReportPayload(reportData) {
+/**
+ * @param {object} reportData
+ * @param {{ lang?: string }} [opts] language of the page, for the scan date
+ */
+export function buildAstroMainReportPayload(reportData, { lang = 'en' } = {}) {
   if (!reportData || typeof reportData !== 'object') {
     throw new Error('buildAstroMainReportPayload: reportData is required');
   }
@@ -241,7 +245,7 @@ export function buildAstroMainReportPayload(reportData) {
   const pagesLoaded = reportLoadedPages(reportData);
 
   const auditedDate = reportData.generatedAt
-    ? new Date(reportData.generatedAt).toLocaleDateString('en-GB', {
+    ? new Date(reportData.generatedAt).toLocaleDateString(lang === 'nl' ? 'nl-BE' : 'en-GB', {
         day: 'numeric',
         month: 'long',
         year: 'numeric',

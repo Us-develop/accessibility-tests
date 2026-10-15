@@ -150,12 +150,14 @@ describe('free scan used and result actions', () => {
     assert.match(read('web/src/components/AppHeader.astro'), /\[data-open-login\]/);
   });
 
-  it('names result actions by what they do and offers the next step', () => {
-    assert.match(dashboard, /Export sales report \(PDF\)/);
-    assert.match(dashboard, /Developer fix list/);
+  it('names result actions by what they do and offers the next step', async () => {
+    const { t } = await import('../i18n/index.mjs');
+    assert.match(dashboard, /tr\('dash\.exportSales'\)/);
+    assert.equal(t('en', 'dash.exportSales'), 'Export sales report (PDF)');
+    assert.equal(t('en', 'dash.deliverables.developer'), 'Developer fix list');
     assert.doesNotMatch(dashboard, /Developer next-steps/);
     assert.doesNotMatch(dashboard, />\s*Export PDF\s*</);
-    assert.match(dashboard, /href="\/">Scan another page<\/a>/);
-    assert.match(dashboard, /balanceLong\(balance\)/);
+    assert.match(dashboard, /href="\/">\{tr\('dash\.next\.scan'\)\}<\/a>/);
+    assert.match(dashboard, /balanceLong\(balance, lang\)/);
   });
 });

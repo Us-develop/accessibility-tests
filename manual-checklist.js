@@ -65,9 +65,10 @@ export const ASSISTIVE_TECH_ITEMS = ASSISTIVE_TECH_TEXTS.map((it) => ({
 /** All items in display order, used to migrate legacy index-based progress. */
 export const ALL_MANUAL_ITEMS = [...MANUAL_VERIFICATION_ITEMS, ...ASSISTIVE_TECH_ITEMS];
 
+/** `key` names the group in the dictionaries (manual.group.<key>); `label` is the English. */
 export const MANUAL_TODO_GROUPS = [
-  { label: 'Manual verification', items: MANUAL_VERIFICATION_ITEMS },
-  { label: 'Assistive technology & manual testing', items: ASSISTIVE_TECH_ITEMS },
+  { key: 'verification', label: 'Manual verification', items: MANUAL_VERIFICATION_ITEMS },
+  { key: 'assistive', label: 'Assistive technology & manual testing', items: ASSISTIVE_TECH_ITEMS },
 ];
 
 /**

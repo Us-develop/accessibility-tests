@@ -78,7 +78,7 @@ describe('failed scan hostname and completeness', () => {
     assert.match(dashboard, /load-fail-banner/);
     assert.match(dashboard, /\{#if !locked && hasLoadedPages\}/);
     // 'Three' with the sales report (Pro), 'Two' without it.
-    assert.match(dashboard, /deliverables, ready\./);
+    assert.match(dashboard, /tr\(entitlements\.salesReport \? 'dash\.deliverables\.three' : 'dash\.deliverables\.two'\)/);
     assert.doesNotMatch(dashboard, /\{#if !locked\}\s*\n\s*<!-- Footer CTAs -->/);
   });
 });

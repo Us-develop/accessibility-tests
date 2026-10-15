@@ -10,7 +10,7 @@
  *   tn(lang, 'balance.tokens', 1)                  -> "1 token"   (picks .one / .other)
  *
  * Rules:
- * - Keys are `area.name`. Every key exists in both dictionaries with the same
+ * - Keys are `area.name`. Every key exists in both languages with the same
  *   {placeholders}; tests/i18n.test.js checks that.
  * - Dutch addresses the reader as "u".
  * - A page says <html lang="nl"> only when everything on it is translated. A
@@ -18,8 +18,22 @@
  *
  * The language comes from the `wcag_lang` cookie; without one it is the default.
  */
-import nl from './nl.mjs';
-import en from './en.mjs';
+import nlApp from './nl.mjs';
+import enApp from './en.mjs';
+import nlReport from './report.nl.mjs';
+import enReport from './report.en.mjs';
+
+/**
+ * Each language is split by area so a reviewer can read one part at a time:
+ * `nl.mjs` / `en.mjs` for the site and account, `report.*.mjs` for the report
+ * pages. A key lives in exactly one file (tests/i18n.test.js checks that).
+ */
+export const DICTIONARY_PARTS = Object.freeze({
+  nl: Object.freeze({ app: nlApp, report: nlReport }),
+  en: Object.freeze({ app: enApp, report: enReport }),
+});
+const nl = { ...nlApp, ...nlReport };
+const en = { ...enApp, ...enReport };
 
 export const LANGS = Object.freeze(['nl', 'en']);
 export const LANG_COOKIE = 'wcag_lang';
