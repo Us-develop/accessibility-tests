@@ -630,7 +630,7 @@ describe('account HTTP', () => {
     assert.match(signup, /action="\/api\/auth\/signup"/);
     assert.match(signup, /data-astro-reload/);
     assert.match(signup, /id="email-error"/);
-    assert.match(signup, /showSignupFieldError\(data\.field, error\)/);
+    assert.match(signup, /showSignupFieldError\(data\.field, error, data\.error \? serverMessageLang\(data\) : ''\)/);
     const home = readFileSync(join(repoRoot, 'web/src/pages/index.astro'), 'utf8');
     assert.match(home, /id="customer-usage"/);
     const loading = readFileSync(join(repoRoot, 'web/src/components/LoadingMonitor.svelte'), 'utf8');

@@ -17,7 +17,7 @@
  * ?checkout= alone never counts as consent.
  */
 import { fetchBalance } from './balance.js';
-import { pageLang, t } from '../../../i18n/index.mjs';
+import { pageLang, serverMessageLang, t } from '../../../i18n/index.mjs';
 
 /** Message text in the language of the page. */
 const msg = (key) => t(pageLang(), key);
@@ -141,7 +141,7 @@ export async function startCheckout(btn) {
       return;
     }
     // A message from the server is still English: mark it so it is read correctly.
-    showMessage(scope, data.error || msg('checkout.error.generic'), true, data.error ? 'en' : '');
+    showMessage(scope, data.error || msg('checkout.error.generic'), true, data.error ? serverMessageLang(data) : '');
   } catch {
     showMessage(scope, msg('checkout.error.network'), true);
   } finally {

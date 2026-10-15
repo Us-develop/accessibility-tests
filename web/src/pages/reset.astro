@@ -28,7 +28,7 @@ const resetError = Astro.url.searchParams.get('error') === '1';
   </div>
 </Layout>
 <script>
-  import { pageLang, t } from '../../../i18n/index.mjs';
+  import { pageLang, serverMessageLang, t } from '../../../i18n/index.mjs';
 
   if (!globalThis.__wcagResetDelegated) {
     globalThis.__wcagResetDelegated = true;
@@ -51,8 +51,9 @@ const resetError = Astro.url.searchParams.get('error') === '1';
         if (msg) {
           msg.textContent = data.error || t(pageLang(), 'reset.error');
           msg.setAttribute('role', 'alert');
-          // Server messages are English for now.
-          if (data.error && pageLang() !== 'en') msg.setAttribute('lang', 'en');
+          // Some server messages are still English.
+          const messageLang = data.error ? serverMessageLang(data) : '';
+          if (messageLang && messageLang !== pageLang()) msg.setAttribute('lang', messageLang);
           else msg.removeAttribute('lang');
         }
         if (password) {
