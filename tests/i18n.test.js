@@ -239,7 +239,7 @@ describe('sales report', () => {
   it('follows the page language and marks fix titles from the scan', () => {
     assert.match(sales, /const tr = usePageLang\(Astro\);/);
     assert.match(sales, /lang: tr\.lang,/);
-    assert.match(deck, /<div lang=\{findingsAttr\}>/);
+    assert.match(deck, /<div lang=\{textAttr\(f\.lang\)\}>/);
   });
 });
 

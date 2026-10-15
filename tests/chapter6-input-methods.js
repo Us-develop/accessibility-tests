@@ -3,6 +3,7 @@
  * Based on: module-input-methods-checklist.pdf
  */
 import { pageCollect } from './describe-els.js';
+import { say } from './scan-text.js';
 
 export const chapterId = 'inputMethods';
 
@@ -25,12 +26,12 @@ export async function runInputMethodChecks(page) {
 
   results.push({
     id: 'tabindex-positive',
-    rule: 'tabindex with positive values SHOULD NOT be used',
+    rule: say('chk.tabindex-positive.rule'),
     status: focusChecks.tabindexPositive === 0 ? 'pass' : 'warn',
     message:
       focusChecks.tabindexPositive > 0
-        ? `${focusChecks.tabindexPositive} element(s) with positive tabindex`
-        : 'No positive tabindex values',
+        ? say('chk.tabindex-positive.found', { n: focusChecks.tabindexPositive })
+        : say('chk.tabindex-positive.ok'),
     chapter: chapterId,
     occurrences: focusChecks.tabindexPositive > 0 ? focusChecks.occurrences : [],
   });
@@ -67,9 +68,9 @@ export async function runInputMethodChecks(page) {
   if (touchChecks.tooSmall > 0) {
     results.push({
       id: 'touch-target-size',
-      rule: 'Pointer targets SHOULD be at least 24×24 CSS pixels (WCAG 2.2 AA 2.5.8)',
+      rule: say('chk.touch-target-size.rule'),
       status: 'warn',
-      message: `${touchChecks.tooSmall} interactive element(s) below 24×24px (exceptions such as inline links are not applied automatically)`,
+      message: say('chk.touch-target-size.small', { n: touchChecks.tooSmall }),
       chapter: chapterId,
       occurrences: touchChecks.tooSmallOccurrences,
     });
@@ -78,9 +79,9 @@ export async function runInputMethodChecks(page) {
   if (touchChecks.enhancedSmall > 0) {
     results.push({
       id: 'touch-target-size-enhanced',
-      rule: 'Targets below 44×44 CSS pixels (AAA 2.5.5 / platform guidance) — not an AA fail',
+      rule: say('chk.touch-target-size-enhanced.rule'),
       status: 'info',
-      message: `${touchChecks.enhancedSmall} interactive element(s) are between 24px and 44px`,
+      message: say('chk.touch-target-size-enhanced.between', { n: touchChecks.enhancedSmall }),
       chapter: chapterId,
       occurrences: touchChecks.enhancedOccurrences,
     });

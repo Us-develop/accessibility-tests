@@ -23,6 +23,7 @@ import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { scannerUserAgent, assertPublicHttpUrl } from './server/url-guard.mjs';
+import { SCAN_LANG, say } from './tests/scan-text.js';
 import {
   createRedirectWatch,
   pageScanTimeoutMs,
@@ -209,9 +210,9 @@ async function runCustomChecks(page, url, options = {}) {
       console.error(`  ${chapterId} checks could not run: ${err.message}`);
       allResults.push({
         id: `${chapterId}-error`,
-        rule: `${chapterId} checks`,
+        rule: say('chk.chapter-error.rule', { chapter: chapterId }),
         status: 'info',
-        message: 'These checks could not be completed on this page, so their results are missing.',
+        message: say('chk.chapter-error.missing'),
         chapter: chapterId,
         url,
       });
@@ -271,6 +272,8 @@ async function main() {
 
   const report = {
     generatedAt: new Date().toISOString(),
+    // Language the findings are written in; the report keeps it (tests/scan-text.js).
+    lang: SCAN_LANG,
     // Successfully loaded pages only. Failed gotos stay off this list and are
     // recorded as customResults with id `page-load` (including the attempted URL).
     urls: [],
@@ -357,9 +360,9 @@ async function main() {
             );
             customData.push({
               id: 'contrast-not-run',
-              rule: 'Custom contrast checks skipped on a large DOM',
+              rule: say('chk.large-dom.rule'),
               status: 'info',
-              message: `This page has ${domNodeCount} nodes. Custom contrast was skipped to avoid timeouts; axe WCAG contrast rules still ran.`,
+              message: say('chk.large-dom.skipped', { n: domNodeCount }),
               chapter: 'visualDesign',
               url,
             });
@@ -377,7 +380,7 @@ async function main() {
         const { axeData, customData } = await withDeadline(
           scanPage(),
           pageScanBudgetMs,
-          `This page did not finish within ${Math.round(pageScanBudgetMs / 1000)} seconds and was stopped.`
+          say('chk.page-load.deadline', { seconds: Math.round(pageScanBudgetMs / 1000) })
         );
         report.axeResults[url] = axeData;
         if (!report.urls.includes(url)) report.urls.push(url);
@@ -394,7 +397,7 @@ async function main() {
         console.error(`  Error: ${err.message}`);
         report.customResults.push({
           id: 'page-load',
-          rule: 'Page load',
+          rule: say('chk.page-load.rule'),
           status: 'fail',
           message: err.message,
           url,

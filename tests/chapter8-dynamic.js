@@ -3,6 +3,7 @@
  * Based on: module-dynamic-updates-checklist.pdf
  */
 import { pageCollect } from './describe-els.js';
+import { say } from './scan-text.js';
 
 export const chapterId = 'dynamicUpdates';
 
@@ -17,9 +18,9 @@ export async function runDynamicChecks(page) {
 
   results.push({
     id: 'no-auto-refresh',
-    rule: 'Page MUST NOT refresh or reload automatically',
+    rule: say('chk.no-auto-refresh.rule'),
     status: !refreshMeta.found ? 'pass' : 'fail',
-    message: refreshMeta.found ? 'Meta refresh found - may auto-reload page' : 'No meta refresh',
+    message: refreshMeta.found ? say('chk.no-auto-refresh.found') : say('chk.no-auto-refresh.ok'),
     chapter: chapterId,
     occurrences: refreshMeta.found ? refreshMeta.occurrences : [],
   });
@@ -32,9 +33,9 @@ export async function runDynamicChecks(page) {
 
   results.push({
     id: 'dynamic-announcements',
-    rule: 'Dynamic content changes SHOULD be announced (aria-live, etc.)',
+    rule: say('chk.dynamic-announcements.rule'),
     status: 'info',
-    message: `Found ${liveRegions.count} aria-live region(s) - verify status messages are announced`,
+    message: say('chk.dynamic-announcements.count', { n: liveRegions.count }),
     chapter: chapterId,
     occurrences: liveRegions.occurrences,
   });
@@ -45,12 +46,12 @@ export async function runDynamicChecks(page) {
   });
   results.push({
     id: 'dynamic-status-roles',
-    rule: 'Status and alert regions (role=status / role=alert) — verify messages for users',
+    rule: say('chk.dynamic-status-roles.rule'),
     status: 'info',
     message:
       statusRole.count > 0
-        ? `Found ${statusRole.count} element(s) with role="status" or role="alert" — confirm important updates are communicated`
-        : 'No role="status" or role="alert" regions found (not required on every page)',
+        ? say('chk.dynamic-status-roles.found', { n: statusRole.count })
+        : say('chk.dynamic-status-roles.none'),
     chapter: chapterId,
     occurrences: statusRole.occurrences,
   });
@@ -61,12 +62,12 @@ export async function runDynamicChecks(page) {
   });
   results.push({
     id: 'dynamic-aria-busy',
-    rule: 'Loading state (aria-busy) — verify assistive tech users get appropriate feedback',
+    rule: say('chk.dynamic-aria-busy.rule'),
     status: 'info',
     message:
       ariaBusy.count > 0
-        ? `Found ${ariaBusy.count} element(s) with aria-busy="true" — ensure content updates are announced when loading finishes`
-        : 'No aria-busy="true" while testing initial load (SPA loading states may appear after interaction)',
+        ? say('chk.dynamic-aria-busy.found', { n: ariaBusy.count })
+        : say('chk.dynamic-aria-busy.none'),
     chapter: chapterId,
     occurrences: ariaBusy.occurrences,
   });
@@ -79,9 +80,9 @@ export async function runDynamicChecks(page) {
   if (spaHint.hasSpaRoot && spaHint.textLen < 80) {
     results.push({
       id: 'spa-may-be-unrendered',
-      rule: 'Page looks client-rendered; automated checks may have missed in-app content',
+      rule: say('chk.spa-may-be-unrendered.rule'),
       status: 'warn',
-      message: `SPA root detected with only ${spaHint.textLen} characters of text at scan time. Enable WAIT_FOR_NETWORKIDLE or test URLs after hydration. This chapter cannot certify dynamic updates.`,
+      message: say('chk.spa-may-be-unrendered.found', { n: spaHint.textLen }),
       chapter: chapterId,
       occurrences: spaHint.occurrences,
     });

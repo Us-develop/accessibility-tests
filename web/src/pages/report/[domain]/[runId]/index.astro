@@ -122,8 +122,8 @@ const dashboardProps = {
   coveredScCount: payload.coveredScCount ?? 0,
   wcagAaCount: payload.wcagAaCount ?? 56,
   lang: tr.lang,
-  // Findings are written in the language the scan ran in; English for now.
-  findingsLang: 'en',
+  // Findings are written in the language the scan ran in.
+  findingsLang: payload.findingsLang,
 };
 ---
 

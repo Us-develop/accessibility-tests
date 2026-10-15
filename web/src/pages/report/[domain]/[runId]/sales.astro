@@ -100,6 +100,7 @@ const topFixes = (payload.fixOrderTop || []).slice(0, 5).map((f, i) => ({
   impact: f.snippet || tr('sales.affects', { where: f.url || tr('sales.multiplePages') }),
   points: typeof f.effort === 'number' ? f.effort : f.impact === 'High' ? 5 : f.impact === 'Medium' ? 3 : 1,
   color: fixOrderTopColors[i % fixOrderTopColors.length],
+  lang: f.textLang || payload.findingsLang,
 }));
 
 const companyName = statementMeta?.organizationName || statementMeta?.organizationShortName || payload.primaryHost;
@@ -130,8 +131,8 @@ const deckProps = {
   domain,
   runId,
   lang: tr.lang,
-  // Rule names and snippets come from the scan; English for now.
-  findingsLang: 'en',
+  // Findings are written in the language the scan ran in.
+  findingsLang: payload.findingsLang,
   auditYear: json.generatedAt ? new Date(json.generatedAt).getFullYear() : new Date().getFullYear(),
 };
 

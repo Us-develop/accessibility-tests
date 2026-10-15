@@ -3,6 +3,7 @@
  * Based on: module-responsive-zoom-checklist.pdf
  */
 import { pageCollect } from './describe-els.js';
+import { say } from './scan-text.js';
 
 export const chapterId = 'responsive';
 
@@ -47,11 +48,11 @@ async function collectResponsiveResults(page, results) {
 
   results.push({
     id: 'no-horizontal-scroll',
-    rule: 'Content MUST NOT require horizontal scrolling at 320px width (simplified check; not a full WCAG 1.4.10 assessment)',
+    rule: say('chk.no-horizontal-scroll.rule'),
     status: !overflowChecks.hasHorizontalScroll ? 'pass' : 'fail',
     message: overflowChecks.hasHorizontalScroll
-      ? `Horizontal overflow: content ${overflowChecks.docWidth}px vs viewport ${overflowChecks.viewWidth}px (more than 10px)`
-      : 'No meaningful horizontal overflow at 320px',
+      ? say('chk.no-horizontal-scroll.overflow', { docWidth: overflowChecks.docWidth, viewWidth: overflowChecks.viewWidth })
+      : say('chk.no-horizontal-scroll.ok'),
     chapter: chapterId,
     occurrences: overflowChecks.hasHorizontalScroll ? overflowChecks.occurrences : [],
   });
@@ -69,13 +70,13 @@ async function collectResponsiveResults(page, results) {
 
   results.push({
     id: 'viewport-zoom',
-    rule: 'Page MUST allow users to zoom on mobile (no user-scalable=no)',
+    rule: say('chk.viewport-zoom.rule'),
     status: viewportMeta.present && viewportMeta.allowsZoom ? 'pass' : viewportMeta.present ? 'warn' : 'info',
     message: viewportMeta.present
       ? viewportMeta.allowsZoom
-        ? 'Viewport allows zoom'
-        : `Viewport may restrict zoom: ${viewportMeta.content}`
-      : 'No viewport meta tag',
+        ? say('chk.viewport-zoom.ok')
+        : say('chk.viewport-zoom.restricted', { content: viewportMeta.content })
+      : say('chk.viewport-zoom.missing'),
     chapter: chapterId,
     occurrences: viewportMeta.present && viewportMeta.allowsZoom ? [] : [{ tag: 'meta', id: '', className: '' }],
   });

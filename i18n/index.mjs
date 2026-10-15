@@ -24,19 +24,22 @@ import nlReport from './report.nl.mjs';
 import enReport from './report.en.mjs';
 import nlServer from './server.nl.mjs';
 import enServer from './server.en.mjs';
+import nlChecks from './checks.nl.mjs';
+import enChecks from './checks.en.mjs';
 
 /**
  * Each language is split by area so a reviewer can read one part at a time:
  * `nl.mjs` / `en.mjs` for the site and account, `report.*.mjs` for the report
- * pages, `server.*.mjs` for messages the server sends. A key lives in exactly
- * one file (tests/i18n.test.js checks that).
+ * pages, `server.*.mjs` for messages the server sends, `checks.*.mjs` for the
+ * findings of our own checks. A key lives in exactly one file
+ * (tests/i18n.test.js checks that).
  */
 export const DICTIONARY_PARTS = Object.freeze({
-  nl: Object.freeze({ app: nlApp, report: nlReport, server: nlServer }),
-  en: Object.freeze({ app: enApp, report: enReport, server: enServer }),
+  nl: Object.freeze({ app: nlApp, report: nlReport, server: nlServer, checks: nlChecks }),
+  en: Object.freeze({ app: enApp, report: enReport, server: enServer, checks: enChecks }),
 });
-const nl = { ...nlApp, ...nlReport, ...nlServer };
-const en = { ...enApp, ...enReport, ...enServer };
+const nl = { ...nlApp, ...nlReport, ...nlServer, ...nlChecks };
+const en = { ...enApp, ...enReport, ...enServer, ...enChecks };
 
 export const LANGS = Object.freeze(['nl', 'en']);
 export const LANG_COOKIE = 'wcag_lang';

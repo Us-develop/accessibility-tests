@@ -109,6 +109,7 @@ if (!isValidGuestToken(token)) {
             locked: true,
             guestToken: token,
             lang: tr.lang,
+            findingsLang: payload.findingsLang,
           };
         } catch {
           loadError = tr('teaser.error.read');

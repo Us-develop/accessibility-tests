@@ -3,6 +3,7 @@
  * Based on: module-semantic-checklist.pdf
  */
 import { pageCollect } from './describe-els.js';
+import { say } from './scan-text.js';
 
 export const chapterId = 'semantics';
 
@@ -13,9 +14,9 @@ export async function runSemanticChecks(page) {
   const title = await page.title();
   results.push({
     id: 'page-title-exists',
-    rule: 'Page MUST have a title with text',
+    rule: say('chk.page-title-exists.rule'),
     status: title && title.trim().length > 0 ? 'pass' : 'fail',
-    message: title ? `Title: "${title.substring(0, 80)}${title.length > 80 ? '...' : ''}"` : 'Page has no title',
+    message: title ? say('chk.page-title-exists.found', { title: `${title.substring(0, 80)}${title.length > 80 ? '...' : ''}` }) : say('chk.page-title-exists.missing'),
     chapter: chapterId,
     occurrences: title && title.trim().length > 0 ? [] : [{ tag: 'title', id: '', className: '' }],
   });
@@ -27,9 +28,9 @@ export async function runSemanticChecks(page) {
   });
   results.push({
     id: 'html-lang',
-    rule: 'Primary language MUST be identified on html element',
+    rule: say('chk.html-lang.rule'),
     status: htmlLang && htmlLang.trim().length > 0 ? 'pass' : 'fail',
-    message: htmlLang ? `lang="${htmlLang}"` : 'Missing or empty lang attribute on <html>',
+    message: htmlLang ? say('chk.html-lang.found', { lang: htmlLang }) : say('chk.html-lang.missing'),
     chapter: chapterId,
     occurrences: htmlLang && htmlLang.trim().length > 0 ? [] : [{ tag: 'html', id: '', className: '' }],
   });
@@ -44,9 +45,9 @@ export async function runSemanticChecks(page) {
   });
   results.push({
     id: 'landmarks-present',
-    rule: 'Landmarks SHOULD be used for layout (main, nav, header, footer, etc.)',
+    rule: say('chk.landmarks-present.rule'),
     status: landmarkCount > 0 ? 'pass' : 'warn',
-    message: `Found ${landmarkCount} landmark element(s)`,
+    message: say('chk.landmarks-present.count', { n: landmarkCount }),
     chapter: chapterId,
   });
 
@@ -57,9 +58,9 @@ export async function runSemanticChecks(page) {
   });
   results.push({
     id: 'single-main',
-    rule: 'Page SHOULD have only one main landmark',
+    rule: say('chk.single-main.rule'),
     status: mainData.count === 1 ? 'pass' : mainData.count === 0 ? 'warn' : 'fail',
-    message: `Found ${mainData.count} main landmark(s)`,
+    message: say('chk.single-main.count', { n: mainData.count }),
     chapter: chapterId,
     occurrences: mainData.count === 1 ? [] : mainData.occurrences,
   });
@@ -86,9 +87,9 @@ export async function runSemanticChecks(page) {
   });
   results.push({
     id: 'heading-structure',
-    rule: 'At least one h1 SHOULD exist; heading levels SHOULD NOT skip (e.g. h1 → h3)',
+    rule: say('chk.heading-structure.rule'),
     status: headingStructure.skips === 0 && headingStructure.h1Count >= 1 ? 'pass' : 'warn',
-    message: `Headings: ${headingStructure.total} total, ${headingStructure.h1Count} h1(s), ${headingStructure.skips} level skip(s)`,
+    message: say('chk.heading-structure.summary', { total: headingStructure.total, h1: headingStructure.h1Count, skips: headingStructure.skips }),
     chapter: chapterId,
     occurrences:
       headingStructure.skips > 0
@@ -100,11 +101,11 @@ export async function runSemanticChecks(page) {
   if (headingStructure.hasHeadingInMain) {
     results.push({
       id: 'heading-main-h1',
-      rule: 'First heading inside <main> SHOULD be h1 when headings are used there',
+      rule: say('chk.heading-main-h1.rule'),
       status: headingStructure.firstInMainIsH1 ? 'pass' : 'warn',
       message: headingStructure.firstInMainIsH1
-        ? 'First heading in main is h1'
-        : 'First heading in main is not h1',
+        ? say('chk.heading-main-h1.yes')
+        : say('chk.heading-main-h1.no'),
       chapter: chapterId,
       occurrences: headingStructure.firstInMainOccurrences || [],
     });
@@ -171,11 +172,11 @@ export async function runSemanticChecks(page) {
   });
   results.push({
     id: 'link-text',
-    rule: 'Links MUST have programmatically-discernible text',
+    rule: say('chk.link-text.rule'),
     status: linkChecks.emptyText === 0 ? 'pass' : 'fail',
     message: linkChecks.emptyText > 0
-      ? `${linkChecks.emptyText} link(s) with no accessible text`
-      : `${linkChecks.total} links checked`,
+      ? say('chk.link-text.empty', { n: linkChecks.emptyText })
+      : say('chk.link-text.checked', { n: linkChecks.total }),
     chapter: chapterId,
     occurrences: linkChecks.emptyText > 0 ? linkChecks.emptyOccurrences : [],
   });
@@ -183,9 +184,9 @@ export async function runSemanticChecks(page) {
   if (linkChecks.genericText > 0) {
     results.push({
       id: 'link-meaningful',
-      rule: 'Link purpose SHOULD be determinable from link text alone',
+      rule: say('chk.link-meaningful.rule'),
       status: 'warn',
-      message: `${linkChecks.genericText} link(s) with generic text (e.g. "click here")`,
+      message: say('chk.link-meaningful.generic', { n: linkChecks.genericText }),
       chapter: chapterId,
       occurrences: linkChecks.genericOccurrences,
     });
@@ -211,9 +212,9 @@ export async function runSemanticChecks(page) {
   });
   results.push({
     id: 'skip-link',
-    rule: 'Skip link SHOULD be provided for keyboard users',
+    rule: say('chk.skip-link.rule'),
     status: skipLink ? 'pass' : 'warn',
-    message: skipLink ? 'Skip link found' : 'No skip link detected',
+    message: skipLink ? say('chk.skip-link.found') : say('chk.skip-link.missing'),
     chapter: chapterId,
   });
 
@@ -238,9 +239,9 @@ export async function runSemanticChecks(page) {
   if (tableChecks.total > 0) {
     results.push({
       id: 'table-headers',
-      rule: 'Data tables MUST have header cells (th)',
+      rule: say('chk.table-headers.rule'),
       status: tableChecks.noTh === 0 ? 'pass' : 'fail',
-      message: tableChecks.noTh > 0 ? `${tableChecks.noTh} table(s) without th` : 'All tables have headers',
+      message: tableChecks.noTh > 0 ? say('chk.table-headers.missing', { n: tableChecks.noTh }) : say('chk.table-headers.ok'),
       chapter: chapterId,
       occurrences: tableChecks.noTh > 0 ? tableChecks.noThOccurrences : [],
     });
@@ -255,9 +256,9 @@ export async function runSemanticChecks(page) {
   if (listChecks.orphanLi > 0) {
     results.push({
       id: 'list-markup',
-      rule: 'Lists MUST use semantic markup (ul/ol)',
+      rule: say('chk.list-markup.rule'),
       status: 'fail',
-      message: `${listChecks.orphanLi} orphan li element(s) found`,
+      message: say('chk.list-markup.orphans', { n: listChecks.orphanLi }),
       chapter: chapterId,
       occurrences: listChecks.occurrences,
     });
@@ -275,9 +276,9 @@ export async function runSemanticChecks(page) {
   if (iframeChecks.total > 0) {
     results.push({
       id: 'iframe-titles',
-      rule: 'Iframes MUST have non-empty title attribute',
+      rule: say('chk.iframe-titles.rule'),
       status: iframeChecks.noTitle === 0 ? 'pass' : 'fail',
-      message: iframeChecks.noTitle > 0 ? `${iframeChecks.noTitle} iframe(s) without title` : 'All iframes have titles',
+      message: iframeChecks.noTitle > 0 ? say('chk.iframe-titles.missing', { n: iframeChecks.noTitle }) : say('chk.iframe-titles.ok'),
       chapter: chapterId,
       occurrences: iframeChecks.noTitle > 0 ? iframeChecks.occurrences : [],
     });
@@ -312,9 +313,9 @@ export async function runSemanticChecks(page) {
   if (duplicateIdData && duplicateIdData.duplicateIds.length > 0) {
     results.push({
       id: 'unique-ids',
-      rule: 'IDs MUST be unique within the page',
+      rule: say('chk.unique-ids.rule'),
       status: 'fail',
-      message: `Duplicate IDs: ${duplicateIdData.duplicateIds.join(', ')}`,
+      message: say('chk.unique-ids.duplicates', { ids: duplicateIdData.duplicateIds.join(', ') }),
       chapter: chapterId,
       occurrences: duplicateIdData.occurrences || [],
     });

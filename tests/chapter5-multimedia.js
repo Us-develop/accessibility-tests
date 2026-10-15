@@ -3,6 +3,7 @@
  * Based on: module-multimedia-checklist.pdf
  */
 import { pageCollect } from './describe-els.js';
+import { say } from './scan-text.js';
 
 export const chapterId = 'multimedia';
 
@@ -41,12 +42,12 @@ export async function runMultimediaChecks(page) {
       // player, and a video may have no speech. Only a person can confirm.
       results.push({
         id: 'video-captions',
-        rule: 'Prerecorded video MUST include synchronized captions',
+        rule: say('chk.video-captions.rule'),
         status: videoChecks.noCaptions === 0 ? 'pass' : 'warn',
         message:
           videoChecks.noCaptions > 0
-            ? `${videoChecks.noCaptions} video(s) without a caption track. This tool cannot tell whether captions are burned into the video or whether the video has no speech, so check by hand.`
-            : 'All videos have caption tracks',
+            ? say('chk.video-captions.missing', { n: videoChecks.noCaptions })
+            : say('chk.video-captions.ok'),
         chapter: chapterId,
         occurrences: videoChecks.noCaptions > 0 ? videoChecks.captionOccurrences : [],
       });
@@ -54,9 +55,9 @@ export async function runMultimediaChecks(page) {
     if (videoChecks.autoplay > 0) {
       results.push({
         id: 'video-autoplay',
-        rule: 'Auto-play video (>5s) MUST have pause/stop mechanism',
+        rule: say('chk.video-autoplay.rule'),
         status: 'warn',
-        message: `${videoChecks.autoplay} video(s) with autoplay - verify pause control exists`,
+        message: say('chk.video-autoplay.found', { n: videoChecks.autoplay }),
         chapter: chapterId,
         occurrences: videoChecks.autoplayOccurrences,
       });
@@ -71,9 +72,9 @@ export async function runMultimediaChecks(page) {
   if (audioChecks.autoplay > 0) {
     results.push({
       id: 'audio-autoplay',
-      rule: 'Audio auto-playing >3s MUST have stop/pause/mute control',
+      rule: say('chk.audio-autoplay.rule'),
       status: 'warn',
-      message: `${audioChecks.autoplay} audio element(s) with autoplay`,
+      message: say('chk.audio-autoplay.found', { n: audioChecks.autoplay }),
       chapter: chapterId,
       occurrences: audioChecks.occurrences,
     });
@@ -91,9 +92,9 @@ export async function runMultimediaChecks(page) {
   if (flashChecks.flashCount > 0) {
     results.push({
       id: 'flash-alternative',
-      rule: 'Flash/Silverlight SHOULD have HTML alternative',
+      rule: say('chk.flash-alternative.rule'),
       status: 'warn',
-      message: `${flashChecks.flashCount} Flash/plugin object(s) found - ensure accessible alternative`,
+      message: say('chk.flash-alternative.found', { n: flashChecks.flashCount }),
       chapter: chapterId,
       occurrences: flashChecks.occurrences,
     });
@@ -109,9 +110,9 @@ export async function runMultimediaChecks(page) {
   if (embedPlayers.count > 0) {
     results.push({
       id: 'embedded-media-captions',
-      rule: 'Embedded video players must be checked manually for captions (WCAG 1.2.2)',
+      rule: say('chk.embedded-media-captions.rule'),
       status: 'info',
-      message: `Found ${embedPlayers.count} YouTube/Vimeo/other embed(s). Native <track> checks do not apply; a human must verify captions.`,
+      message: say('chk.embedded-media-captions.found', { n: embedPlayers.count }),
       chapter: chapterId,
       occurrences: embedPlayers.occurrences,
     });
