@@ -1,30 +1,33 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import { usePageLang } from '../lib/page-lang.js';
 export const prerender = false;
+const tr = usePageLang(Astro);
 const sent = Astro.url.searchParams.get('sent') === '1';
 ---
-<Layout title="Reset password · Us" description="Request a password reset link for your Us accessibility scanner account." noindex={true} authMode="guest-ok">
+<Layout title={tr('forgot.title')} description={tr('forgot.description')} noindex={true} authMode="guest-ok">
   <div class="app-shell">
-    <AppHeader crumb="Password" />
+    <AppHeader crumb={tr('forgot.crumb')} />
     <main id="main" class="app-main" tabindex="-1">
       <article class="container-narrow page-article">
-        <h1>Forgot password</h1>
+        <h1>{tr('forgot.h1')}</h1>
+        <p class="muted prose-width prose-lead">{tr('forgot.lead')}</p>
         <form id="forgot-form" class="card stack-form stack-form-spaced" method="post" action="/api/auth/forgot" data-astro-reload>
           <div class="field">
-            <label class="field-label" for="email">Email</label>
+            <label class="field-label" for="email">{tr('login.email')}</label>
             <input class="input" id="email" name="email" type="email" required autocomplete="email" />
           </div>
-          <button class="btn btn-primary" type="submit">Send reset link</button>
-          <p id="forgot-msg" class="muted" role="status">
-            {sent ? 'If that account exists, we sent a reset link.' : ''}
-          </p>
+          <button class="btn btn-primary" type="submit">{tr('forgot.submit')}</button>
+          <p id="forgot-msg" class="muted" role="status">{sent ? tr('forgot.sent') : ''}</p>
         </form>
       </article>
     </main>
   </div>
 </Layout>
 <script>
+  import { pageLang, t } from '../../../i18n/index.mjs';
+
   if (!globalThis.__wcagForgotDelegated) {
     globalThis.__wcagForgotDelegated = true;
     document.addEventListener('submit', async (event) => {
@@ -42,7 +45,7 @@ const sent = Astro.url.searchParams.get('sent') === '1';
       const msg = document.getElementById('forgot-msg');
       const emailField = document.getElementById('email');
       if (msg) {
-        msg.textContent = 'If that account exists, we sent a reset link.';
+        msg.textContent = t(pageLang(), 'forgot.sent');
         msg.setAttribute('role', 'status');
       }
       if (emailField) {

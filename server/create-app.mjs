@@ -58,7 +58,7 @@ import { scanProcessTimeoutMs, tailForLog } from './scan-child.mjs';
 import { carryReviewedForward, readReviewed, writeReviewed } from './reviewed.mjs';
 import { accessAllows } from './entitlements.mjs';
 import { isSafeRelativePath } from './safe-path.mjs';
-import { langSetCookie, normalizeLang } from '../i18n/index.mjs';
+import { langFromCookieHeader, langSetCookie, normalizeLang, t } from '../i18n/index.mjs';
 import { buildTeaserPayload } from './teaser-payload.mjs';
 import {
   clearSessionCookies,
@@ -1034,8 +1034,15 @@ function clearAuthCookie(res) {
   clearSessionCookies(res, AUTH_COOKIE_SAMESITE);
 }
 
-function loginPageHtml(nextPath = '', errorMessage = '', variant = 'staff') {
+/**
+ * The sign-in page without JavaScript. The customer page is in the visitor's
+ * language (`lang`); the staff page is internal and stays English.
+ * @param {{ lang?: string, unverified?: boolean }} [opts] `unverified` adds the link to /verify
+ */
+function loginPageHtml(nextPath = '', errorMessage = '', variant = 'staff', { lang = 'en', unverified = false } = {}) {
   const isCustomer = variant === 'customer';
+  const pageLang = isCustomer ? normalizeLang(lang) || 'en' : 'en';
+  const tr = (key) => t(pageLang, key);
   const safeNext = String(nextPath || (isCustomer ? '/account' : '/'))
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;');
@@ -1046,24 +1053,19 @@ function loginPageHtml(nextPath = '', errorMessage = '', variant = 'staff') {
           .replace(/</g, '&lt;')
           .replace(/"/g, '&quot;')
       : '';
-  const verifyHint =
-    isCustomer && errorMessage === UNVERIFIED_EMAIL_ERROR
-      ? ' <a href="/verify">Open the verification page</a>.'
-      : '';
+  const verifyHint = isCustomer && unverified ? ` <a href="/verify">${tr('login.error.verifyLink')}</a>.` : '';
   const safeError = esc ? `<p class="login-error" role="alert">${esc}${verifyHint}</p>` : '';
   const action = isCustomer ? '/api/auth/login' : '/auth/staff';
-  const pageTitle = isCustomer ? 'Sign in · Us' : 'Sign in · Accessibility reports';
-  const lead = isCustomer
-    ? 'Sign in with the email you used to create your account.'
-    : 'Enter your username and password to access reports and APIs.';
-  const userLabel = isCustomer ? 'Email' : 'Username';
+  const pageTitle = isCustomer ? tr('login.pageTitle') : 'Sign in · Accessibility reports';
+  const lead = isCustomer ? tr('login.lead') : 'Enter your username and password to access reports and APIs.';
+  const userLabel = isCustomer ? tr('login.email') : 'Username';
   const userType = isCustomer ? 'email' : 'text';
   const extra = isCustomer
-    ? `<p class="login-links"><a href="/">Home</a> · <a href="/signup">Create an account</a> · <a href="/forgot">Forgot password</a></p>
-      <p class="login-links"><a href="/auth/staff">Us staff</a></p>`
+    ? `<p class="login-links"><a href="/">${tr('login.home')}</a> · <a href="/signup">${tr('login.signup')}</a> · <a href="/forgot">${tr('login.forgot')}</a></p>
+      <p class="login-links"><a href="/auth/staff">${tr('login.staff')}</a></p>`
     : `<p class="login-links"><a href="/login">Customer sign-in</a></p>`;
   return `<!doctype html>
-<html lang="en">
+<html lang="${pageLang}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -1199,15 +1201,15 @@ function loginPageHtml(nextPath = '', errorMessage = '', variant = 'staff') {
   <div class="login-scene">
     <div class="login-backdrop" aria-hidden="true"></div>
     <form class="glass-panel" method="post" action="${action}" aria-labelledby="login-title">
-      <h1 id="login-title">Sign in</h1>
+      <h1 id="login-title">${isCustomer ? tr('login.title') : 'Sign in'}</h1>
       <p class="lead">${lead}</p>
       ${safeError}
       <input type="hidden" name="next" value="${safeNext}" />
       <label for="username">${userLabel}</label>
       <input id="username" name="username" type="${userType}" autocomplete="${isCustomer ? 'email' : 'username'}" required autofocus />
-      <label for="password">Password</label>
+      <label for="password">${isCustomer ? tr('login.password') : 'Password'}</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required />
-      <button type="submit">Continue</button>
+      <button type="submit">${isCustomer ? tr('login.submit') : 'Continue'}</button>
       ${extra}
     </form>
   </div>
@@ -1252,13 +1254,14 @@ app.get('/login', (req, res) => {
   if (!AUTH_ENABLED) return res.redirect('/');
   const nextPath = customerLoginNext(typeof req.query.next === 'string' ? req.query.next : '');
   const reason = String(req.query.signin || '');
+  const lang = langFromCookieHeader(req.headers.cookie);
   const error =
     reason === 'unverified'
-      ? UNVERIFIED_EMAIL_ERROR
+      ? t(lang, 'login.error.unverified')
       : reason === 'failed'
-        ? GENERIC_CREDENTIALS_ERROR
+        ? t(lang, 'login.error.failed')
         : '';
-  return res.status(200).send(loginPageHtml(nextPath, error, 'customer'));
+  return res.status(200).send(loginPageHtml(nextPath, error, 'customer', { lang, unverified: reason === 'unverified' }));
 });
 
 app.get('/auth/staff', (req, res) => {
@@ -1515,7 +1518,7 @@ app.use(async (req, res, next) => {
       req.access = { role: 'guest' };
       return next();
     }
-    return res.status(200).send(loginPageHtml('/', '', 'customer'));
+    return res.status(200).send(loginPageHtml('/', '', 'customer', { lang: langFromCookieHeader(req.headers.cookie) }));
   }
 
   if (req.path.startsWith('/api/')) {

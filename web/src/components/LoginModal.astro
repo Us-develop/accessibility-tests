@@ -3,10 +3,14 @@
  * Glass sign-in overlay. On staff pages it blocks until login; on guest pages it is optional.
  * Coordinates with #wcag-main and #wcag-session-bar (session bar lives in AppHeader chrome).
  */
+import { chromeTranslator } from '../lib/page-lang.js';
+
 interface Props {
   startLocked?: boolean;
 }
 const { startLocked = true } = Astro.props;
+// Same language as the page: Dutch on translated pages, English on the others.
+const tr = chromeTranslator(Astro);
 const LOGIN_TILE_IMAGES = Array.from({ length: 10 }, (_, i) => {
   const n = String(i + 1).padStart(2, '0');
   return `/assets/login-tiles/tile-${n}`;
@@ -23,7 +27,6 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
 
 <div
   id="wcag-login-modal"
-  lang={Astro.locals?.pageLang && Astro.locals.pageLang !== 'en' ? 'en' : undefined}
   class="wcag-login-overlay"
   data-start-locked={startLocked ? 'true' : 'false'}
   hidden={!startLocked}
@@ -82,10 +85,10 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       <div class="wcag-login-flip-inner" id="wcag-login-flip-inner">
         <div class="wcag-login-face wcag-login-face--front">
           <button type="button" class="wcag-login-close" id="wcag-login-close" hidden={startLocked}>
-            Close
+            {tr('login.close')}
           </button>
-          <h2 id="wcag-login-title" class="wcag-login-title">Sign in</h2>
-          <p class="wcag-login-lead">Sign in with the email you used to create your account.</p>
+          <h2 id="wcag-login-title" class="wcag-login-title">{tr('login.title')}</h2>
+          <p class="wcag-login-lead">{tr('login.lead')}</p>
           <p id="wcag-login-err" class="wcag-login-err" role="alert" hidden></p>
           <form
             id="wcag-login-form"
@@ -96,7 +99,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
             data-astro-reload
           >
             <input type="hidden" name="next" id="wcag-login-next" value="" />
-            <label class="wcag-login-label" for="wcag-login-user">Email</label>
+            <label class="wcag-login-label" for="wcag-login-user">{tr('login.email')}</label>
             <input
               class="wcag-login-input"
               id="wcag-login-user"
@@ -105,7 +108,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
               autocomplete="email"
               required
             />
-            <label class="wcag-login-label" for="wcag-login-pass">Password</label>
+            <label class="wcag-login-label" for="wcag-login-pass">{tr('login.password')}</label>
             <input
               class="wcag-login-input"
               id="wcag-login-pass"
@@ -114,29 +117,29 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
               autocomplete="current-password"
               required
             />
-            <button type="submit" class="wcag-login-submit">Continue</button>
+            <button type="submit" class="wcag-login-submit">{tr('login.submit')}</button>
           </form>
           <p class="wcag-login-footer-request">
-            <a class="wcag-login-linklike" href="/">Home</a>
+            <a class="wcag-login-linklike" href="/">{tr('login.home')}</a>
             ·
-            <a class="wcag-login-linklike" href="/signup">Create an account</a>
+            <a class="wcag-login-linklike" href="/signup">{tr('login.signup')}</a>
             ·
-            <a class="wcag-login-linklike" href="/forgot">Forgot password</a>
+            <a class="wcag-login-linklike" href="/forgot">{tr('login.forgot')}</a>
           </p>
           <p class="wcag-login-footer-request">
-            <a class="wcag-login-linklike" href="/auth/staff">Us staff</a>
+            <a class="wcag-login-linklike" href="/auth/staff">{tr('login.staff')}</a>
           </p>
           <p class="wcag-login-footer-request">
-            <a class="wcag-login-linklike" href="/contact?source=login">Talk to a WCAG expert</a>
+            <a class="wcag-login-linklike" href="/contact?source=login">{tr('cta.expert')}</a>
           </p>
         </div>
         <div class="wcag-login-face wcag-login-face--back" inert>
-          <h2 id="wcag-request-title" class="wcag-login-title">Request Access</h2>
-          <p class="wcag-access-lead">Tell us about yourself and we'll get back to you.</p>
+          <h2 id="wcag-request-title" class="wcag-login-title">{tr('login.request.title')}</h2>
+          <p class="wcag-access-lead">{tr('login.request.lead')}</p>
           <p id="wcag-access-err" class="wcag-login-err" role="alert" hidden></p>
           <p id="wcag-access-ok" class="wcag-access-ok" role="status" hidden></p>
           <form id="wcag-access-form" class="wcag-access-form" method="post" action="/api/access-request" data-astro-reload>
-            <label class="wcag-login-label" for="wcag-access-name">Name</label>
+            <label class="wcag-login-label" for="wcag-access-name">{tr('lead.name')}</label>
             <input
               class="wcag-login-input"
               id="wcag-access-name"
@@ -145,7 +148,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
               autocomplete="name"
               required
             />
-            <label class="wcag-login-label" for="wcag-access-company">Company</label>
+            <label class="wcag-login-label" for="wcag-access-company">{tr('lead.company')}</label>
             <input
               class="wcag-login-input"
               id="wcag-access-company"
@@ -153,7 +156,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
               type="text"
               autocomplete="organization"
             />
-            <label class="wcag-login-label" for="wcag-access-email">Email</label>
+            <label class="wcag-login-label" for="wcag-access-email">{tr('lead.email')}</label>
             <input
               class="wcag-login-input"
               id="wcag-access-email"
@@ -162,7 +165,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
               autocomplete="email"
               required
             />
-            <label class="wcag-login-label" for="wcag-access-message">Message</label>
+            <label class="wcag-login-label" for="wcag-access-message">{tr('lead.message')}</label>
             <textarea
               class="wcag-login-textarea"
               id="wcag-access-message"
@@ -170,9 +173,9 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
               rows="4"
               maxlength="4000"
             ></textarea>
-            <button type="submit" class="wcag-login-submit wcag-access-submit">Request access</button>
+            <button type="submit" class="wcag-login-submit wcag-access-submit">{tr('login.request.submit')}</button>
           </form>
-          <button type="button" class="wcag-login-back" id="wcag-flip-to-login">Back to sign in</button>
+          <button type="button" class="wcag-login-back" id="wcag-flip-to-login">{tr('login.request.back')}</button>
         </div>
       </div>
     </div>
@@ -181,6 +184,19 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
 
 <script>
   import { isSafeRelativePath } from '../../../server/safe-path.mjs';
+  import { pageLang, t } from '../../../i18n/index.mjs';
+
+  const tx = (key) => t(pageLang(), key);
+  /** Server messages are English for now: mark them on a Dutch page. */
+  function showServerText(el, text) {
+    el.textContent = text;
+    if (pageLang() !== 'en') el.setAttribute('lang', 'en');
+    else el.removeAttribute('lang');
+  }
+  function showOwnText(el, key) {
+    el.textContent = tx(key);
+    el.removeAttribute('lang');
+  }
 
   function qs(id) {
     return document.getElementById(id);
@@ -372,7 +388,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       lockAppShell();
       openModal();
       if (errEl) {
-        errEl.textContent = 'We could not check your sign-in. Check your connection and try again.';
+        showOwnText(errEl, 'login.error.check');
         errEl.hidden = false;
       }
     }
@@ -410,11 +426,12 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
   function showUnverifiedLoginError(errEl) {
     if (!errEl) return;
     errEl.replaceChildren();
-    errEl.appendChild(document.createTextNode('Verify your email before signing in. '));
+    errEl.removeAttribute('lang');
+    errEl.appendChild(document.createTextNode(`${tx('login.error.unverified')} `));
     const link = document.createElement('a');
     link.href = '/verify';
     link.className = 'wcag-login-linklike';
-    link.textContent = 'Open the verification page';
+    link.textContent = tx('login.error.verifyLink');
     errEl.appendChild(link);
     errEl.hidden = false;
   }
@@ -429,7 +446,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
         if (reason === 'unverified') {
           showUnverifiedLoginError(errEl);
         } else {
-          errEl.textContent = 'Invalid email or password.';
+          showOwnText(errEl, 'login.error.failed');
           errEl.hidden = false;
         }
       }
@@ -492,7 +509,9 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
           if (data.code === 'unverified' || (res.status === 403 && /verify your email/i.test(String(data.error || '')))) {
             showUnverifiedLoginError(errEl);
           } else {
-            errEl.textContent = data.error || 'Sign-in failed.';
+            if (res.status === 401) showOwnText(errEl, 'login.error.failed');
+            else if (data.error) showServerText(errEl, data.error);
+            else showOwnText(errEl, 'login.error.generic');
             errEl.hidden = false;
           }
         }
@@ -516,7 +535,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       }
     } catch {
       if (errEl) {
-        errEl.textContent = 'We could not reach the server. Check your connection and try again.';
+        showOwnText(errEl, 'login.error.network');
         errEl.hidden = false;
       }
     }
@@ -553,21 +572,20 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (errEl) {
-          errEl.textContent = data.error || 'Something went wrong.';
+          if (data.error) showServerText(errEl, data.error);
+          else showOwnText(errEl, 'login.request.error');
           errEl.hidden = false;
         }
         return;
       }
       if (okEl) {
-        okEl.textContent = data.emailed
-          ? 'Thanks — we received your request and emailed our team.'
-          : 'Thanks — we received your request.';
+        okEl.textContent = tx(data.emailed ? 'login.request.okEmailed' : 'login.request.ok');
         okEl.hidden = false;
       }
       form.reset();
     } catch {
       if (errEl) {
-        errEl.textContent = 'Network error — try again in a moment.';
+        showOwnText(errEl, 'login.request.network');
         errEl.hidden = false;
       }
     }
@@ -608,7 +626,7 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
       if (!guestOk()) lockAppShell();
       const errEl = qs('wcag-login-err');
       if (errEl && !guestOk()) {
-        errEl.textContent = 'Your session expired. Sign in again.';
+        showOwnText(errEl, 'login.error.expired');
         errEl.hidden = false;
       }
       openModal();

@@ -129,7 +129,7 @@ describe('a page only claims a language it is written in', () => {
     const layout = read('web/src/layouts/Layout.astro');
     assert.match(layout, /<html lang=\{tr\.lang\}/);
     assert.match(read('web/src/lib/page-lang.js'), /translator\(Astro\.locals\?\.pageLang \|\| 'en'\)/);
-    for (const page of ['pricing', 'contact', 'signup', 'index', 'loading', 'account']) {
+    for (const page of ['pricing', 'contact', 'signup', 'index', 'loading', 'account', 'forgot', 'reset', 'verify']) {
       assert.match(read(`web/src/pages/${page}.astro`), /const tr = usePageLang\(Astro\);/, page);
     }
     // Not translated yet: must not call usePageLang, so it stays lang="en".
@@ -137,7 +137,9 @@ describe('a page only claims a language it is written in', () => {
   });
 
   it('marks the parts that are still English inside a Dutch page', () => {
-    assert.match(read('web/src/components/LoginModal.astro'), /lang=\{Astro\.locals\?\.pageLang && Astro\.locals\.pageLang !== 'en' \? 'en' : undefined\}/);
+    // The sign-in pop-up follows the page: Dutch on translated pages, English on the others.
+    assert.match(read('web/src/components/LoginModal.astro'), /const tr = chromeTranslator\(Astro\);/);
+    assert.doesNotMatch(read('web/src/components/LoginModal.astro'), /pageLang !== 'en' \? 'en'/);
     assert.match(read('web/src/pages/pricing.astro'), /<span lang=\{tr\.lang === 'en' \? undefined : 'en'\}>\{WITHDRAWAL_WAIVER_TEXT\}<\/span>/);
     assert.match(read('web/src/lib/checkout.js'), /el\.setAttribute\('lang', textLang\)/);
   });
