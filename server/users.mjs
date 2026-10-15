@@ -84,6 +84,8 @@ const USERS_FILE = 'users.json';
 
 const CONTACT_FIELDS = [
   'name',
+  'firstName',
+  'lastName',
   'phone',
   'company',
   'vatNumber',
@@ -129,8 +131,19 @@ export function normalizeVatNumber(value) {
   return raw;
 }
 
+/** "First Last", for invoices, Stripe and mails that use one name. */
+export function fullName(firstName, lastName) {
+  return [firstName, lastName]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .slice(0, 200);
+}
+
 function emptyContact() {
   return {
+    firstName: '',
+    lastName: '',
     phone: '',
     company: '',
     vatNumber: '',
@@ -277,6 +290,8 @@ export async function createUser({
   email,
   password,
   name = '',
+  firstName = '',
+  lastName = '',
   company = '',
   vatNumber = '',
   customerType = 'consumer',
@@ -300,7 +315,7 @@ export async function createUser({
   const user = {
     id: randomBytes(12).toString('hex'),
     email: normalized,
-    name: String(name || '').trim().slice(0, 200),
+    name: String(name || '').trim().slice(0, 200) || fullName(firstName, lastName),
     role: 'customer',
     passwordHash: await hashPassword(password),
     emailVerified: autoVerify,
@@ -313,6 +328,8 @@ export async function createUser({
     pendingEmailExpiresAt: null,
     sessionVersion: 1,
     ...emptyContact(),
+    firstName: String(firstName || '').trim().slice(0, 100),
+    lastName: String(lastName || '').trim().slice(0, 100),
     company: companyName,
     vatNumber: vat,
     customerType: type,
@@ -369,6 +386,12 @@ export async function updateContactDetails(userId, patch) {
   }
   const current = await getUserById(userId);
   if (!current) return null;
+  // The account form edits first and last name; `name` follows them.
+  const nameParts = ['firstName', 'lastName'].some((key) => Object.prototype.hasOwnProperty.call(allowed, key));
+  if (nameParts && !Object.prototype.hasOwnProperty.call(allowed, 'name')) {
+    const joined = fullName(allowed.firstName ?? current.firstName, allowed.lastName ?? current.lastName);
+    if (joined) allowed.name = joined;
+  }
   const nextType = allowed.customerType || current.customerType || 'consumer';
   const nextCompany = Object.prototype.hasOwnProperty.call(allowed, 'company')
     ? allowed.company

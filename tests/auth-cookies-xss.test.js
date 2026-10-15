@@ -188,7 +188,7 @@ describe('auth cookies xss HTTP', () => {
     const account = readFileSync(join(repoRoot, 'web/src/pages/account.astro'), 'utf8');
     assert.match(account, /function escapeHtml/);
     assert.match(account, /escapeHtml\(p\.domain\)/);
-    assert.match(account, /escapeHtml\(row\.status/);
+    assert.match(account, /escapeHtml\(known\('acct\.status', row\.status\)\)/);
     assert.match(account, /escapeHtml\(row\.description/);
   });
 

@@ -147,10 +147,10 @@ describe('signup next through verify', () => {
     assert.match(signup, /name="next"/);
     assert.match(signup, /id="signup-success"/);
     assert.match(signup, /tr\('signup\.lead\.pricing'\)/);
-    assert.match(signup, /tr\('signup\.lead\.guest'\)/);
+    assert.match(signup, /tr\('signup\.lead\.default'\)/);
     const en = (await import('../i18n/en.mjs')).default;
     assert.match(en['signup.lead.pricing'], /buy token packs or subscribe to Pro/);
-    assert.match(en['signup.lead.guest'], /Save guest snapshots to your email/);
+    assert.match(en['signup.lead.default'], /You can still run your free 1-page scan without creating an account/);
     assert.match(signup, /check-email/);
     assert.doesNotMatch(signup, /msg\.textContent = 'Check your email to verify the account, then sign in\.'/);
     const cookies = readFileSync(join(repoRoot, 'web/src/pages/cookies.astro'), 'utf8');

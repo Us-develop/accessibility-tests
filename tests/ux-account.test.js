@@ -35,7 +35,7 @@ describe('account page layout', () => {
 
   it('has a sidebar with the balance and a link to every section', () => {
     const nav = account.slice(account.indexOf('<nav class="account-nav'), account.indexOf('</nav>'));
-    assert.match(nav, /aria-label="Account sections"/);
+    assert.match(nav, /aria-label=\{tr\('acct\.nav\.aria'\)\}/);
     assert.match(nav, /id="account-nav-balance"/);
     for (const id of ['projects', 'scan-history', 'subscription', 'tokens', 'payments', 'personal']) {
       assert.match(nav, new RegExp(`href="#${id}"`), `sidebar links to #${id}`);
@@ -48,18 +48,18 @@ describe('account page layout', () => {
     const [actions, firstSection] = positions(account, ['class="account-actions"', 'id="projects-card"']);
     assert.ok(actions < firstSection);
     const block = account.slice(actions, account.indexOf('</div>', actions));
-    assert.match(block, /href="\/">Scan a page</);
-    assert.match(block, /href="\/audits">All scans</);
-    assert.match(block, /Export JSON/);
-    assert.match(block, /Export CSV/);
+    assert.match(block, /href="\/">\{tr\('acct\.action\.scan'\)\}</);
+    assert.match(block, /href="\/audits">\{tr\('acct\.action\.allScans'\)\}</);
+    assert.match(block, /acct\.action\.exportJson/);
+    assert.match(block, /acct\.action\.exportCsv/);
     assert.equal(account.split('class="account-actions"').length - 1, 1, 'only one actions row');
   });
 
   it('makes deleting a small link with a confirm step', () => {
-    assert.match(account, /<button type="button" class="linklike" id="delete-open" aria-expanded="false" aria-controls="delete-card">Delete my account<\/button>/);
+    assert.match(account, /<button type="button" class="linklike" id="delete-open" aria-expanded="false" aria-controls="delete-card">\{tr\('acct\.delete\.open'\)\}<\/button>/);
     assert.match(account, /<section id="delete-card" class="card stack-form account-section" hidden>/);
-    assert.match(account, /Yes, delete my account/);
-    assert.match(account, /id="delete-cancel">Keep my account/);
+    assert.match(account, /tr\('acct\.delete\.confirm'\)/);
+    assert.match(account, /id="delete-cancel">\{tr\('acct\.delete\.keep'\)\}/);
     assert.match(account, /function openDeleteConfirm/);
     assert.match(account, /document\.getElementById\('delete-title'\)\?\.focus\(\)/);
     assert.doesNotMatch(account, /if \(deleteCard\) deleteCard\.hidden = false;/);
