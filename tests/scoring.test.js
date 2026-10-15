@@ -60,6 +60,12 @@ describe('score model', () => {
   it('has no score when no page was scored', () => {
     assert.equal(overallScore({ errors: null, manualDone: 23, manualTotal: 23 }), null);
   });
+
+  it('gives a fresh scan without automated errors 60, not 100, while reviews and manual checks are open', () => {
+    // What a guest sees on the teaser: nothing reviewed, nothing ticked.
+    assert.equal(overallScore({ errors: 100, reviewTotal: 4, manualTotal: 23 }).overall, 60);
+    assert.equal(overallScore({ errors: 100, reviewTotal: 0, manualTotal: 23 }).overall, 75);
+  });
 });
 
 describe('errors part', () => {

@@ -98,7 +98,12 @@ if (!isValidGuestToken(token)) {
             manualGroups: MANUAL_TODO_GROUPS,
             manualInitialChecked: [],
             manualTotal,
-            scoreModel: { ...payload.scoreModel, reviewKeys: [] },
+            // Only the number of findings to review is needed for the score; the keys
+            // would name rules and pages, so they are replaced by placeholders.
+            scoreModel: {
+              ...payload.scoreModel,
+              reviewKeys: (payload.scoreModel?.reviewKeys || []).map((_, i) => `locked-${i}`),
+            },
             coveredScCount: payload.coveredScCount ?? 0,
             locked: true,
             guestToken: token,
