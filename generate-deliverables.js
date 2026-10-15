@@ -52,6 +52,16 @@ function escapeHtml(s) {
 }
 
 /**
+ * A finding's title or message, escaped, and marked with its language when that
+ * is not English: these documents are English, while our own checks write in
+ * the language of the scan (findings-lang.js).
+ */
+function findingHtml(text, textLang) {
+  const html = escapeHtml(text);
+  return textLang && textLang !== 'en' && html ? `<span lang="${escapeHtml(textLang)}">${html}</span>` : html;
+}
+
+/**
  * Developer guide deliverable, restyled to match the prototype's view-developer.jsx.
  * Static HTML; the "Add sprint to Jira" CTA opens an inline modal with vanilla JS.
  */
@@ -74,6 +84,7 @@ export function generateDeveloperAdvice(data, outputDir) {
     return {
       id: item.id || `fix-${i + 1}`,
       rule: item.rule || item.id || 'Accessibility fix',
+      textLang: item.rule ? item.textLang : 'en',
       severity: sev,
       points: effort,
       occurrences: 1,
@@ -91,7 +102,7 @@ export function generateDeveloperAdvice(data, outputDir) {
   const ticketRows = tickets.map((t) => `
         <div class="ticket-row">
           <span class="mono ticket-key">${escapeHtml(t.id)}</span>
-          <span class="ticket-title">${escapeHtml(t.rule)}</span>
+          <span class="ticket-title">${findingHtml(t.rule, t.textLang)}</span>
           <span class="ticket-assignee">${escapeHtml(t.id)}</span>
           <span class="tag tag-lilac">${t.points}</span>
           <span class="tag tag-${t.severity === 'error' ? 'error' : 'warning'}">${t.severity === 'error' ? 'Error' : 'Warning'}</span>
@@ -109,13 +120,13 @@ export function generateDeveloperAdvice(data, outputDir) {
           <summary>
             <span class="summary-left">
               <span class="tag tag-${sev === 'error' ? 'error' : 'warning'}">${sev === 'error' ? 'Error' : 'Warning'}</span>
-              <strong>${escapeHtml(i.rule || i.id || 'Issue')}</strong>
+              <strong>${i.rule ? findingHtml(i.rule, i.textLang) : escapeHtml(i.id || 'Issue')}</strong>
               <span class="muted mono summary-meta">${i.id ? escapeHtml(i.id) : ''}${wcagLinks ? ` · WCAG ${wcagLinks}` : ''}</span>
             </span>
             <span class="muted summary-effort">${effort} pt${effort === 1 ? '' : 's'}</span>
           </summary>
           ${i.duplicateIdLabel ? `<p class="issue-desc"><strong>Duplicated IDs:</strong> <span class="mono">${escapeHtml(i.duplicateIdLabel)}</span></p>` : ''}
-          ${!i.duplicateIdLabel && i.message && i.message !== i.rule ? `<p class="issue-desc">${escapeHtml(i.message)}</p>` : ''}
+          ${!i.duplicateIdLabel && i.message && i.message !== i.rule ? `<p class="issue-desc">${findingHtml(i.message, i.textLang)}</p>` : ''}
           ${i.snippet ? `<p class="issue-desc">${escapeHtml(i.snippet)}</p>` : ''}
           ${(i.occurrenceDetails || []).length
             ? `<p class="issue-desc"><strong>Where they appear</strong></p><ul class="occ-list">${i.occurrenceDetails.map((d) => `<li class="mono">${escapeHtml(d)}</li>`).join('')}</ul>`
@@ -371,7 +382,7 @@ export function generateDeveloperAdvice(data, outputDir) {
         </div>
         <div style="font-size: 13px; font-weight: 500; margin: 16px 0 10px;">Tickets to create (${tickets.length})</div>
         <div>
-          ${tickets.map((t) => `<div style="display:grid; grid-template-columns:auto 1fr auto; gap:12px; padding:8px 0; font-size:13px; align-items:center;"><span class="mono muted" style="font-size:11px;">${escapeHtml(t.id)}</span><span>${escapeHtml(t.rule)}</span><span class="tag tag-lilac" style="font-size:11px;">${t.points} pts</span></div>`).join('')}
+          ${tickets.map((t) => `<div style="display:grid; grid-template-columns:auto 1fr auto; gap:12px; padding:8px 0; font-size:13px; align-items:center;"><span class="mono muted" style="font-size:11px;">${escapeHtml(t.id)}</span><span>${findingHtml(t.rule, t.textLang)}</span><span class="tag tag-lilac" style="font-size:11px;">${t.points} pts</span></div>`).join('')}
         </div>
       </div>
       <div class="modal-foot">
@@ -933,7 +944,7 @@ export function generateClientPresentation(data, outputDir) {
         return `<div class="item">
           <div class="idx">${idx + 1}</div>
           <div>
-            <h4>${escapeHtml(item.rule)}</h4>
+            <h4>${findingHtml(item.rule, item.textLang)}</h4>
             <p>${escapeHtml(desc)}</p>
             <div class="badge-line">
               <span class="pill impact-${impact === 'high' ? 'high' : impact === 'low' ? 'low' : 'medium'}">${impactLabel}</span>
@@ -1031,12 +1042,13 @@ function dedupeFindingsByRule(items) {
   const byRule = new Map();
   for (const it of items) {
     const rule = it.rule || '';
-    if (!byRule.has(rule)) byRule.set(rule, new Set());
-    if (it.url) byRule.get(rule).add(it.url);
+    if (!byRule.has(rule)) byRule.set(rule, { urls: new Set(), textLang: it.textLang });
+    if (it.url) byRule.get(rule).urls.add(it.url);
   }
-  return [...byRule.entries()].map(([rule, urlSet]) => ({
+  return [...byRule.entries()].map(([rule, entry]) => ({
     rule,
-    urls: [...urlSet].sort(),
+    textLang: entry.textLang,
+    urls: [...entry.urls].sort(),
   }));
 }
 
@@ -1077,7 +1089,7 @@ function buildLimitationBlocks(fixOrderItems) {
         row.urls.length > 0
           ? `<span class="finding-url">Affected pages: ${row.urls.map((u) => escapeHtml(u)).join('; ')}</span>`
           : '';
-      html += `<p class="finding"><strong>${escapeHtml(row.rule)}</strong>${pages ? `<br>${pages}` : ''}</p>`;
+      html += `<p class="finding"><strong>${findingHtml(row.rule, row.textLang)}</strong>${pages ? `<br>${pages}` : ''}</p>`;
     }
     html += '</div>';
   }

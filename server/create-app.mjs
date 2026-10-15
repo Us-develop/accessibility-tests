@@ -58,8 +58,8 @@ import { scanProcessTimeoutMs, tailForLog } from './scan-child.mjs';
 import { carryReviewedForward, readReviewed, writeReviewed } from './reviewed.mjs';
 import { accessAllows } from './entitlements.mjs';
 import { isSafeRelativePath } from './safe-path.mjs';
-import { langFromCookieHeader, langSetCookie, normalizeLang, t } from '../i18n/index.mjs';
-import { localizeJsonMessages } from './server-messages.mjs';
+import { defaultLang, langFromCookieHeader, langSetCookie, normalizeLang, t } from '../i18n/index.mjs';
+import { localizeJsonMessages, requestLang } from './server-messages.mjs';
 import { buildTeaserPayload } from './teaser-payload.mjs';
 import {
   clearSessionCookies,
@@ -719,6 +719,7 @@ export function createAccessibilityApp(repoRoot, options = {}) {
           env: {
             ...buildScanProcessEnv(process.env),
             ...(job.hostResolverRules ? { SCANNER_HOST_RESOLVER_RULES: job.hostResolverRules } : {}),
+            ...(normalizeLang(job.lang) ? { WCAG_SCAN_LANG: normalizeLang(job.lang) } : {}),
           },
         }
       );
@@ -1841,6 +1842,8 @@ app.post('/api/run', uploadSingleFile, async (req, res) => {
       tier: initialState.tier,
       guestIp: initialState.guestIp,
       hostResolverRules: hostResolverRulesFromTargets(filtered.targets),
+      // The findings are written in the visitor's language and the report keeps it.
+      lang: requestLang(req) || defaultLang(),
     });
   } catch (err) {
     // Whatever the tier, do not leave a run "queued" that never reached the queue:

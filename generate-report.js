@@ -3,6 +3,7 @@
  * Run after run-tests.js, or use: node run-tests.js --report
  */
 
+import { findingsLangs } from './findings-lang.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { basename, dirname, join } from 'path';
@@ -256,6 +257,7 @@ export function generateReport(reportData, options = {}) {
         id: r.id,
         url: r.url,
         status: r.status,
+        textLang: findingsLangs(reportData).custom,
         ...rem,
         snippet,
         message: r.message || '',
@@ -276,6 +278,7 @@ export function generateReport(reportData, options = {}) {
         id: v.id,
         url,
         status: 'violation',
+        textLang: findingsLangs(reportData).axe,
         ...rem,
         snippet,
         message: v.help || '',

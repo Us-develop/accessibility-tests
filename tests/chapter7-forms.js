@@ -3,6 +3,7 @@
  * Based on: module-forms-checklist.pdf
  */
 import { pageCollect } from './describe-els.js';
+import { say } from './scan-text.js';
 
 export const chapterId = 'forms';
 
@@ -45,24 +46,24 @@ export async function runFormChecks(page) {
   if (formChecks.total > 0) {
     results.push({
       id: 'form-labels',
-      rule: 'Form inputs MUST have programmatically-associated labels',
+      rule: say('chk.form-labels.rule'),
       status: formChecks.missingLabel === 0 ? 'pass' : 'fail',
       message:
         formChecks.missingLabel > 0
-          ? `${formChecks.missingLabel} input(s) without proper label`
-          : 'All inputs have labels',
+          ? say('chk.form-labels.missing', { n: formChecks.missingLabel })
+          : say('chk.form-labels.ok'),
       chapter: chapterId,
       occurrences: formChecks.missingLabel > 0 ? formChecks.missingOccurrences : [],
     });
 
     results.push({
       id: 'placeholder-not-only-label',
-      rule: 'Placeholder MUST NOT be the only label for inputs',
+      rule: say('chk.placeholder-not-only-label.rule'),
       status: formChecks.placeholderOnly === 0 ? 'pass' : 'fail',
       message:
         formChecks.placeholderOnly > 0
-          ? `${formChecks.placeholderOnly} input(s) use a placeholder as their only label`
-          : 'No placeholder-only labels',
+          ? say('chk.placeholder-not-only-label.found', { n: formChecks.placeholderOnly })
+          : say('chk.placeholder-not-only-label.ok'),
       chapter: chapterId,
       occurrences: formChecks.placeholderOnly > 0 ? formChecks.placeholderOccurrences : [],
     });

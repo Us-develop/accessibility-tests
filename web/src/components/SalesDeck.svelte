@@ -63,8 +63,11 @@
     const text = tr(key);
     return text === key ? fallback : text;
   };
-  /** Fix titles and snippets come from the scan, in the language it ran in. */
-  const findingsAttr = $derived(findingsLang && findingsLang !== lang ? findingsLang : undefined);
+  /** Fix titles and snippets come from the scan: marked when not in the page language. */
+  const textAttr = (textLang) => {
+    const of = textLang || findingsLang;
+    return of && of !== lang ? of : undefined;
+  };
   const signed = (n) => (n >= 0 ? `+${n}` : String(n));
   /** The trend slide says what actually happened, not always "up". */
   const trendHeading = $derived(
@@ -254,7 +257,7 @@
               {#each topFixes.slice(0, 3) as f, i (i)}
                 <div class="fix-card">
                   <div class="fix-rank" style="background: {f.color};">{f.rank || String(i + 1).padStart(2, '0')}</div>
-                  <div lang={findingsAttr}>
+                  <div lang={textAttr(f.lang)}>
                     <div class="fix-title">{f.title}</div>
                     <div class="fix-impact">{f.impact}</div>
                   </div>

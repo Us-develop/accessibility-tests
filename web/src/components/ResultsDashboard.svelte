@@ -140,7 +140,11 @@
    * Rule names, messages and fixes come from the scan, in the language it ran in
    * (English for now). Marked as such when that is not the page language.
    */
-  const findingsAttr = $derived(findingsLang && findingsLang !== lang ? findingsLang : undefined);
+  /** lang attribute for one finding text: its own language when that is not the page's. */
+  const textAttr = (textLang) => {
+    const of = textLang || findingsLang;
+    return of && of !== lang ? of : undefined;
+  };
   const IMPACT_KEYS = { 'None found': 'none', 'Some pages': 'some', 'Many pages': 'many', 'Most pages': 'most' };
 
   let tab = $state('overview');
@@ -714,9 +718,9 @@
           <div class="card-flat" style="margin-bottom: 24px;">
             <h3 style="font-size: 16px; margin-bottom: 4px;">{trn('dash.top.h', topIssues.length)}</h3>
             <p class="muted" style="font-size: 13px; margin-bottom: 14px;">{tr('dash.top.body')}</p>
-            <ol class="top-issues" lang={findingsAttr}>
+            <ol class="top-issues">
               {#each topIssues as issue, i (i)}
-                <li>
+                <li lang={textAttr(issue.lang)}>
                   <span class="top-issues-title">{issue.title}</span>
                   {#if issue.wcag.length > 0}
                     <span class="muted" style="font-size: 12px;">WCAG {issue.wcag.join(', ')}</span>
@@ -788,21 +792,21 @@
             <button class="list-row issue-row" class:compact={variant === 'compact'} onclick={() => selectIssue(item)}>
               <SeverityBadge severity={severityForBadge(sev)} {lang} />
               <div style="text-align: left;">
-                <div style="font-weight: 500; font-size: 15px; margin-bottom: 2px;" lang={findingsAttr}>{item.rule}</div>
+                <div style="font-weight: 500; font-size: 15px; margin-bottom: 2px;" lang={textAttr(item.textLang)}>{item.rule}</div>
                 <div class="muted break-anywhere" style="font-size: 12px;">
                   {#if item.duplicateIdLabel}
                     {tr('dash.issue.duplicated')} <span class="mono">{item.duplicateIdLabel}</span>
                     {#if item.wcag} · WCAG {wcagDisplay(item.wcag)}{/if}
                     {#if item.url} · {item.url}{/if}
                   {:else}
-                    {#if item.message && item.message !== item.rule}<span lang={findingsAttr}>{item.message}</span> · {/if}
+                    {#if item.message && item.message !== item.rule}<span lang={textAttr(item.textLang)}>{item.message}</span> · {/if}
                     {#if item.wcag}WCAG {wcagDisplay(item.wcag)} · {/if}<span class="mono">{item.id}</span>
                     {#if item.url} · {item.url}{/if}
                   {/if}
                 </div>
                 {#if item.occurrenceDetails && item.occurrenceDetails.length > 0}
                   <div class="mono muted break-anywhere" style="font-size: 11px; margin-top: 4px;">
-                    <span lang={findingsAttr}>{item.occurrenceDetails.slice(0, 2).join(' · ')}</span>
+                    <span lang={textAttr(item.textLang)}>{item.occurrenceDetails.slice(0, 2).join(' · ')}</span>
                     {#if item.occurrenceDetails.length > 2}
                       · {tr('dash.issue.more', { n: item.occurrenceDetails.length - 2 })}
                     {/if}
@@ -910,7 +914,7 @@
               {#each rulesTable as r (`${r.type}:${r.id}`)}
                 <div style="padding: 10px 14px; border: 1px solid var(--border-subtle); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
                   <div>
-                    <div class="mono" style="font-size: 12px; font-weight: 500;" lang={findingsAttr}>{r.rule}</div>
+                    <div class="mono" style="font-size: 12px; font-weight: 500;" lang={textAttr(r.textLang)}>{r.rule}</div>
                     <div class="muted" style="font-size: 11px;">
                       {#if r.duplicateIdLabel}
                         {tr('dash.issue.duplicated')} <span class="mono">{r.duplicateIdLabel}</span> ·
@@ -1017,13 +1021,13 @@
           <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
             {#if selected.wcag}WCAG {wcagDisplay(selected.wcag)} · {/if}<span class="mono">{selected.id}</span>
           </div>
-          <h2 id="issue-drawer-title" style="font-size: 28px; margin-bottom: 14px;" lang={findingsAttr}>{selected.rule}</h2>
+          <h2 id="issue-drawer-title" style="font-size: 28px; margin-bottom: 14px;" lang={textAttr(selected.textLang)}>{selected.rule}</h2>
           {#if selected.duplicateIdLabel}
             <p style="font-size: 15px; margin: 0 0 16px;">
               {tr('dash.drawer.duplicatedIds')} <span class="mono" style="font-weight: 600;">{selected.duplicateIdLabel}</span>
             </p>
           {:else if selected.message && selected.message !== selected.rule}
-            <p class="muted" style="font-size: 14px; margin: 0 0 16px;" lang={findingsAttr}>{selected.message}</p>
+            <p class="muted" style="font-size: 14px; margin: 0 0 16px;" lang={textAttr(selected.textLang)}>{selected.message}</p>
           {/if}
 
           <div class="dash-drawer-stats">
@@ -1090,7 +1094,7 @@
 
           {#if selected.occurrenceDetails && selected.occurrenceDetails.length > 0}
             <h2 class="drawer-h2">{tr('dash.drawer.where', { n: selected.occurrenceDetails.length })}</h2>
-            <div class="affected-pages" style="margin-bottom: 24px;" lang={findingsAttr}>
+            <div class="affected-pages" style="margin-bottom: 24px;" lang={textAttr(selected.textLang)}>
               {#each selected.occurrenceDetails as desc, i (`${desc}-${i}`)}
                 <span class="mono affected-page" class:affected-page--markup={desc.includes('<')}>{desc}</span>
               {/each}

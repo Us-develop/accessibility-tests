@@ -70,6 +70,7 @@ describe('teaser locked data', () => {
     for (const secret of ['hero-tagline-xyz', 'newsletter-zzz', 'team-photo-qqq', 'secret-landing']) {
       assert.equal(top.includes(secret), false, `leaked: ${secret}`);
     }
-    for (const issue of locked.topIssues) assert.deepEqual(Object.keys(issue).sort(), ['impact', 'title', 'wcag']);
+    // Title, its language, WCAG references and severity: nothing about where or how.
+    for (const issue of locked.topIssues) assert.deepEqual(Object.keys(issue).sort(), ['impact', 'lang', 'title', 'wcag']);
   });
 });

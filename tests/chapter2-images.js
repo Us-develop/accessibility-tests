@@ -3,6 +3,7 @@
  * Based on: module-images-checklist.pdf
  */
 import { pageCollect } from './describe-els.js';
+import { say } from './scan-text.js';
 
 export const chapterId = 'images';
 
@@ -42,12 +43,12 @@ export async function runImageChecks(page) {
   if (imageChecks.total > 0) {
     results.push({
       id: 'img-alt',
-      rule: 'Informative images MUST have programmatically-discernible alternative text',
+      rule: say('chk.img-alt.rule'),
       status: imageChecks.missingAlt === 0 ? 'pass' : 'fail',
       message:
         imageChecks.missingAlt > 0
-          ? `${imageChecks.missingAlt} image(s) missing alt attribute`
-          : `${imageChecks.total} images have alt text`,
+          ? say('chk.img-alt.missing', { n: imageChecks.missingAlt })
+          : say('chk.img-alt.ok', { n: imageChecks.total }),
       chapter: chapterId,
       occurrences: imageChecks.missingAlt > 0 ? imageChecks.missingOccurrences : [],
     });
@@ -55,9 +56,9 @@ export async function runImageChecks(page) {
     if (imageChecks.longAlt > 0) {
       results.push({
         id: 'img-alt-length',
-        rule: 'Alternative text SHOULD be concise (≤250 characters)',
+        rule: say('chk.img-alt-length.rule'),
         status: 'warn',
-        message: `${imageChecks.longAlt} image(s) with alt > 250 chars`,
+        message: say('chk.img-alt-length.long', { n: imageChecks.longAlt }),
         chapter: chapterId,
         occurrences: imageChecks.longOccurrences,
       });
@@ -93,23 +94,23 @@ export async function runImageChecks(page) {
   if (svgChecks.total > 0) {
     results.push({
       id: 'svg-role',
-      rule: 'SVG elements SHOULD have role="img"',
+      rule: say('chk.svg-role.rule'),
       status: svgChecks.noRole === 0 ? 'pass' : 'warn',
       message:
         svgChecks.noRole > 0
-          ? `${svgChecks.noRole} SVG(s) without role="img"`
-          : 'All SVGs have role',
+          ? say('chk.svg-role.missing', { n: svgChecks.noRole })
+          : say('chk.svg-role.ok'),
       chapter: chapterId,
       occurrences: svgChecks.noRole > 0 ? svgChecks.noRoleOccurrences : [],
     });
     results.push({
       id: 'svg-accessible-name',
-      rule: 'Informative/actionable SVGs MUST have meaningful alternative text',
+      rule: say('chk.svg-accessible-name.rule'),
       status: svgChecks.noAccessibleName === 0 ? 'pass' : 'warn',
       message:
         svgChecks.noAccessibleName > 0
-          ? `${svgChecks.noAccessibleName} SVG(s) without accessible name`
-          : 'All SVGs have accessible names',
+          ? say('chk.svg-accessible-name.missing', { n: svgChecks.noAccessibleName })
+          : say('chk.svg-accessible-name.ok'),
       chapter: chapterId,
       occurrences: svgChecks.noAccessibleName > 0 ? svgChecks.noNameOccurrences : [],
     });
@@ -133,12 +134,12 @@ export async function runImageChecks(page) {
   if (canvasChecks.total > 0) {
     results.push({
       id: 'canvas-alt',
-      rule: 'Canvas elements MUST have role="img" and text alternative',
+      rule: say('chk.canvas-alt.rule'),
       status: canvasChecks.failing === 0 ? 'pass' : 'fail',
       message:
         canvasChecks.failing > 0
-          ? `${canvasChecks.total} canvas element(s) need role and alternative text`
-          : 'All canvases have role and alt',
+          ? say('chk.canvas-alt.missing', { n: canvasChecks.total })
+          : say('chk.canvas-alt.ok'),
       chapter: chapterId,
       occurrences: canvasChecks.failing > 0 ? canvasChecks.occurrences : [],
     });
@@ -167,9 +168,9 @@ export async function runImageChecks(page) {
   if (mapChecks.total > 0 && mapChecks.areaNoAlt > 0) {
     results.push({
       id: 'image-map-alt',
-      rule: 'Image map areas MUST have alternative text',
+      rule: say('chk.image-map-alt.rule'),
       status: 'fail',
-      message: `${mapChecks.areaNoAlt} area(s) in image map without alt`,
+      message: say('chk.image-map-alt.missing', { n: mapChecks.areaNoAlt }),
       chapter: chapterId,
       occurrences: mapChecks.occurrences,
     });

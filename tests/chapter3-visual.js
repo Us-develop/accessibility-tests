@@ -4,6 +4,7 @@
  * Note: Many color/contrast checks require axe-core or specialized tools.
  * This module runs axe with color/contrast rules and supplements with custom checks.
  */
+import { say } from './scan-text.js';
 export const chapterId = 'visualDesign';
 
 export async function runVisualChecks(page, options = {}) {
@@ -133,18 +134,22 @@ export async function runVisualChecks(page, options = {}) {
     if (contrastCheck.totalFailures > 0) {
       results.push({
         id: 'text-contrast',
-        rule: 'Text contrast MUST meet 4.5:1 (normal) or 3:1 (large text)',
+        rule: say('chk.text-contrast.rule'),
         status: 'warn',
-        message: `Heuristic (solid-background approximation; axe also reports WCAG 1.4.3): ${contrastCheck.totalFailures} text element(s) below minimum contrast${contrastCheck.lowest ? ` (lowest: ${contrastCheck.lowest}:1)` : ''} across ${contrastCheck.checked} checked element(s)`,
+        message: say('chk.text-contrast.fail', {
+          n: contrastCheck.totalFailures,
+          lowest: contrastCheck.lowest ? say('chk.text-contrast.lowest', { ratio: contrastCheck.lowest }) : '',
+          checked: contrastCheck.checked,
+        }),
         chapter: chapterId,
         occurrences: contrastCheck.sample,
       });
     } else {
       results.push({
         id: 'text-contrast',
-        rule: 'Text contrast MUST meet 4.5:1 (normal) or 3:1 (large text)',
+        rule: say('chk.text-contrast.rule'),
         status: 'pass',
-        message: `No low-contrast text found in ${contrastCheck.checked} checked element(s)`,
+        message: say('chk.text-contrast.ok', { checked: contrastCheck.checked }),
         chapter: chapterId,
       });
     }
@@ -288,27 +293,27 @@ export async function runVisualChecks(page, options = {}) {
     if (nonTextContrast.totalFailures > 0) {
       results.push({
         id: 'non-text-contrast',
-        rule: 'Visual UI indicators MUST meet 3:1 contrast (borders, outlines, control boundaries)',
+        rule: say('chk.non-text-contrast.rule'),
         status: 'warn',
-        message: `Heuristic (solid-background approximation; axe also reports WCAG 1.4.11): ${nonTextContrast.totalFailures} low-contrast UI indicator(s) across ${nonTextContrast.checkedIndicators} checked border/outline indicator(s)`,
+        message: say('chk.non-text-contrast.fail', { n: nonTextContrast.totalFailures, checked: nonTextContrast.checkedIndicators }),
         chapter: chapterId,
         occurrences: nonTextContrast.sample,
       });
     } else {
       results.push({
         id: 'non-text-contrast',
-        rule: 'Visual UI indicators MUST meet 3:1 contrast (borders, outlines, control boundaries)',
+        rule: say('chk.non-text-contrast.rule'),
         status: 'pass',
-        message: `No low-contrast UI indicators found in ${nonTextContrast.checkedIndicators} checked border/outline indicator(s)`,
+        message: say('chk.non-text-contrast.ok', { checked: nonTextContrast.checkedIndicators }),
         chapter: chapterId,
       });
     }
   } else {
     results.push({
       id: 'contrast-checks-disabled',
-      rule: 'Contrast checks execution',
+      rule: say('chk.contrast-checks-disabled.rule'),
       status: 'info',
-      message: 'Skipped text and non-text contrast checks because ENABLE_CONTRAST_CHECKS=false',
+      message: say('chk.contrast-checks-disabled.skipped'),
       chapter: chapterId,
     });
   }
@@ -330,9 +335,9 @@ export async function runVisualChecks(page, options = {}) {
   if (linkStyleChecks.colorOnlyCount > 0) {
     results.push({
       id: 'link-differentiation',
-      rule: 'Links MUST not rely on color alone; provide underline/outline on hover/focus',
+      rule: say('chk.link-differentiation.rule'),
       status: 'warn',
-      message: `${linkStyleChecks.colorOnlyCount} link(s) may rely on color only (no underline/border)`,
+      message: say('chk.link-differentiation.colorOnly', { n: linkStyleChecks.colorOnlyCount }),
       chapter: chapterId,
     });
   }
@@ -360,9 +365,9 @@ export async function runVisualChecks(page, options = {}) {
   // This is a rough check - axe handles focus contrast better
   results.push({
     id: 'focus-indicator',
-    rule: 'Focusable elements MUST have visible focus indicator (axe covers contrast)',
+    rule: say('chk.focus-indicator.rule'),
     status: 'info',
-    message: `${focusChecks.total} focusable elements - verify focus styles in axe results`,
+    message: say('chk.focus-indicator.verify', { n: focusChecks.total }),
     chapter: chapterId,
   });
 

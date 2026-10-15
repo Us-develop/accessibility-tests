@@ -4,6 +4,7 @@
 import { getRemediation } from '../remediation-data.js';
 import { scoreFromResult } from './audit-list.js';
 import { axeRuleSeverity, customRuleSeverity, PAGE_LOAD_CHECK_ID } from '../scoring.js';
+import { findingsLangs } from '../findings-lang.js';
 
 const SEVERITY_RANK = { critical: 4, serious: 3, moderate: 2, minor: 1 };
 
@@ -13,13 +14,15 @@ const SEVERITY_RANK = { critical: 4, serious: 3, moderate: 2, minor: 1 };
  * what matters most.
  */
 function uniqueTopIssues(reportData, limit = 3) {
-  /** @type {Map<string, { title: string, wcag: string[], impact: string, rank: number }>} */
+  /** @type {Map<string, { title: string, lang: string, wcag: string[], impact: string, rank: number }>} */
   const byId = new Map();
+  const langs = findingsLangs(reportData);
 
-  function add(key, title, wcag, severity, isFailure) {
+  function add(key, title, lang, wcag, severity, isFailure) {
     if (!key || byId.has(key)) return;
     byId.set(key, {
       title: String(title || key).slice(0, 200),
+      lang,
       wcag: Array.isArray(wcag) ? wcag.map(String).slice(0, 6) : [],
       impact: severity,
       rank: (isFailure ? 10 : 0) + (SEVERITY_RANK[severity] || 0),
@@ -29,20 +32,20 @@ function uniqueTopIssues(reportData, limit = 3) {
   for (const data of Object.values(reportData?.axeResults || {})) {
     for (const violation of data?.violations || []) {
       const rem = getRemediation(null, violation.id);
-      add(`axe:${violation.id}`, violation.help || violation.id, rem?.wcag, axeRuleSeverity(violation.id), true);
+      add(`axe:${violation.id}`, violation.help || violation.id, langs.axe, rem?.wcag, axeRuleSeverity(violation.id), true);
     }
   }
   for (const row of reportData?.customResults || []) {
     if (row.status !== 'fail' && row.status !== 'warn') continue;
     if (row.id === PAGE_LOAD_CHECK_ID) continue;
     const rem = getRemediation(row.id, null);
-    add(`custom:${row.id}`, row.rule || row.id, rem?.wcag, customRuleSeverity(row.id), row.status === 'fail');
+    add(`custom:${row.id}`, row.rule || row.id, langs.custom, rem?.wcag, customRuleSeverity(row.id), row.status === 'fail');
   }
 
   return [...byId.values()]
     .sort((a, b) => b.rank - a.rank)
     .slice(0, limit)
-    .map(({ title, wcag, impact }) => ({ title, wcag, impact }));
+    .map(({ title, lang, wcag, impact }) => ({ title, lang, wcag, impact }));
 }
 
 const LOCKED_LABEL = 'In the full report';

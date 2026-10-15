@@ -3,6 +3,8 @@
  * Kept separate from generate-report.js so the Astro SSR bundle does not load generate-deliverables.
  */
 import { reviewItems, reviewKey, ruleGains, ruleKey } from './scoring.js';
+import { normalizeLang, t } from './i18n/index.mjs';
+import { findingsLangs } from './findings-lang.js';
 import {
   getRemediation,
   fixOrderScore,
@@ -127,6 +129,10 @@ export function buildAstroMainReportPayload(reportData, { lang = 'en' } = {}) {
     throw new Error('buildAstroMainReportPayload: reportData is required');
   }
 
+  // Findings are written in the language the scan ran in (older reports: English).
+  const findingsLang = normalizeLang(reportData.lang) || 'en';
+  // Our checks and axe can differ until axe runs in every language (findings-lang.js).
+  const textLangs = findingsLangs(reportData);
   const occIndex = buildOccurrenceIndex(reportData);
   // Overall points gained by fixing a rule on every page where it fails.
   const gains = ruleGains(reportData);
@@ -156,7 +162,7 @@ export function buildAstroMainReportPayload(reportData, { lang = 'en' } = {}) {
   const fixOrderItems = [];
   (reportData.customResults || []).forEach((r) => {
     if (r.status === 'fail' || r.status === 'warn') {
-      const rem = getRemediation(r.id, null);
+      const rem = getRemediation(r.id, null, findingsLang);
       const duplicateIds = idsFromCustomResult(r);
       const snippet = duplicateIdSnippet(duplicateIds, rem.snippet);
       fixOrderItems.push(makeFixItem({
@@ -165,6 +171,7 @@ export function buildAstroMainReportPayload(reportData, { lang = 'en' } = {}) {
         id: r.id,
         url: r.url,
         status: r.status,
+        textLang: textLangs.custom,
         ...rem,
         snippet,
         message: r.message || '',
@@ -176,7 +183,7 @@ export function buildAstroMainReportPayload(reportData, { lang = 'en' } = {}) {
   });
   Object.entries(reportData.axeResults || {}).forEach(([url, data]) => {
     (data.violations || []).forEach((v) => {
-      const rem = getRemediation(null, v.id);
+      const rem = getRemediation(null, v.id, findingsLang);
       const duplicateIds = idsFromAxeViolation(v);
       const snippet = duplicateIdSnippet(duplicateIds, rem.snippet);
       fixOrderItems.push(makeFixItem({
@@ -185,6 +192,7 @@ export function buildAstroMainReportPayload(reportData, { lang = 'en' } = {}) {
         id: v.id,
         url,
         status: 'violation',
+        textLang: textLangs.axe,
         ...rem,
         snippet,
         message: v.help || '',
@@ -304,6 +312,7 @@ export function buildAstroMainReportPayload(reportData, { lang = 'en' } = {}) {
       id: r.id,
       rule: r.rule || r.id,
       type: 'custom',
+      textLang: textLangs.custom,
       severity: severityFromStatus(r.status),
       occurrences: 0,
       pages: new Set(),
@@ -323,6 +332,7 @@ export function buildAstroMainReportPayload(reportData, { lang = 'en' } = {}) {
         id: v.id,
         rule: v.help || v.id,
         type: 'axe',
+        textLang: textLangs.axe,
         severity: 'error',
         occurrences: 0,
         pages: new Set(),
@@ -339,7 +349,8 @@ export function buildAstroMainReportPayload(reportData, { lang = 'en' } = {}) {
       const key = `axe-incomplete:${v.id}`;
       const bucket = ruleBuckets.get(key) || {
         id: v.id,
-        rule: `${v.help || v.id} (needs review)`,
+        rule: `${v.help || v.id}${t(textLangs.axe, 'chk.needs-review.suffix')}`,
+        textLang: textLangs.axe,
         type: 'axe-incomplete',
         severity: 'notice',
         occurrences: 0,
@@ -364,6 +375,7 @@ export function buildAstroMainReportPayload(reportData, { lang = 'en' } = {}) {
     scoreClamp,
     scoreBreakdown,
     scoreAvailable: score != null,
+    findingsLang,
     // Inputs of the three-part score (score-model.js). The dashboard combines
     // them with the reviewed and manual ticks it holds.
     scoreModel: {

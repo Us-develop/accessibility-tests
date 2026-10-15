@@ -20,8 +20,11 @@ const docLang = normalizeLang(Astro.url.searchParams.get('doc')) || 'nl';
 const doc = translator(docLang);
 // The statement sits in a page of another language: say so.
 const docLangAttr = docLang === tr.lang ? undefined : docLang;
-// Rule names in the findings list come from the scan, in English for now.
-const findingsAttr = docLang === 'en' ? undefined : 'en';
+// Rule names in the findings list are in the language the scan ran in.
+const findingAttr = (textLang: string | undefined) => {
+  const of = textLang || 'en';
+  return of === docLang ? undefined : of;
+};
 
 const rawDomain = Astro.params.domain ?? '';
 const rawRunId = Astro.params.runId ?? '';
@@ -164,9 +167,9 @@ const docLangs = [
               ) : (
                 <Fragment>
                   <p style="margin-bottom: 12px;">{doc('stmt.findingsIntro')}</p>
-                  <ol style="padding-left: 22px; display: flex; flex-direction: column; gap: 8px;" lang={findingsAttr}>
+                  <ol style="padding-left: 22px; display: flex; flex-direction: column; gap: 8px;">
                     {errorIssues.slice(0, 12).map((i) => (
-                      <li style="font-size: 14px;">
+                      <li style="font-size: 14px;" lang={findingAttr(i.textLang)}>
                         <strong>{i.rule || i.id}</strong>
                         {i.duplicateIdLabel ? ` — ${i.duplicateIdLabel}` : ''}
                         {i.wcag ? <Fragment> <span class="muted">(WCAG {i.wcag})</span></Fragment> : null}

@@ -1,7 +1,12 @@
 /**
  * WCAG Success Criteria mapping, remediation snippets, impact & effort.
  * Used by generate-report.js for developer-friendly fix guidance.
+ *
+ * Snippets are written here in English. Other languages live in
+ * i18n/checks.*.mjs under `fix.<check id>`, `fix.axe.<axe rule id>` and
+ * `fix.default`; getRemediation(…, lang) returns the snippet in that language.
  */
+import { t } from './i18n/index.mjs';
 
 const W3C_BASE = 'https://www.w3.org/WAI/WCAG22/Understanding/';
 
@@ -329,13 +334,35 @@ export const AXE_REMEDIATION = {
 export const IMPACT_ORDER = { high: 0, medium: 1, low: 2 };
 export const EFFORT_ORDER = { simple: 0, moderate: 1, complex: 2 };
 
-export function getRemediation(checkId, axeRuleId) {
-  return REMEDIATION_MAP[checkId] || AXE_REMEDIATION[axeRuleId] || {
-    wcag: [],
-    snippet: 'Review the issue and apply appropriate fix. See W3C WCAG guidelines.',
-    impact: 'medium',
-    effort: 'moderate',
-  };
+const DEFAULT_REMEDIATION = Object.freeze({
+  wcag: [],
+  snippet: 'Review the issue and apply appropriate fix. See W3C WCAG guidelines.',
+  impact: 'medium',
+  effort: 'moderate',
+});
+
+/** Dictionary key of the snippet for a check or axe rule (see the top of this file). */
+function fixKey(checkId, axeRuleId) {
+  if (REMEDIATION_MAP[checkId]) return `fix.${checkId}`;
+  const axe = AXE_REMEDIATION[axeRuleId];
+  if (axe) {
+    const shared = Object.entries(REMEDIATION_MAP).find(([, rem]) => rem === axe);
+    return shared ? `fix.${shared[0]}` : `fix.axe.${axeRuleId}`;
+  }
+  return 'fix.default';
+}
+
+/**
+ * @param {string | null} checkId our own check id
+ * @param {string | null} axeRuleId axe rule id
+ * @param {string} [lang] language of the report the fix is shown in
+ */
+export function getRemediation(checkId, axeRuleId, lang = 'en') {
+  const rem = REMEDIATION_MAP[checkId] || AXE_REMEDIATION[axeRuleId] || DEFAULT_REMEDIATION;
+  if (lang === 'en') return rem;
+  const key = fixKey(checkId, axeRuleId);
+  const snippet = t(lang, key);
+  return snippet === key ? rem : { ...rem, snippet };
 }
 
 export function fixOrderScore(item) {

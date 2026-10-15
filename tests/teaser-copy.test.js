@@ -75,17 +75,18 @@ describe('teaser, loading, and catalog CTAs', () => {
     assert.match(t('nl', 'dash.info.manual', { n: 23 }), /^23 controles die alleen een mens kan doen/);
   });
 
-  it('shows the report and the snapshot in the page language, with findings marked as English', () => {
+  it('shows the report and the snapshot in the page language, with findings in the scan language', () => {
     const report = readFileSync(join(repoRoot, 'web/src/pages/report/[domain]/[runId]/index.astro'), 'utf8');
     assert.match(report, /const tr = usePageLang\(Astro\);/);
     assert.match(report, /lang: tr\.lang,/);
-    assert.match(report, /findingsLang: 'en'/);
+    assert.match(report, /findingsLang: payload\.findingsLang/);
     assert.match(teaser, /const tr = usePageLang\(Astro\);/);
     assert.match(teaser, /lang: tr\.lang,/);
     // Rule names and messages carry the language they were written in.
-    assert.match(dashboard, /const findingsAttr = \$derived\(findingsLang && findingsLang !== lang \? findingsLang : undefined\);/);
-    assert.match(dashboard, /lang=\{findingsAttr\}>\{item\.rule\}/);
-    assert.match(dashboard, /id="issue-drawer-title" style="font-size: 28px; margin-bottom: 14px;" lang=\{findingsAttr\}>\{selected\.rule\}/);
+    // Each finding text carries its own language (our checks and axe can differ).
+    assert.match(dashboard, /const textAttr = \(textLang\) => \{/);
+    assert.match(dashboard, /lang=\{textAttr\(item\.textLang\)\}>\{item\.rule\}/);
+    assert.match(dashboard, /id="issue-drawer-title" style="font-size: 28px; margin-bottom: 14px;" lang=\{textAttr\(selected\.textLang\)\}>\{selected\.rule\}/);
   });
 
   it('uses public catalog copy on home, pricing, account, and the footer', () => {
