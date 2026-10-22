@@ -46,6 +46,8 @@ import {
   pendingNextFromCookieHeader,
   pendingNextSetCookie,
 } from './login-redirect.mjs';
+import { requestLang } from './server-messages.mjs';
+import { defaultLang } from '../i18n/index.mjs';
 
 function publicBase() {
   return publicBaseUrl();
@@ -249,6 +251,7 @@ export function registerAccountRoutes(app, ctx) {
         company: req.body?.company,
         vatNumber: req.body?.vatNumber || req.body?.vat_number,
         customerType: buyingForBusiness ? 'business' : 'consumer',
+        lang: requestLang(req) || defaultLang(),
       });
       const consentMeta = {
         userId: user.id,

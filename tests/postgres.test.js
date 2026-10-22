@@ -60,6 +60,18 @@ describe('postgres-backed paths', { skip: !haveDb }, () => {
     assert.equal((await dbGetUserById(id))?.lastName, 'Peeters');
   });
 
+  it('stores the language for mails on a user, and nothing it does not know', async () => {
+    await initDb();
+    const id = `lang-${Date.now()}`;
+    await dbUpsertUser({ id, email: `${id}@example.com`, passwordHash: 'x' });
+    const saved = await dbGetUserById(id);
+    assert.equal(saved?.lang, null);
+    await dbUpsertUser({ ...saved, lang: 'en' });
+    assert.equal((await dbGetUserById(id))?.lang, 'en');
+    await dbUpsertUser({ ...saved, lang: 'fr' });
+    assert.equal((await dbGetUserById(id))?.lang, null);
+  });
+
   it('claims a stripe event only once', async () => {
     await initDb();
     const id = `evt_test_${Date.now()}`;
