@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const LEGAL_TERMS_VERSION = '2026-09-14';
-export const LEGAL_PRIVACY_VERSION = '2026-09-14';
+export const LEGAL_PRIVACY_VERSION = '2026-10-22';
 
 export const WITHDRAWAL_WAIVER_TEXT =
   'I request immediate delivery of the digital service and acknowledge that I lose my 14-day right of withdrawal once delivery starts.';

@@ -50,16 +50,18 @@ const contactEmail = company.email || 'the contact address below';
             We use hosting and processors listed at <a class="link" href="/legal/subprocessors">/legal/subprocessors</a>:
             OVH (VPS), the Postgres host, an SMTP provider for transactional mail, Stripe for payments and tax,
             Cloudflare Turnstile when captcha is enabled, Anthropic for optional WCAG write-ups, and Atlassian when you connect Jira.
-            Typefaces are self-hosted; we do not send font requests to a third-party font CDN.
+            Our Owners typeface is served by Adobe Fonts: your browser loads it from Adobe, which receives your IP address
+            and the address of the page. Adobe Fonts sets no cookies. Our other typefaces are self-hosted.
           </p>
 
           <h2>Transfers outside the EU</h2>
           <p>
-            Some processors (including Stripe, Anthropic, Atlassian, and Cloudflare) may process data in the United States
+            Some processors (including Stripe, Anthropic, Atlassian, Cloudflare, and Adobe) may process data in the United States
             or other third countries. Where that happens we rely on an adequacy decision or Standard Contractual Clauses
             plus the processor’s documented safeguards.
           </p>
           <!-- COUNSEL: confirm SCCs / Data Privacy Framework coverage per processor before go-live. -->
+          <!-- COUNSEL: Adobe Fonts loads before any consent (legitimate interest in a consistent brand typeface). Confirm, given LG München 3 O 17493/20 on Google Fonts. -->
 
           <h2>Your rights</h2>
           <p>

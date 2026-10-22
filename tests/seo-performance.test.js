@@ -168,10 +168,15 @@ describe('page SEO markup', () => {
   });
 });
 
-describe('self-hosted fonts', () => {
-  it('does not request Typekit or Google Fonts from shipped sources', () => {
+describe('fonts', () => {
+  it('loads Owners only from the Us Adobe Fonts kit, in the layout', () => {
+    const layout = readFileSync(join(repoRoot, 'web/src/layouts/Layout.astro'), 'utf8');
+    assert.equal(layout.match(/https:\/\/use\.typekit\.net\/[\w.]+/g)?.filter((u) => u.endsWith('.css')).join(), 'https://use.typekit.net/pzn5zis.css');
+    assert.doesNotMatch(layout, /fonts\.googleapis\.com|fonts\.gstatic\.com/);
+  });
+
+  it('does not request font CDNs from the other shipped sources', () => {
     const sources = [
-      join(repoRoot, 'web/src/layouts/Layout.astro'),
       join(repoRoot, 'web/public/styles/tokens.css'),
       join(repoRoot, 'server/create-app.mjs'),
       join(repoRoot, 'report-brand.js'),
@@ -183,14 +188,15 @@ describe('self-hosted fonts', () => {
     }
   });
 
-  it('fails if the built web/dist still references font CDNs', () => {
+  it('fails if the built web/dist references a font CDN other than the Adobe kit', () => {
     const dist = join(repoRoot, 'web/dist');
     assert.equal(existsSync(dist), true, 'web/dist is missing — run npm run build --prefix web');
     const hits = [];
     for (const file of walkFiles(dist)) {
       if (!TEXT_EXTS.has(extname(file).toLowerCase())) continue;
       const text = readFileSync(file, 'utf8');
-      if (FONT_CDN_RE.test(text)) hits.push(file.replace(repoRoot + '/', ''));
+      const other = text.replace(/https:\/\/use\.typekit\.net\/pzn5zis\.css|https:\/\/use\.typekit\.net(?=["'\s])|https:\/\/p\.typekit\.net(?=["'\s])/g, '');
+      if (FONT_CDN_RE.test(other)) hits.push(file.replace(repoRoot + '/', ''));
     }
     assert.deepEqual(hits, []);
   });
