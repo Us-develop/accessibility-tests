@@ -1007,12 +1007,6 @@ button.linklike {
   padding: 0;
   list-style: none;
 }
-.pricing-sub {
-  font-family: var(--font-body);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 28px;
-}
 .pricing-checks {
   display: grid;
   gap: 4px;
