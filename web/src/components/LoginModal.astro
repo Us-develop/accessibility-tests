@@ -133,50 +133,6 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
             <a class="wcag-login-linklike" href="/contact?source=login">{tr('cta.expert')}</a>
           </p>
         </div>
-        <div class="wcag-login-face wcag-login-face--back" inert>
-          <h2 id="wcag-request-title" class="wcag-login-title">{tr('login.request.title')}</h2>
-          <p class="wcag-access-lead">{tr('login.request.lead')}</p>
-          <p id="wcag-access-err" class="wcag-login-err" role="alert" hidden></p>
-          <p id="wcag-access-ok" class="wcag-access-ok" role="status" hidden></p>
-          <form id="wcag-access-form" class="wcag-access-form" method="post" action="/api/access-request" data-astro-reload>
-            <label class="wcag-login-label" for="wcag-access-name">{tr('lead.name')}</label>
-            <input
-              class="wcag-login-input"
-              id="wcag-access-name"
-              name="name"
-              type="text"
-              autocomplete="name"
-              required
-            />
-            <label class="wcag-login-label" for="wcag-access-company">{tr('lead.company')}</label>
-            <input
-              class="wcag-login-input"
-              id="wcag-access-company"
-              name="company"
-              type="text"
-              autocomplete="organization"
-            />
-            <label class="wcag-login-label" for="wcag-access-email">{tr('lead.email')}</label>
-            <input
-              class="wcag-login-input"
-              id="wcag-access-email"
-              name="email"
-              type="email"
-              autocomplete="email"
-              required
-            />
-            <label class="wcag-login-label" for="wcag-access-message">{tr('lead.message')}</label>
-            <textarea
-              class="wcag-login-textarea"
-              id="wcag-access-message"
-              name="message"
-              rows="4"
-              maxlength="4000"
-            ></textarea>
-            <button type="submit" class="wcag-login-submit wcag-access-submit">{tr('login.request.submit')}</button>
-          </form>
-          <button type="button" class="wcag-login-back" id="wcag-flip-to-login">{tr('login.request.back')}</button>
-        </div>
       </div>
     </div>
   </div>
@@ -233,15 +189,6 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     return overlay?.getAttribute('data-start-locked') === 'false';
   }
 
-  function syncFlipInert() {
-    const inner = qs('wcag-login-flip-inner');
-    const front = inner?.querySelector('.wcag-login-face--front');
-    const back = inner?.querySelector('.wcag-login-face--back');
-    const flipped = inner?.classList.contains('is-flipped');
-    if (front instanceof HTMLElement) front.toggleAttribute('inert', !!flipped);
-    if (back instanceof HTMLElement) back.toggleAttribute('inert', !flipped);
-  }
-
   function lockAppShell() {
     const main = getMain();
     const bar = getBar();
@@ -273,22 +220,8 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     overlay.hidden = false;
     overlay.removeAttribute('hidden');
     overlay.setAttribute('aria-hidden', 'false');
-    const flip = qs('wcag-login-flip-inner');
-    if (flip) flip.classList.remove('is-flipped');
-    syncFlipInert();
     const dialogEl = qs('wcag-login-dialog');
     if (dialogEl) dialogEl.setAttribute('aria-labelledby', 'wcag-login-title');
-    qs('wcag-access-form')?.reset();
-    const accErr = qs('wcag-access-err');
-    const accOk = qs('wcag-access-ok');
-    if (accErr) {
-      accErr.hidden = true;
-      accErr.textContent = '';
-    }
-    if (accOk) {
-      accOk.hidden = true;
-      accOk.textContent = '';
-    }
     const err = qs('wcag-login-err');
     if (err && !err.textContent) {
       err.hidden = true;
@@ -542,56 +475,6 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     }
   }
 
-  async function submitAccessForm(form) {
-    const errEl = qs('wcag-access-err');
-    const okEl = qs('wcag-access-ok');
-    if (errEl) {
-      errEl.hidden = true;
-      errEl.textContent = '';
-    }
-    if (okEl) {
-      okEl.hidden = true;
-      okEl.textContent = '';
-    }
-    const fd = new FormData(form);
-    const body = {
-      name: String(fd.get('name') ?? '').trim(),
-      company: String(fd.get('company') ?? '').trim(),
-      email: String(fd.get('email') ?? '').trim(),
-      message: String(fd.get('message') ?? '').trim(),
-    };
-    try {
-      const url =
-        typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl('/api/access-request') : '/api/access-request';
-      const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        credentials: creds,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (errEl) {
-          if (data.error) showServerText(errEl, data);
-          else showOwnText(errEl, 'login.request.error');
-          errEl.hidden = false;
-        }
-        return;
-      }
-      if (okEl) {
-        okEl.textContent = tx(data.emailed ? 'login.request.okEmailed' : 'login.request.ok');
-        okEl.hidden = false;
-      }
-      form.reset();
-    } catch {
-      if (errEl) {
-        showOwnText(errEl, 'login.request.network');
-        errEl.hidden = false;
-      }
-    }
-  }
-
   async function logoutCurrentSession() {
     try {
       const url = typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl('/api/auth/logout') : '/api/auth/logout';
@@ -647,32 +530,12 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
         event.preventDefault();
         event.stopPropagation();
         submitLoginForm(form);
-        return;
-      }
-      if (form.id === 'wcag-access-form') {
-        event.preventDefault();
-        event.stopPropagation();
-        submitAccessForm(form);
       }
     }, true);
 
     document.addEventListener('click', (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      if (target.closest('#wcag-flip-to-request')) {
-        qs('wcag-login-flip-inner')?.classList.add('is-flipped');
-        syncFlipInert();
-        qs('wcag-login-dialog')?.setAttribute('aria-labelledby', 'wcag-request-title');
-        qs('wcag-access-name')?.focus();
-        return;
-      }
-      if (target.closest('#wcag-flip-to-login')) {
-        qs('wcag-login-flip-inner')?.classList.remove('is-flipped');
-        syncFlipInert();
-        qs('wcag-login-dialog')?.setAttribute('aria-labelledby', 'wcag-login-title');
-        qs('wcag-flip-to-request')?.focus();
-        return;
-      }
       if (target.closest('#wcag-login-close')) {
         closeModal();
         return;
@@ -897,10 +760,6 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     transition: transform 0.65s cubic-bezier(0.4, 0.55, 0.2, 1);
   }
 
-  .wcag-login-flip-inner.is-flipped {
-    transform: rotateY(180deg);
-  }
-
   @media (prefers-reduced-motion: reduce) {
     .wcag-login-flip-inner {
       transition-duration: 0.01ms;
@@ -929,15 +788,6 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
   /* Slight Z separation avoids backface glitches and mirrored text in some browsers (WebKit + backdrop-filter). */
   .wcag-login-face--front {
     transform: rotateY(0deg) translateZ(3px);
-    overflow-x: hidden;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .wcag-login-face--back {
-    transform: rotateY(180deg) translateZ(3px);
-    justify-content: flex-start;
-    gap: 0;
     overflow-x: hidden;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
@@ -998,26 +848,6 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     border-color: transparent;
   }
 
-  .wcag-login-textarea {
-    width: 100%;
-    min-height: 100px;
-    padding: 12px 14px;
-    border: 1px solid rgba(25, 25, 27, 0.12);
-    border-radius: 12px;
-    font-size: 1rem;
-    font-family: inherit;
-    background: rgba(255, 255, 255, 0.55);
-    color: var(--fg-1, #19191b);
-    box-sizing: border-box;
-    resize: vertical;
-  }
-
-  .wcag-login-textarea:focus {
-    outline: 2px solid var(--focus-ring, #6257e8);
-    outline-offset: 2px;
-    border-color: transparent;
-  }
-
   .wcag-login-submit {
     margin-top: 22px;
     width: 100%;
@@ -1072,64 +902,6 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
     border-radius: 4px;
   }
 
-  .wcag-access-submit {
-    margin-top: 16px;
-  }
-
-  .wcag-access-lead {
-    margin: 0 0 clamp(10px, 2.5vw, 14px);
-    font-size: clamp(0.88rem, 0.35vw + 0.82rem, 0.95rem);
-    color: var(--fg-2, #2e2e2e);
-    line-height: 1.45;
-  }
-
-  .wcag-access-form {
-    display: flex;
-    flex-direction: column;
-    flex: 0 0 auto;
-    gap: 0;
-    width: 100%;
-  }
-
-  .wcag-access-form .wcag-login-label {
-    margin-top: 10px;
-  }
-
-  .wcag-access-form .wcag-login-label:first-of-type {
-    margin-top: 0;
-  }
-
-  .wcag-access-ok {
-    margin: 0 0 12px;
-    padding: 10px 12px;
-    border-radius: 10px;
-    background: rgba(61, 154, 110, 0.12);
-    color: #1e6b45;
-    font-size: 0.9rem;
-  }
-
-  .wcag-login-back {
-    flex-shrink: 0;
-    margin-top: 20px;
-    width: 100%;
-    padding: 12px 16px;
-    border-radius: 12px;
-    border: 1px solid rgba(25, 25, 27, 0.2);
-    font-family: var(--font-button, 'owners', 'Archivo', system-ui, sans-serif);
-    cursor: pointer;
-    background: rgba(255, 255, 255, 0.4);
-    color: var(--fg-1, #19191b);
-  }
-
-  .wcag-login-back:hover {
-    background: rgba(255, 255, 255, 0.55);
-  }
-
-  .wcag-login-back:focus-visible {
-    outline: 2px solid var(--focus-ring, #6257e8);
-    outline-offset: 2px;
-  }
-
   @media (max-width: 520px) {
     .wcag-login-tiles-canvas {
       transform: rotate(-4.5deg) scale(1.42);
@@ -1149,10 +921,6 @@ const LOGIN_TILE_COLUMNS = Array.from({ length: LOGIN_TILE_COL_COUNT }, (_, col)
   @media (max-width: 380px) {
     .wcag-login-tiles-canvas {
       transform: rotate(-4.25deg) scale(1.28);
-    }
-
-    .wcag-login-textarea {
-      min-height: 88px;
     }
   }
 

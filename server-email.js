@@ -80,43 +80,6 @@ export async function sendRunNotificationEmail(opts) {
 }
 
 /**
- * @param {{ name: string; company: string; email: string; message: string }} payload
- * @returns {Promise<{ emailed: boolean }>}
- */
-export async function sendAccessRequestEmail(payload) {
-  const name = String(payload?.name || '').trim();
-  const company = String(payload?.company || '').trim();
-  const email = String(payload?.email || '').trim();
-  const message = String(payload?.message || '').trim();
-  const transport = createSmtpTransport();
-  const to = String(process.env.ACCESS_REQUEST_TO || 'info@about-us.be').trim();
-  const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@localhost';
-  const subject = 'Access request — accessibility tool (Us)';
-  const text = [`Name: ${name}`, `Company: ${company || '—'}`, `Email: ${email}`, '', 'Message:', message || '—', ''].join('\n');
-  const html = `<p><strong>Name:</strong> ${escapeHtml(name)}</p>
-<p><strong>Company:</strong> ${escapeHtml(company || '—')}</p>
-<p><strong>Email:</strong> ${escapeHtml(email)}</p>
-<p><strong>Message:</strong></p><p>${escapeHtml(message || '—').replace(/\n/g, '<br/>')}</p>`;
-  const messageId = newMessageId();
-
-  if (!transport) {
-    logSkippedMail({ kind: 'access-request', to, messageId });
-    return { emailed: false, messageId };
-  }
-
-  await transport.sendMail({
-    from,
-    to,
-    subject,
-    text,
-    html,
-    replyTo: email,
-    messageId,
-  });
-  return { emailed: true, messageId };
-}
-
-/**
  * @param {{ name: string; company?: string; email: string; phone?: string; message?: string; scannedUrl?: string; domain?: string; score?: number | null }} payload
  * @returns {Promise<{ emailed: boolean }>}
  */
