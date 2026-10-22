@@ -32,3 +32,18 @@ export function formatVatInclusivePrice(inclVatCents, rate = vatRateDisplay()) {
   const excl = formatEuroFromCents(centsExVat(inclVatCents, rate));
   return `${incl} incl. VAT (${excl} excl.)`;
 }
+
+/** The VAT-inclusive price and the amount without VAT, each formatted, for a price line and its "incl. VAT (… excl.)" note. */
+export function vatParts(inclVatCents, rate = vatRateDisplay()) {
+  return {
+    incl: formatEuroFromCents(inclVatCents),
+    excl: formatEuroFromCents(centsExVat(inclVatCents, rate)),
+  };
+}
+
+/** Whole-percent saving of a token pack against buying the same tokens at the single-token price; 0 when there is none. */
+export function packDiscountPercent(pack, unitCents) {
+  const full = Number(pack?.tokens || 0) * Number(unitCents || 0);
+  if (!full) return 0;
+  return Math.max(0, Math.round((1 - Number(pack.priceCents || 0) / full) * 100));
+}

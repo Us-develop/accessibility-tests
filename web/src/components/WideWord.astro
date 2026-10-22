@@ -1,0 +1,15 @@
+---
+/**
+ * A heading text with one word set in the wide display face, as in the designs
+ * ("Run a free ACCESSIBILITY check…"). Plain text when the word is not in it.
+ */
+interface Props {
+  text: string;
+  word?: string;
+}
+const { text, word = '' } = Astro.props;
+const at = word ? text.toLocaleLowerCase().indexOf(word.toLocaleLowerCase()) : -1;
+---
+{at < 0 ? text : (
+  <Fragment>{text.slice(0, at)}<span class="wide">{text.slice(at, at + word.length)}</span>{text.slice(at + word.length)}</Fragment>
+)}

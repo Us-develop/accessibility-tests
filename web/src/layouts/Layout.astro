@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ClientRouter } from 'astro:transitions';
 import LoginModal from '../components/LoginModal.astro';
-import { companyIdentity } from '../../../server/company.mjs';
+import { companyIdentity, kboLookupUrl } from '../../../server/company.mjs';
 import { chromeTranslator } from '../lib/page-lang.js';
 
 interface Props {
@@ -26,6 +26,8 @@ const {
   authMode = 'required',
 } = Astro.props;
 const company = companyIdentity();
+const kboHref = kboLookupUrl(company.kbo);
+const year = new Date().getFullYear();
 const publicAppBase = import.meta.env.PUBLIC_APP_BASE?.trim() ?? '';
 const devApiBase =
   import.meta.env.DEV && (import.meta.env.PUBLIC_DEV_API_URL?.trim() ?? '')
@@ -173,30 +175,53 @@ function ownerWeight(filename: string): string {
       <slot />
     </div>
     <LoginModal startLocked={gateLocked} />
-    <footer class="site-legal">
-      <nav class="site-legal-links" aria-label={tr('footer.aria')}>
-        <a href="/pricing">{tr('footer.pricing')}</a>
-        <a href="/terms">{tr('footer.terms')}</a>
-        <a href="/privacy">{tr('footer.privacy')}</a>
-        <a href="/cookies">{tr('footer.cookies')}</a>
-        <a href="/legal/subprocessors">{tr('footer.subprocessors')}</a>
-        <a href="/accessibility">{tr('footer.accessibility')}</a>
-        <a href="/contact?source=footer">{tr('cta.expert')}</a>
-      </nav>
-      {company.legalName ? (
-        <p class="site-legal-identity">
-          {company.legalName}
-          {company.vat ? ` · ${tr('footer.vat')} ${company.vat}` : ''}
-          {company.kbo ? ` · KBO ${company.kbo}` : ''}
-          {company.address ? ` · ${company.address}` : ''}
-          {company.email ? (
-            <>
-              {' · '}
-              <a href={`mailto:${company.email}`}>{company.email}</a>
-            </>
+    <footer class="site-footer">
+      <div class="site-footer-inner">
+        <div class="site-footer-top">
+          {company.legalName ? (
+            <div class="site-footer-col">
+              <p class="site-footer-name">{company.legalName}</p>
+              {company.vat ? <p>{tr('footer.vat')} {company.vat}</p> : null}
+              {company.kbo ? (
+                <p>{kboHref ? <a href={kboHref} rel="noopener noreferrer">KBO {company.kbo}</a> : `KBO ${company.kbo}`}</p>
+              ) : null}
+            </div>
           ) : null}
-        </p>
-      ) : null}
+          <div class="site-footer-col">
+            {company.address ? <p>{company.address}</p> : null}
+            {company.email ? <p><a href={`mailto:${company.email}`}>{company.email}</a></p> : null}
+            {company.phone ? <p><a href={`tel:${company.phone.replace(/[^\d+]/g, '').replace(/^\+(\d{2})0/, '+$1')}`}>{company.phone}</a></p> : null}
+          </div>
+          <div class="site-footer-cta">
+            {company.website ? (
+              <a class="btn btn-lavender" href={company.website} rel="noopener">
+                {tr('footer.discover')}
+                <img src="/assets/icons/arrow-circle-right.svg" width="20" height="20" alt="" />
+              </a>
+            ) : null}
+          </div>
+        </div>
+        {company.linkedin ? (
+          <a class="site-footer-social" href={company.linkedin} rel="noopener noreferrer">
+            <img src="/assets/icons/linkedin.svg" width="40" height="40" alt="LinkedIn" />
+          </a>
+        ) : null}
+        <div class="site-footer-bottom">
+          <p>{tr('footer.copyright', { year, name: company.legalName || 'Us' })}</p>
+          <nav class="site-legal-links" aria-label={tr('footer.aria')}>
+            <ul>
+              <li><a href="/terms">{tr('footer.terms')}</a></li>
+              <li><a href="/privacy">{tr('footer.privacy')}</a></li>
+              <li><a href="/cookies">{tr('footer.cookies')}</a></li>
+              <li class="site-footer-group"><a href="/legal/subprocessors">{tr('footer.subprocessors')}</a></li>
+              <li><a href="/accessibility">{tr('footer.accessibility')}</a></li>
+              <li class="site-footer-group"><a href="/pricing">{tr('footer.pricing')}</a></li>
+              <li><a href="/contact?source=footer">{tr('cta.expert')}</a></li>
+            </ul>
+          </nav>
+        </div>
+      </div>
+      <img class="site-footer-logo" src="/assets/icons/logo-us-footer.svg" width="348" height="170" alt="" loading="lazy" />
     </footer>
     <script is:inline>
       (function () {
@@ -248,6 +273,7 @@ function ownerWeight(filename: string): string {
       }
       @media print {
         .app-header,
+        .site-footer,
         .wcag-session-bar,
         .wcag-staff-banner,
         .wcag-login-overlay {

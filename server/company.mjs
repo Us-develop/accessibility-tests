@@ -6,12 +6,27 @@ const COMPANY_FIELDS = [
   ['email', 'COMPANY_EMAIL'],
 ];
 
+/** Shown in the site footer when set; not required. */
+const COMPANY_OPTIONAL_FIELDS = [
+  ['phone', 'COMPANY_PHONE'],
+  ['website', 'COMPANY_WEBSITE'],
+  ['linkedin', 'COMPANY_LINKEDIN_URL'],
+];
+
 export function companyIdentity() {
   const out = {};
-  for (const [key, envName] of COMPANY_FIELDS) {
+  for (const [key, envName] of [...COMPANY_FIELDS, ...COMPANY_OPTIONAL_FIELDS]) {
     out[key] = String(process.env[envName] || '').trim();
   }
   return out;
+}
+
+/** The KBO public search page for the company number, or '' without one. */
+export function kboLookupUrl(kbo) {
+  const digits = String(kbo || '').replace(/\D/g, '');
+  return digits.length === 10
+    ? `https://kbopub.economie.fgov.be/kbopub/zoeknummerform.html?nummer=${digits}`
+    : '';
 }
 
 export function missingCompanyEnvNames() {

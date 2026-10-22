@@ -80,7 +80,8 @@ describe('tokens remaining out of what was received', () => {
 
 describe('sign-up form from the copy review', () => {
   it('asks for the account type as two radios under a legend, private individual by default', () => {
-    assert.match(signup, /<legend class="field-label">\{tr\('signup\.type\.legend'\)\}<\/legend>/);
+    // The design shows only the two choices; the legend still names the group for screen readers.
+    assert.match(signup, /<legend class="sr-only">\{tr\('signup\.type\.legend'\)\}<\/legend>/);
     assert.match(signup, /name="customerType" value="business"/);
     assert.match(signup, /name="customerType" value="consumer" id="signup-type-consumer" checked/);
     assert.match(signup, /customerType: fd\.get\('customerType'\) === 'business' \? 'business' : 'consumer'/);

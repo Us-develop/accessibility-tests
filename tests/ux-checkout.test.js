@@ -133,7 +133,7 @@ describe('after payment', () => {
   it('confirms at the top of the account page with a way to start scanning', () => {
     const panel = account.indexOf('id="billing-success"');
     assert.ok(panel > 0 && panel < account.indexOf('id="usage-card"'), 'the panel is above the account sections');
-    assert.match(account, /id="billing-success" class="card stack-form account-section" role="status" tabindex="-1" hidden/);
+    assert.match(account, /id="billing-success" class="panel account-section" role="status" tabindex="-1" hidden/);
     assert.match(account, /href="\/">\{tr\('acct\.paid\.start'\)\}<\/a>/);
     assert.match(account, /if \(billingFlag === 'success'\) showPaymentReceived\(\);/);
     assert.match(account, /watchPaymentLanding\(/);

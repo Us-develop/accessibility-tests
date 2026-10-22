@@ -142,7 +142,8 @@ describe('free scan used and result actions', () => {
     const field = home.indexOf('id="guest-url"');
     const box = home.indexOf('id="guest-freebie-used"');
     const submit = home.indexOf('id="guest-submit-btn"');
-    assert.ok(field > 0 && box > field && box < submit, 'the message sits between the field and the submit button');
+    // The submit button sits inside the URL field; the message comes right after that pair.
+    assert.ok(field > 0 && submit > field && box > submit, 'the message sits under the URL field and its button');
     assert.match(home, /id="guest-freebie-used" class="guest-freebie-used" role="alert" tabindex="-1" hidden/);
     assert.match(home, /href="\/pricing#tokens">\{tr\('cta\.buyTokens'\)\}/);
     assert.match(home, /data-open-login>\{tr\('cta\.signIn'\)\}/);

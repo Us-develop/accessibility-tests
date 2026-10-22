@@ -2,68 +2,82 @@
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 import { WITHDRAWAL_WAIVER_TEXT } from '../../../server/legal-versions.mjs';
-import { formatVatInclusivePrice } from '../../../server/vat-display.mjs';
+import { TOKEN_PACKS } from '../../../server/plan-catalog.mjs';
+import { packDiscountPercent, vatParts } from '../../../server/vat-display.mjs';
 import { usePageLang } from '../lib/page-lang.js';
+import WideWord from '../components/WideWord.astro';
 
 export const prerender = false;
 const tr = usePageLang(Astro);
 // The waiver is recorded in English, the binding language (as on pricing).
 const waiverLang = tr.lang === 'en' ? undefined : 'en';
 const waiverNote = tr.lang === 'en' ? '' : tr('checkout.waiver.note');
-const packs = [
-  { id: 'pack_10', n: 10, price: formatVatInclusivePrice(1000) },
-  { id: 'pack_50', n: 50, price: formatVatInclusivePrice(4500) },
-  { id: 'pack_100', n: 100, price: formatVatInclusivePrice(8000) },
-];
+const packs = TOKEN_PACKS.map((pack) => {
+  const price = vatParts(pack.priceCents);
+  return { id: pack.id, n: pack.tokens, price, discount: packDiscountPercent(pack, 100) };
+});
+// "Hi Astrid" when we know the first name, as in the header.
+const firstName = String(Astro.locals?.access?.firstName || '').trim();
+const heading = firstName ? tr('header.greeting', { name: firstName }) : tr('acct.h1');
 ---
 <Layout title={tr('acct.title')} description={tr('acct.description')} authMode="required">
   <div class="app-shell">
     <AppHeader crumb={tr('acct.crumb')} />
     <main id="main" class="app-main" tabindex="-1">
-      <article class="container page-article">
-        <h1>{tr('acct.h1')}</h1>
-        <p id="account-status" class="muted mt-1">{tr('acct.loading')}</p>
+      <article class="page-wrap">
+        <h1 class="page-title"><WideWord text={heading} word={firstName} /></h1>
+        <p id="account-status" class="text-light">{tr('acct.loading')}</p>
 
-        <div class="account-actions" style="margin-top: 16px;">
-          <a class="btn btn-primary" href="/">{tr('acct.action.scan')}</a>
-          <a class="btn btn-secondary" href="/audits">{tr('acct.action.allScans')}</a>
-          <a class="btn btn-ghost" href="/api/account/export">{tr('acct.action.exportJson')}</a>
-          <a class="btn btn-ghost" href="/api/account/export?format=csv">{tr('acct.action.exportCsv')}</a>
+        <div class="account-actions">
+          <a class="btn btn-primary btn-sm" href="/">{tr('acct.action.scan')}</a>
+          <a class="btn btn-secondary btn-sm" href="/audits">{tr('acct.action.allScans')}</a>
+          <a class="btn btn-ghost btn-sm" href="/api/account/export">{tr('acct.action.exportJson')}</a>
+          <a class="btn btn-ghost btn-sm" href="/api/account/export?format=csv">{tr('acct.action.exportCsv')}</a>
         </div>
 
-        <p id="account-msg" class="muted" role="status" style="margin-top: 16px;"></p>
+        <p id="account-msg" class="muted" role="status"></p>
 
-        <section id="billing-success" class="card stack-form account-section" role="status" tabindex="-1" hidden>
-          <h2>{tr('acct.paid.h2')}</h2>
-          <p id="billing-success-text" class="muted">{tr('acct.paid.updating')}</p>
+        <section id="billing-success" class="panel account-section" role="status" tabindex="-1" hidden>
+          <h2 class="card-title">{tr('acct.paid.h2')}</h2>
+          <p id="billing-success-text">{tr('acct.paid.updating')}</p>
           <div class="guest-cta-row">
             <a class="btn btn-primary" href="/">{tr('acct.paid.start')}</a>
           </div>
         </section>
 
         <div class="account-layout">
-          <nav class="account-nav card stack-form" aria-label={tr('acct.nav.aria')}>
-            <p id="account-nav-balance" class="account-nav-balance" hidden></p>
-            <ul>
-              <li><a class="link" href="#projects">{tr('acct.nav.projects')}</a></li>
-              <li><a class="link" href="#scan-history">{tr('acct.nav.history')}</a></li>
-              <li data-customer-only hidden><a class="link" href="#subscription">{tr('acct.nav.subscription')}</a></li>
-              <li data-customer-only hidden><a class="link" href="#tokens">{tr('acct.nav.tokens')}</a></li>
-              <li><a class="link" href="#payments">{tr('acct.nav.payments')}</a></li>
-              <li data-customer-only hidden><a class="link" href="#personal">{tr('acct.nav.personal')}</a></li>
-            </ul>
-          </nav>
+          <div class="account-side">
+            <div id="account-nav-balance" class="account-balance" hidden>
+              <p class="text-small">{tr('acct.nav.tokens')}</p>
+              <div class="account-balance-row">
+                <p class="account-balance-value" id="account-balance-value"></p>
+                <a class="text-small account-balance-link" href="#tokens">{tr('home.customer.buyTokens')}</a>
+              </div>
+              <div class="meter" aria-hidden="true"><span id="account-balance-fill"></span></div>
+              <p id="account-balance-long" class="text-small"></p>
+            </div>
+            <nav class="account-nav" aria-label={tr('acct.nav.aria')}>
+              <ul>
+                <li><a href="#projects">{tr('acct.nav.projects')}</a></li>
+                <li><a href="#scan-history">{tr('acct.nav.history')}</a></li>
+                <li data-customer-only hidden><a href="#subscription">{tr('acct.nav.subscription')}</a></li>
+                <li data-customer-only hidden><a href="#tokens">{tr('acct.nav.tokens')}</a></li>
+                <li><a href="#payments">{tr('acct.nav.payments')}</a></li>
+                <li data-customer-only hidden><a href="#personal">{tr('acct.nav.personal')}</a></li>
+              </ul>
+            </nav>
+          </div>
 
           <div class="account-main">
-            <section id="projects-card" class="card stack-form account-section">
-              <h2 id="projects" tabindex="-1">{tr('acct.nav.projects')}</h2>
-              <div id="account-projects"><p class="muted">{tr('acct.loading')}</p></div>
+            <section id="projects-card" class="panel account-section">
+              <h2 id="projects" class="card-title" tabindex="-1">{tr('acct.nav.projects')}</h2>
+              <div id="account-projects" class="project-list"><p class="text-light">{tr('acct.loading')}</p></div>
             </section>
 
-            <section id="scans-card" class="card stack-form account-section" hidden>
-              <h2 id="scan-history" tabindex="-1">{tr('acct.nav.history')}</h2>
+            <section id="scans-card" class="panel account-section" hidden>
+              <h2 id="scan-history" class="card-title" tabindex="-1">{tr('acct.nav.history')}</h2>
               <div class="table-wrap">
-                <table class="account-table">
+                <table class="data-table">
                   <thead>
                     <tr>
                       <th scope="col">{tr('acct.scans.project')}</th>
@@ -78,56 +92,70 @@ const packs = [
               </div>
             </section>
 
-            <section id="usage-card" class="card stack-form account-section" data-checkout-scope hidden>
-              <h2 id="subscription" tabindex="-1">{tr('acct.sub.h2')}</h2>
-              <p id="plan-name" class="muted"></p>
-              <p id="plan-status" class="muted"></p>
-              <div id="usage-meter" hidden>
-                <div class="usage-bar" aria-hidden="true"><span id="usage-fill"></span></div>
-                <p id="usage-label" class="muted"></p>
+            <section id="usage-card" class="panel account-section" data-checkout-scope hidden>
+              <h2 id="subscription" class="card-title" tabindex="-1">{tr('acct.sub.h2')}</h2>
+              <div>
+                <p id="plan-name" class="account-strong"></p>
+                <p id="plan-status" class="text-light"></p>
               </div>
-              <div id="subscribe-actions">
-                <label class="legal-check">
+              <div id="usage-meter" class="account-meter" hidden>
+                <p id="usage-label" class="account-meter-label"></p>
+                <div class="meter" aria-hidden="true"><span id="usage-fill"></span></div>
+              </div>
+              <div id="subscribe-actions" class="account-stack">
+                <label class="selector account-waiver">
                   <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver-pro" name="withdrawalWaiver" value="true" aria-describedby={waiverNote ? 'waiver-note-pro' : undefined} />
+                  <span class="selector-box" aria-hidden="true"></span>
                   <span lang={waiverLang}>{WITHDRAWAL_WAIVER_TEXT}</span>
                 </label>
-                {waiverNote ? <p id="waiver-note-pro" class="muted" style="font-size: 12px;">{waiverNote}</p> : null}
+                {waiverNote ? <p id="waiver-note-pro" class="text-small text-grey">{waiverNote}</p> : null}
                 <p class="checkout-msg muted" role="status" aria-live="polite"></p>
-                <div class="guest-cta-row">
+                <div class="account-buttons">
                   <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">{tr('pricing.pro.monthly')}</button>
-                  <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">{tr('pricing.pro.yearly')}</button>
+                  <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="yearly">{tr('pricing.pro.yearly')}</button>
                 </div>
               </div>
-              <p class="muted" style="font-size: 13px;">{tr('acct.sub.cancelNote')}</p>
-              <div id="billing-actions" class="guest-cta-row">
-                <button type="button" class="btn btn-ghost" id="manage-billing-btn">{tr('acct.sub.manage')}</button>
+              <div class="account-sub-foot">
+                <p class="text-small">{tr('acct.sub.cancelNote')}</p>
+                <div id="billing-actions">
+                  <button type="button" class="link-icon" id="manage-billing-btn"><img src="/assets/icons/settings.svg" width="16" height="16" alt="" />{tr('acct.sub.manage')}</button>
+                </div>
               </div>
               <p id="billing-portal-msg" class="muted" role="status"></p>
             </section>
 
-            <section id="tokens-card" class="card stack-form account-section" data-checkout-scope hidden>
-              <h2 id="tokens" tabindex="-1">{tr('acct.tokens.h2')}</h2>
-              <p id="token-balance" class="muted"></p>
-              <p class="muted" style="font-size: 13px;">{tr('acct.tokens.body')}</p>
-              <label class="legal-check">
+            <section id="tokens-card" class="panel account-section" data-checkout-scope hidden>
+              <h2 id="tokens" class="card-title" tabindex="-1">{tr('acct.tokens.h2')}</h2>
+              <div class="account-meter">
+                <p id="token-balance" class="account-meter-label"></p>
+                <div class="meter" aria-hidden="true"><span id="token-fill"></span></div>
+              </div>
+              <p class="text-light">{tr('acct.tokens.body')}</p>
+              <label class="selector account-waiver">
                 <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver" name="withdrawalWaiver" value="true" aria-describedby={waiverNote ? 'waiver-note-tokens' : undefined} />
+                <span class="selector-box" aria-hidden="true"></span>
                 <span lang={waiverLang}>{WITHDRAWAL_WAIVER_TEXT}</span>
               </label>
-              {waiverNote ? <p id="waiver-note-tokens" class="muted" style="font-size: 12px;">{waiverNote}</p> : null}
+              {waiverNote ? <p id="waiver-note-tokens" class="text-small text-grey">{waiverNote}</p> : null}
               <p id="account-billing-msg" class="checkout-msg muted" role="status" aria-live="polite"></p>
-              <div class="guest-cta-row">
+              <ul class="account-packs">
                 {packs.map((pack) => (
-                  <button type="button" class="btn btn-primary token-buy" data-pack={pack.id}>{tr('acct.tokens.buy', { n: pack.n, price: pack.price })}</button>
+                  <li>
+                    <button type="button" class="btn btn-primary token-buy" data-pack={pack.id} aria-describedby={`pack-price-${pack.id}`}>{tr('acct.tokens.buy', { n: pack.n })}</button>
+                    <span class="text-small text-grey" id={`pack-price-${pack.id}`}>
+                      {pack.price.incl} {tr('price.inclVat', { excl: pack.price.excl })}{pack.discount ? ` -${pack.discount}%` : ''}
+                    </span>
+                  </li>
                 ))}
-                <a class="btn btn-secondary" href="/contact?source=account">{tr('cta.expert')}</a>
-              </div>
+              </ul>
+              <a class="btn-text" href="/contact?source=account"><img src="/assets/icons/mail.svg" width="20" height="20" alt="" />{tr('cta.expert')}</a>
             </section>
 
-            <section id="payments-card" class="card stack-form account-section" hidden>
-              <h2 id="payments" tabindex="-1">{tr('acct.nav.payments')}</h2>
-              <p id="payments-empty" class="muted">{tr('acct.payments.empty')}</p>
+            <section id="payments-card" class="panel account-section" hidden>
+              <h2 id="payments" class="card-title" tabindex="-1">{tr('acct.nav.payments')}</h2>
+              <p id="payments-empty" class="text-light">{tr('acct.payments.empty')}</p>
               <div class="table-wrap" id="payments-table-wrap" hidden>
-                <table class="account-table">
+                <table class="data-table">
                   <thead>
                     <tr>
                       <th scope="col">{tr('acct.payments.date')}</th>
@@ -141,82 +169,153 @@ const packs = [
               </div>
             </section>
 
-            <section id="contact-card" class="card stack-form account-section" hidden>
-              <h2 id="personal" tabindex="-1">{tr('acct.nav.personal')}</h2>
+            <section id="contact-card" class="panel account-section" hidden>
+              <h2 id="personal" class="card-title" tabindex="-1">{tr('acct.nav.personal')}</h2>
               <form id="contact-form" class="account-form" method="post" action="/account" data-astro-reload>
-                <fieldset class="account-type">
-                  <legend>{tr('signup.type.legend')}</legend>
-                  <label class="legal-check">
+                <fieldset class="selector-group account-type">
+                  <legend class="sr-only">{tr('signup.type.legend')}</legend>
+                  <label class="selector">
                     <input type="radio" name="customerType" value="business" id="account-type-business" />
-                    <span>{tr('signup.type.business')}</span>
+                    <span class="selector-box" aria-hidden="true"></span>
+                    <span class="selector-text">{tr('signup.type.business')}</span>
                   </label>
-                  <label class="legal-check">
+                  <label class="selector">
                     <input type="radio" name="customerType" value="consumer" id="account-type-consumer" checked />
-                    <span>{tr('signup.type.consumer')}</span>
+                    <span class="selector-box" aria-hidden="true"></span>
+                    <span class="selector-text">{tr('signup.type.consumer')}</span>
                   </label>
                 </fieldset>
-                <div class="account-form-row">
-                  <label>{tr('signup.firstName')} <input id="account-first-name" name="firstName" type="text" autocomplete="given-name" /></label>
-                  <label>{tr('signup.lastName')} <input id="account-last-name" name="lastName" type="text" autocomplete="family-name" /></label>
+                <div class="line-form">
+                  <div class="line-row">
+                    <div class="line-field">
+                      <label class="line-label" for="account-first-name">{tr('signup.firstName')}</label>
+                      <div class="line-control"><input class="line-input" id="account-first-name" name="firstName" type="text" autocomplete="given-name" /></div>
+                    </div>
+                    <div class="line-field">
+                      <label class="line-label" for="account-last-name">{tr('signup.lastName')}</label>
+                      <div class="line-control"><input class="line-input" id="account-last-name" name="lastName" type="text" autocomplete="family-name" /></div>
+                    </div>
+                  </div>
+                  <div class="line-row">
+                    <div class="line-field">
+                      <label class="line-label" for="account-address">{tr('acct.address')}</label>
+                      <div class="line-control"><input class="line-input" id="account-address" name="addressLine1" type="text" autocomplete="address-line1" /></div>
+                    </div>
+                    <div class="line-field">
+                      <label class="line-label" for="account-address2">{tr('acct.address2')}</label>
+                      <div class="line-control"><input class="line-input" id="account-address2" name="addressLine2" type="text" autocomplete="address-line2" /></div>
+                    </div>
+                  </div>
+                  <div class="line-row">
+                    <div class="line-pair">
+                      <div class="line-field">
+                        <label class="line-label" for="account-postal-code">{tr('acct.postalCode')}</label>
+                        <div class="line-control"><input class="line-input" id="account-postal-code" name="postalCode" type="text" autocomplete="postal-code" /></div>
+                      </div>
+                      <div class="line-field">
+                        <label class="line-label" for="account-city">{tr('acct.city')}</label>
+                        <div class="line-control"><input class="line-input" id="account-city" name="city" type="text" autocomplete="address-level2" /></div>
+                      </div>
+                    </div>
+                    <div class="line-field">
+                      <label class="line-label" for="account-country">{tr('acct.country')}</label>
+                      <div class="line-control"><input class="line-input" id="account-country" name="country" type="text" autocomplete="country-name" /></div>
+                    </div>
+                  </div>
+                  <div class="line-row" id="business-fields" hidden>
+                    <div class="line-field">
+                      <label class="line-label" for="account-company">{tr('signup.company')}</label>
+                      <div class="line-control"><input class="line-input" id="account-company" name="company" type="text" autocomplete="organization" /></div>
+                    </div>
+                    <div class="line-field">
+                      <div class="line-label">
+                        <label for="account-vat">{tr('signup.vat')}</label>
+                        <span id="account-vat-hint" class="line-label-hint">{tr('signup.vat.hint')}</span>
+                      </div>
+                      <div class="line-control"><input class="line-input" id="account-vat" name="vatNumber" type="text" aria-describedby="account-vat-hint" /></div>
+                    </div>
+                  </div>
+                  <div class="line-row">
+                    <div class="line-field">
+                      <label class="line-label" for="account-phone">{tr('acct.phone')}</label>
+                      <div class="line-control"><input class="line-input" id="account-phone" name="phone" type="tel" autocomplete="tel" /></div>
+                    </div>
+                  </div>
                 </div>
-                <div id="business-fields" hidden>
-                  <label>{tr('signup.company')} <input id="account-company" name="company" type="text" autocomplete="organization" /></label>
-                  <label>{tr('signup.vat')} <input name="vatNumber" type="text" aria-describedby="account-vat-hint" /></label>
-                  <p id="account-vat-hint" class="muted" style="font-size: 13px; margin: 0;">{tr('signup.vat.hint')}</p>
-                </div>
-                <label>{tr('acct.phone')} <input name="phone" type="tel" autocomplete="tel" /></label>
-                <label>
-                  {tr('acct.address')}
-                  <input name="addressLine1" type="text" autocomplete="address-line1" />
-                </label>
-                <label>
-                  {tr('acct.address2')}
-                  <input name="addressLine2" type="text" autocomplete="address-line2" />
-                </label>
-                <div class="account-form-row">
-                  <label>{tr('acct.city')} <input name="city" type="text" autocomplete="address-level2" /></label>
-                  <label>{tr('acct.postalCode')} <input name="postalCode" type="text" autocomplete="postal-code" /></label>
-                </div>
-                <label>{tr('acct.country')} <input name="country" type="text" autocomplete="country-name" /></label>
                 <p id="contact-msg" class="muted" role="status"></p>
                 <button type="submit" class="btn btn-primary">{tr('acct.save')}</button>
               </form>
+
+              <div id="password-card" class="account-subsection" hidden>
+                <h3 class="subsection-title">{tr('acct.password.h2')}</h3>
+                <form id="password-form" class="account-form" method="post" action="/account" data-astro-reload>
+                  <div class="line-row">
+                    <div class="line-field">
+                      <label class="line-label" for="account-current-password">{tr('acct.password.current')}</label>
+                      <div class="line-control">
+                        <input class="line-input" id="account-current-password" name="currentPassword" type="password" autocomplete="current-password" required />
+                        <button type="button" class="line-toggle" data-password-toggle="account-current-password" aria-pressed="false" aria-label={tr('signup.password.show')}><img src="/assets/icons/visibility.svg" width="16" height="16" alt="" /></button>
+                      </div>
+                    </div>
+                    <div class="line-field">
+                      <div class="line-label">
+                        <label for="account-new-password">{tr('acct.password.new')}</label>
+                        <span id="account-password-hint" class="line-label-hint">{tr('signup.password.hint')}</span>
+                      </div>
+                      <div class="line-control">
+                        <input class="line-input" id="account-new-password" name="password" type="password" autocomplete="new-password" minlength="10" required aria-describedby="account-password-hint" />
+                        <button type="button" class="line-toggle" data-password-toggle="account-new-password" aria-pressed="false" aria-label={tr('signup.password.show')}><img src="/assets/icons/visibility.svg" width="16" height="16" alt="" /></button>
+                      </div>
+                    </div>
+                  </div>
+                  <p id="password-msg" class="muted" role="status"></p>
+                  <button type="submit" class="btn btn-primary">{tr('acct.password.submit')}</button>
+                </form>
+              </div>
+
+              <div id="email-card" class="account-subsection" hidden>
+                <h3 class="subsection-title">{tr('acct.email.h2')}</h3>
+                <form id="email-form" class="account-form" method="post" action="/api/account/email" data-astro-reload>
+                  <input type="hidden" name="csrfToken" class="wcag-csrf-field" value="" />
+                  <div class="line-row">
+                    <div class="line-field">
+                      <label class="line-label" for="account-current-email">{tr('acct.email.current')}</label>
+                      <div class="line-control"><input class="line-input" id="account-current-email" type="email" readonly /></div>
+                    </div>
+                    <div class="line-field">
+                      <label class="line-label" for="account-new-email">{tr('acct.email.new')}</label>
+                      <div class="line-control"><input class="line-input" id="account-new-email" name="email" type="email" autocomplete="email" required /></div>
+                    </div>
+                  </div>
+                  <div class="line-row">
+                    <div class="line-field">
+                      <label class="line-label" for="email-password">{tr('acct.password.current')}</label>
+                      <div class="line-control"><input class="line-input" id="email-password" name="password" type="password" autocomplete="current-password" required /></div>
+                    </div>
+                  </div>
+                  <p id="email-msg" class="muted" role="status"></p>
+                  <button type="submit" class="btn btn-primary">{tr('acct.email.submit')}</button>
+                </form>
+              </div>
             </section>
 
-            <section id="password-card" class="card stack-form account-section" hidden>
-              <h2>{tr('acct.password.h2')}</h2>
-              <form id="password-form" class="account-form" method="post" action="/account" data-astro-reload>
-                <label>{tr('acct.password.current')} <input id="account-current-password" name="currentPassword" type="password" autocomplete="current-password" required /></label>
-                <label>{tr('acct.password.new')} <input id="account-new-password" name="password" type="password" autocomplete="new-password" minlength="10" required aria-describedby="account-password-hint" /></label>
-                <p id="account-password-hint" class="muted" style="font-size: 13px; margin: 0;">{tr('signup.password.hint')}</p>
-                <p id="password-msg" class="muted" role="status"></p>
-                <button type="submit" class="btn btn-ghost">{tr('acct.password.submit')}</button>
-              </form>
-            </section>
-
-            <section id="email-card" class="card stack-form account-section" hidden>
-              <h2>{tr('acct.email.h2')}</h2>
-              <form id="email-form" class="account-form" method="post" action="/api/account/email" data-astro-reload>
-                <input type="hidden" name="csrfToken" class="wcag-csrf-field" value="" />
-                <label>{tr('acct.email.new')} <input id="account-new-email" name="email" type="email" autocomplete="email" required /></label>
-                <label>{tr('acct.password.current')} <input id="email-password" name="password" type="password" autocomplete="current-password" required /></label>
-                <p id="email-msg" class="muted" role="status"></p>
-                <button type="submit" class="btn btn-ghost">{tr('acct.email.submit')}</button>
-              </form>
-            </section>
-
-            <p id="delete-open-row" class="muted" style="font-size: 13px; margin-top: 28px;" hidden>
-              <button type="button" class="linklike" id="delete-open" aria-expanded="false" aria-controls="delete-card">{tr('acct.delete.open')}</button>
+            <p id="delete-open-row" hidden>
+              <button type="button" class="link-icon account-delete-open" id="delete-open" aria-expanded="false" aria-controls="delete-card"><img src="/assets/icons/delete-large.svg" width="20" height="20" alt="" />{tr('acct.delete.open')}</button>
             </p>
-            <section id="delete-card" class="card stack-form account-section" hidden>
-              <h2 id="delete-title" tabindex="-1">{tr('acct.delete.h2')}</h2>
+            <section id="delete-card" class="panel account-section" hidden>
+              <h2 id="delete-title" class="card-title" tabindex="-1">{tr('acct.delete.h2')}</h2>
               <form id="delete-form" class="account-form" method="post" action="/api/account/delete" data-astro-reload>
                 <input type="hidden" name="csrfToken" class="wcag-csrf-field" value="" />
-                <p class="muted">{tr('acct.delete.body')}</p>
-                <label>{tr('acct.password.current')} <input id="delete-password" name="password" type="password" autocomplete="current-password" required /></label>
+                <p class="text-light">{tr('acct.delete.body')}</p>
+                <div class="line-row">
+                  <div class="line-field">
+                    <label class="line-label" for="delete-password">{tr('acct.password.current')}</label>
+                    <div class="line-control"><input class="line-input" id="delete-password" name="password" type="password" autocomplete="current-password" required /></div>
+                  </div>
+                </div>
                 <p id="delete-msg" class="muted" role="status"></p>
-                <div class="guest-cta-row">
-                  <button type="submit" class="btn btn-ghost" id="delete-btn">{tr('acct.delete.confirm')}</button>
+                <div class="account-buttons">
+                  <button type="submit" class="btn btn-secondary" id="delete-btn">{tr('acct.delete.confirm')}</button>
                   <button type="button" class="btn btn-primary" id="delete-cancel">{tr('acct.delete.keep')}</button>
                 </div>
               </form>
@@ -228,65 +327,217 @@ const packs = [
   </div>
 </Layout>
 <style>
-  /* .stack-form sets display, which would otherwise beat the hidden attribute:
-     sections meant to be hidden (customer-only cards for staff, the payment
-     panel, the delete step) were shown regardless. */
-  .account-section[hidden] {
+  /* Display rules below would otherwise beat the hidden attribute. */
+  .account-section[hidden],
+  .account-main .account-section[hidden],
+  .account-subsection[hidden],
+  .account-balance[hidden],
+  #subscribe-actions[hidden],
+  .account-meter[hidden] {
     display: none;
   }
-  /* Structure only: a sidebar beside the sections, stacked on narrow screens. */
+  #account-status { margin-top: 8px; }
+  .account-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  #account-msg:empty,
+  #billing-portal-msg:empty { display: none; }
+  #billing-success { margin-top: 24px; }
+  /* Figma "Account": a 280px sidebar beside an 880px column of cards. */
   .account-layout {
     display: grid;
-    grid-template-columns: 220px minmax(0, 1fr);
-    gap: 24px;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: var(--grid-gutter);
     align-items: start;
-    margin-top: 8px;
+    margin-top: 40px;
   }
-  .account-nav {
+  .account-side {
     position: sticky;
-    top: 88px;
-    margin-top: 20px;
+    top: 112px;
+    padding-right: 16px;
+  }
+  .account-balance {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    gap: 8px;
+    margin-bottom: -12px;
+    padding: 16px;
+    background: var(--us-lilac-light);
+    border-radius: 12px;
+  }
+  .account-balance-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .account-balance-value {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 500;
+    line-height: 32px;
+  }
+  .account-balance-link { color: var(--fg-1); text-underline-offset: 3px; }
+  #account-balance-long:empty { display: none; }
+  .account-nav {
+    position: relative;
+    z-index: 1;
+    padding: 32px 16px 16px;
+    background: var(--us-n-10);
+    border-radius: 0 0 12px 12px;
+  }
+  .account-balance[hidden] + .account-nav {
+    padding-top: 16px;
+    border-radius: 12px;
   }
   .account-nav ul {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
+    gap: 16px;
+  }
+  .account-nav li[hidden] { display: none; }
+  .account-nav a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     gap: 8px;
-  }
-  .account-nav-balance {
+    color: var(--fg-1);
     font-weight: 600;
-    margin-bottom: 12px;
+    line-height: 28px;
+    text-decoration: none;
   }
-  .account-main h2 {
-    scroll-margin-top: 96px;
+  .account-nav a::after {
+    content: "";
+    width: 20px;
+    height: 20px;
+    background: url("/assets/icons/chevron-right.svg") center / 20px 20px no-repeat;
   }
-  /* Account type: two radios under a legend, without the browser's fieldset box. */
-  .account-type {
-    border: 0;
-    padding: 0;
+  .account-nav a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .account-main {
+    display: grid;
+    gap: 32px;
+    min-width: 0;
+  }
+  .account-main .panel {
+    display: grid;
+    gap: 24px;
+    align-content: start;
+  }
+  /* Let wide tables scroll inside their card instead of widening the page. */
+  .account-main .panel > * { min-width: 0; }
+  .account-main h2 { scroll-margin-top: 112px; }
+  .project-list ul {
+    display: grid;
+    gap: 8px;
     margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .project-row {
+    display: grid;
+    grid-template-columns: minmax(0, 300px) 1fr auto;
+    align-items: center;
+    gap: var(--grid-gutter);
+    padding: 16px 32px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-sm);
+  }
+  .project-domain {
+    color: var(--fg-1);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+    text-underline-offset: 3px;
+  }
+  .project-runs { font-weight: 300; }
+  .project-view {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--fg-1);
+    font-family: var(--font-button);
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 24px;
+    text-decoration: none;
+  }
+  .project-view:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .account-strong { font-weight: 600; }
+  .account-meter {
     display: grid;
     gap: 8px;
   }
-  .account-type legend {
-    font-weight: 600;
-    margin-bottom: 8px;
-    padding: 0;
+  .account-meter-label { font-weight: 500; line-height: 24px; }
+  .account-stack {
+    display: grid;
+    gap: 12px;
   }
-  @media (max-width: 760px) {
-    .account-layout {
-      grid-template-columns: 1fr;
+  .account-waiver { font-size: 14px; line-height: 24px; }
+  .account-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+  }
+  .account-sub-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 24px;
+  }
+  .account-packs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 24px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .account-packs li {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    text-align: center;
+  }
+  .account-form {
+    display: grid;
+    gap: 24px;
+    justify-items: start;
+  }
+  .account-form > .line-form,
+  .account-form > .line-row { width: 100%; }
+  #contact-msg:empty,
+  #password-msg:empty,
+  #email-msg:empty,
+  #delete-msg:empty { display: none; }
+  .account-subsection {
+    display: grid;
+    gap: 20px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .account-delete-open { color: var(--fg-1); text-decoration: none; }
+  .account-delete-open:hover { text-decoration: underline; }
+  @media (max-width: 900px) {
+    .account-layout { grid-template-columns: 1fr; }
+    .account-side { position: static; padding-right: 0; }
+    .project-row {
+      grid-template-columns: 1fr auto;
+      padding: 16px;
     }
-    .account-nav {
-      position: static;
-    }
+    .project-view { grid-column: 1 / -1; }
   }
 </style>
 <script>
   import { announceBalanceChanged, balanceFromUsage, balanceLong } from '../lib/balance.js';
   import { bindCheckout, watchPaymentLanding } from '../lib/checkout.js';
   import { dateLocale, pageLang, serverMessageLang, t, tn } from '../../../i18n/index.mjs';
+  import { bindPasswordToggles } from '../lib/password-toggle.js';
 
   const lang = () => pageLang();
   const tx = (key, vars) => t(lang(), key, vars);
@@ -299,6 +550,7 @@ const packs = [
   };
 
   bindCheckout();
+  bindPasswordToggles();
 
   const api = (p) => (typeof globalThis.wcagApiUrl === 'function' ? globalThis.wcagApiUrl(p) : p);
   const creds = typeof globalThis.wcagFetchCredentials === 'function' ? globalThis.wcagFetchCredentials() : 'same-origin';
@@ -344,6 +596,8 @@ const packs = [
     const first = document.getElementById('account-first-name');
     if (first instanceof HTMLInputElement && !user.firstName && !user.lastName && user.name) first.value = user.name;
     setAccountType(user.customerType === 'business' ? 'business' : 'consumer');
+    const currentEmail = document.getElementById('account-current-email');
+    if (currentEmail instanceof HTMLInputElement) currentEmail.value = user.email || '';
   }
 
   /** Tick the account type and show the company fields for a business. */
@@ -447,9 +701,18 @@ const packs = [
             ? `${tn(lang(), 'acct.tokens.remaining', granted, { left: balance.tokens, total: granted })}${expires}`
             : tx('acct.tokens.none');
         }
+        const tokenShare = granted ? `${Math.min(100, Math.round((balance.tokens / granted) * 100))}%` : '0%';
+        const tokenFill = document.getElementById('token-fill');
+        if (tokenFill) tokenFill.style.width = tokenShare;
+        // Sidebar: tokens left as a number and a bar; Pro also says the pages left.
         const navBalance = document.getElementById('account-nav-balance');
         if (navBalance) {
-          navBalance.textContent = balanceLong(balance);
+          const value = document.getElementById('account-balance-value');
+          if (value) value.textContent = String(balance.tokens);
+          const sideFill = document.getElementById('account-balance-fill');
+          if (sideFill) sideFill.style.width = tokenShare;
+          const long = document.getElementById('account-balance-long');
+          if (long) long.textContent = balance.pro ? balanceLong(balance) : '';
           navBalance.hidden = false;
         }
         const subscribeActions = document.getElementById('subscribe-actions');
@@ -459,14 +722,18 @@ const packs = [
     const projects = Array.isArray(data.projects) ? data.projects : [];
     if (list) {
       if (!projects.length) {
-        list.innerHTML = `<p class="muted">${escapeHtml(tx('acct.projects.empty'))}</p>`;
+        list.innerHTML = `<p class="text-light">${escapeHtml(tx('acct.projects.empty'))}</p>`;
       } else {
-        list.innerHTML = `${projects
+        list.innerHTML = `<ul>${projects
           .map((p) => {
             const href = `/report/${encodeURIComponent(p.domain)}/history`;
-            return `<p><a class="link" href="${href}">${escapeHtml(p.domain)}</a> · ${escapeHtml(tn(lang(), 'acct.projects.runs', p.runIds?.length || 0))}</p>`;
+            return `<li class="project-row">
+              <a class="project-domain" href="${href}">${escapeHtml(p.domain)}</a>
+              <span class="project-runs">${escapeHtml(tn(lang(), 'acct.projects.runs', p.runIds?.length || 0))}</span>
+              <a class="project-view" href="${href}"><img src="/assets/icons/eye.svg" width="20" height="20" alt="" />${escapeHtml(tx('acct.projects.view'))}<span class="sr-only"> ${escapeHtml(p.domain)}</span></a>
+            </li>`;
           })
-          .join('')}`;
+          .join('')}</ul>`;
       }
     }
 
@@ -476,7 +743,7 @@ const packs = [
     if (scansCard && scansBody) {
       scansCard.hidden = false;
       if (!scans.length) {
-        scansBody.innerHTML = `<tr><td colspan="5" class="muted">${escapeHtml(tx('acct.scans.empty'))}</td></tr>`;
+        scansBody.innerHTML = `<tr><td colspan="5">${escapeHtml(tx('acct.scans.empty'))}</td></tr>`;
       } else {
         scansBody.innerHTML = scans
           .map((row) => {
@@ -490,7 +757,7 @@ const packs = [
               <td>${escapeHtml(date)}</td>
               <td>${escapeHtml(row.pages_scanned ?? '—')}</td>
               <td>${escapeHtml(score)}</td>
-              <td>${escapeHtml(known('acct.status', row.status))}</td>
+              <td><span class="status-chip${row.status === 'done' ? ' is-done' : row.status === 'error' ? ' is-error' : ''}">${escapeHtml(known('acct.status', row.status))}</span></td>
             </tr>`;
           })
           .join('');

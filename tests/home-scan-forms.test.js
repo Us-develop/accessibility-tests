@@ -160,7 +160,7 @@ describe('own product accessibility markup', () => {
     assert.match(dashboard, /flex:\s*1 1 100%/);
     assert.match(dashboard, /min-width:\s*60%/);
     assert.match(tokensCss, /--stat-label:/);
-    assert.match(appCss, /label:not\(\.legal-check\)/);
+    assert.match(appCss, /label:not\(\.legal-check/);
   });
 
   it('inerts every sibling of an open dialog, not only main', () => {

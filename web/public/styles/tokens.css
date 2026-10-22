@@ -7,6 +7,14 @@
 /* Self-hosted latin woff2. Owners / Owners Wide files go in /fonts/owners/ (see Layout.astro). */
 @font-face {
   font-family: "Public Sans";
+  src: url("/fonts/public-sans-300-normal.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Public Sans";
   src: url("/fonts/public-sans-400-normal.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
@@ -76,6 +84,8 @@
   --us-lilac:           #BDB4FF;   /* the holographic lilac (used a LOT) */
   --us-lilac-deep:      #6257E8;
   --us-lilac-text:      #423A75;
+  --us-lilac-light:     #F2F0FF;   /* account sidebar balance */
+  --us-pink-light:      #FBE3FF;   /* balance pill, help band */
 
   /* ─────────  GRADIENTS  (used on CTA bars and big graphic moments)  ────── */
   --us-grad-warm:       linear-gradient(135deg, #FFB985 0%, #F3AAFF 50%, #BDB4FF 100%);
@@ -119,12 +129,17 @@
   --focus-ring:         #6257E8;
   --shadow-card:        0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
   --shadow-pop:         0 4px 12px rgba(0,0,0,0.08), 0 16px 40px rgba(0,0,0,0.10);
+  --shadow-soft:        0 0 20px rgba(0,0,0,0.08);   /* "Dropshadow/Soft" */
+  --border-input:       #707070;   /* underlined form fields; ≥ 3:1 on white */
+  --border-table-head:  #494949;
 
   /* ─────────  STATUS  (sparingly used)  ────────────────────────────── */
   --status-success:     #41BD73;
   --status-warning:     #FFB985;
   --status-error:       #872012;
   --status-info:        #6257E8;
+  --status-success-bg:  rgba(101, 208, 137, 0.2);
+  --status-success-text: #0F7A3B;  /* ≥ 4.5:1 on the success tint */
 
   /* ─────────  TYPE (Us Web profile: Owners + Public Sans, Archivo fallback)  ─ */
   --font-display:       "owners-wide", "Archivo", "Public Sans", system-ui, sans-serif;
@@ -175,6 +190,9 @@
 
   --container-max:      1280px;
   --container-pad:      130px;     /* desktop side gutter from the figma */
+  --page-max:           1180px;    /* content width between the 130px page margins */
+  --text-max:           880px;     /* intro text and single cards */
+  --grid-gutter:        20px;
 }
 
 /* ─────────  Element defaults  ──────────────────────────────────── */

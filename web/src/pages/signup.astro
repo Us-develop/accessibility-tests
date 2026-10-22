@@ -19,94 +19,125 @@ const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
   <div class="app-shell">
     <AppHeader crumb={tr('signup.crumb')} />
     <main id="main" class="app-main" tabindex="-1">
-      <article class="container-narrow page-article">
-        <h1>{checkEmail ? tr('signup.h1.checkEmail') : tr('signup.h1')}</h1>
+      <article class="page-wrap">
+        <div class="page-intro">
+          <h1 class="page-title">{checkEmail ? tr('signup.h1.checkEmail') : tr('signup.h1')}</h1>
+          {checkEmail ? null : <p class="page-lead" id="signup-lead">{lead}</p>}
+        </div>
         {checkEmail ? (
-          <div id="signup-success" class="card stack-form" role="status">
-            <p class="muted prose-width prose-lead">
+          <div id="signup-success" class="panel signup-panel" role="status">
+            <p class="page-lead">
               {tr('signup.check.body')}
             </p>
             {pricingArrival ? (
-              <p class="muted prose-width">{tr('signup.check.pricing')}</p>
+              <p>{tr('signup.check.pricing')}</p>
             ) : null}
-            <p class="muted" style="font-size: 13px; margin: 0;">
+            <p class="text-small">
               {tr('signup.check.already')} <a class="link" href={loginHref}>{tr('cta.signIn')}</a>.
             </p>
           </div>
         ) : (
-          <>
-        <p class="muted prose-width prose-lead" id="signup-lead">
-          {lead}
-        </p>
-        <form id="signup-form" class="card stack-form" method="post" action="/api/auth/signup" autocomplete="on" data-astro-reload>
+        <form id="signup-form" class="panel signup-panel" method="post" action="/api/auth/signup" autocomplete="on" data-astro-reload>
           {guestToken ? <input type="hidden" name="guestToken" value={guestToken} /> : null}
           {requestedNext ? <input type="hidden" name="next" id="signup-next" value={nextPath} /> : null}
-          <fieldset class="field signup-type">
-            <legend class="field-label">{tr('signup.type.legend')}</legend>
-            <label class="legal-check">
+          <fieldset class="selector-group signup-type">
+            <legend class="sr-only">{tr('signup.type.legend')}</legend>
+            <label class="selector">
               <input type="radio" name="customerType" value="business" id="signup-type-business" />
-              <span>{tr('signup.type.business')}</span>
+              <span class="selector-box" aria-hidden="true"></span>
+              <span class="selector-text">{tr('signup.type.business')}</span>
             </label>
-            <label class="legal-check">
+            <label class="selector">
               <input type="radio" name="customerType" value="consumer" id="signup-type-consumer" checked />
-              <span>{tr('signup.type.consumer')}</span>
+              <span class="selector-box" aria-hidden="true"></span>
+              <span class="selector-text">{tr('signup.type.consumer')}</span>
             </label>
           </fieldset>
-          <div class="field">
-            <label class="field-label" for="firstName">{tr('signup.firstName')}</label>
-            <input class="input" id="firstName" name="firstName" autocomplete="given-name" placeholder={tr('signup.firstName.placeholder')} required />
-            <p id="firstName-error" class="field-error" hidden></p>
-          </div>
-          <div class="field">
-            <label class="field-label" for="lastName">{tr('signup.lastName')}</label>
-            <input class="input" id="lastName" name="lastName" autocomplete="family-name" placeholder={tr('signup.lastName.placeholder')} required />
-            <p id="lastName-error" class="field-error" hidden></p>
-          </div>
-          <div id="business-fields" hidden>
-            <div class="field">
-              <label class="field-label" for="company">{tr('signup.company')}</label>
-              <input class="input" id="company" name="company" autocomplete="organization" placeholder={tr('signup.company.placeholder')} />
-              <p id="company-error" class="field-error" hidden></p>
+          <div class="line-form">
+            <div class="line-row">
+              <div class="line-field">
+                <label class="line-label" for="firstName">{tr('signup.firstName')}</label>
+                <div class="line-control">
+                  <input class="line-input" id="firstName" name="firstName" autocomplete="given-name" placeholder={tr('signup.firstName.placeholder')} required />
+                </div>
+                <p id="firstName-error" class="field-error" hidden></p>
+              </div>
+              <div class="line-field">
+                <label class="line-label" for="lastName">{tr('signup.lastName')}</label>
+                <div class="line-control">
+                  <input class="line-input" id="lastName" name="lastName" autocomplete="family-name" placeholder={tr('signup.lastName.placeholder')} required />
+                </div>
+                <p id="lastName-error" class="field-error" hidden></p>
+              </div>
             </div>
-            <div class="field">
-              <label class="field-label" for="vatNumber">{tr('signup.vat')}</label>
-              <input class="input" id="vatNumber" name="vatNumber" autocomplete="off" aria-describedby="vatNumber-hint" data-hint="vatNumber-hint" />
-              <p id="vatNumber-hint" class="field-hint">{tr('signup.vat.hint')}</p>
-              <p id="vatNumber-error" class="field-error" hidden></p>
+            <div class="line-row">
+              <div class="line-field">
+                <label class="line-label" for="email">{tr('signup.email')}</label>
+                <div class="line-control">
+                  <input class="line-input" id="email" name="email" type="email" autocomplete="email" placeholder={tr('signup.email.placeholder')} required />
+                </div>
+                <p id="email-error" class="field-error" hidden></p>
+              </div>
+              <div class="line-field">
+                <div class="line-label">
+                  <label for="password">{tr('signup.password')}</label>
+                  <span id="password-hint" class="line-label-hint">{tr('signup.password.hint')}</span>
+                </div>
+                <div class="line-control">
+                  <input class="line-input" id="password" name="password" type="password" autocomplete="new-password" required minlength="10" aria-describedby="password-hint" data-hint="password-hint" />
+                  <button type="button" class="line-toggle" data-password-toggle="password" aria-pressed="false" aria-label={tr('signup.password.show')}>
+                    <img src="/assets/icons/visibility.svg" width="16" height="16" alt="" />
+                  </button>
+                </div>
+                <p id="password-error" class="field-error" hidden></p>
+              </div>
+            </div>
+            <div class="line-row" id="business-fields" hidden>
+              <div class="line-field">
+                <label class="line-label" for="company">{tr('signup.company')}</label>
+                <div class="line-control">
+                  <input class="line-input" id="company" name="company" autocomplete="organization" placeholder={tr('signup.company.placeholder')} />
+                </div>
+                <p id="company-error" class="field-error" hidden></p>
+              </div>
+              <div class="line-field">
+                <div class="line-label">
+                  <label for="vatNumber">{tr('signup.vat')}</label>
+                  <span id="vatNumber-hint" class="line-label-hint">{tr('signup.vat.hint')}</span>
+                </div>
+                <div class="line-control">
+                  <input class="line-input" id="vatNumber" name="vatNumber" autocomplete="off" aria-describedby="vatNumber-hint" data-hint="vatNumber-hint" />
+                </div>
+                <p id="vatNumber-error" class="field-error" hidden></p>
+              </div>
             </div>
           </div>
-          <div class="field">
-            <label class="field-label" for="email">{tr('signup.email')}</label>
-            <input class="input" id="email" name="email" type="email" autocomplete="email" placeholder={tr('signup.email.placeholder')} required />
-            <p id="email-error" class="field-error" hidden></p>
+          <div class="signup-end">
+            <div>
+              <label class="selector">
+                <input type="checkbox" id="accept-terms" name="acceptTerms" value="true" required />
+                <span class="selector-box" aria-hidden="true"></span>
+                <span>
+                  {tr('signup.accept.before')}
+                  <a href="/terms" target="_blank" rel="noopener noreferrer">{tr('signup.accept.terms')}</a>
+                  {tr('signup.accept.middle')}
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer">{tr('signup.accept.privacy')}</a>{tr('signup.accept.after')}
+                </span>
+              </label>
+              <p id="acceptTerms-error" class="field-error" hidden></p>
+            </div>
+            <button type="submit" class="btn btn-primary" id="signup-btn">
+              {tr('signup.submit')}
+              <img src="/assets/icons/arrow-circle-right-light.svg" width="20" height="20" alt="" />
+            </button>
+            <p id="signup-msg" class="muted" role={signupError ? 'alert' : 'status'}>
+              {signupError ? tr('signup.error.query') : ''}
+            </p>
+            <p class="text-light">
+              {tr('signup.haveAccount')} <button type="button" class="linklike" id="signup-open-login">{tr('signup.login')}</button>
+            </p>
           </div>
-          <div class="field">
-            <label class="field-label" for="password">{tr('signup.password')}</label>
-            <input class="input" id="password" name="password" type="password" autocomplete="new-password" required minlength="10" aria-describedby="password-hint" data-hint="password-hint" />
-            <p id="password-hint" class="field-hint">{tr('signup.password.hint')}</p>
-            <p id="password-error" class="field-error" hidden></p>
-          </div>
-          <div class="field">
-            <label class="legal-check">
-              <input type="checkbox" id="accept-terms" name="acceptTerms" value="true" required />
-              <span>
-                {tr('signup.accept.before')}
-                <a class="link" href="/terms" target="_blank" rel="noopener noreferrer">{tr('signup.accept.terms')}</a>
-                {tr('signup.accept.middle')}
-                <a class="link" href="/privacy" target="_blank" rel="noopener noreferrer">{tr('signup.accept.privacy')}</a>{tr('signup.accept.after')}
-              </span>
-            </label>
-            <p id="acceptTerms-error" class="field-error" hidden></p>
-          </div>
-          <button type="submit" class="btn btn-primary" id="signup-btn">{tr('signup.submit')}</button>
-          <p id="signup-msg" class="muted" role={signupError ? 'alert' : 'status'}>
-            {signupError ? tr('signup.error.query') : ''}
-          </p>
-          <p class="muted" style="font-size: 13px; margin: 0;">
-            {tr('signup.haveAccount')} <button type="button" class="linklike" id="signup-open-login">{tr('signup.login')}</button>
-          </p>
         </form>
-          </>
         )}
       </article>
     </main>
@@ -115,6 +146,9 @@ const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
 <script>
   import { isSafeRelativePath } from '../../../server/safe-path.mjs';
   import { pageLang, serverMessageLang, t } from '../../../i18n/index.mjs';
+  import { bindPasswordToggles } from '../lib/password-toggle.js';
+
+  bindPasswordToggles();
 
   /** Mark a message written in another language than the page (some server messages are still English). */
   function markServerText(el, messageLang) {
@@ -248,15 +282,21 @@ const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
   }
 </script>
 <style>
-  /* Account type: two radios under a legend, without the browser's fieldset box. */
-  .signup-type {
-    border: 0;
-    padding: 0;
-    margin: 0;
+  .signup-panel {
+    max-width: var(--text-max);
     display: grid;
-    gap: 8px;
+    gap: 24px;
+    padding: 48px;
   }
-  .signup-type legend {
-    padding: 0;
+  .signup-end {
+    display: grid;
+    gap: 16px;
+    justify-items: start;
+    margin-top: 24px;
+  }
+  .signup-end .field-error { margin-top: 4px; }
+  #signup-msg:empty { display: none; }
+  @media (max-width: 720px) {
+    .signup-panel { padding: 32px 16px; }
   }
 </style>
