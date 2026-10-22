@@ -1,6 +1,7 @@
 ---
 import Layout from '../../../../layouts/Layout.astro';
 import AppHeader from '../../../../components/AppHeader.astro';
+import ReportCrumbs from '../../../../components/ReportCrumbs.astro';
 import ResultsDashboard from '../../../../components/ResultsDashboard.svelte';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -129,8 +130,9 @@ const dashboardProps = {
 
 <Layout title={tr('report.title', { site: payload.primaryHost || domain })} description={tr('report.description', { site: payload.primaryHost || domain })}>
   <div class="app-shell">
-    <AppHeader domain={domain} runId={runId} active="results" />
+    <AppHeader />
     <main id="main" class="app-main" tabindex="-1">
+      <ReportCrumbs domain={domain} runId={runId} active="results" />
       <ResultsDashboard client:load {...dashboardProps} />
     </main>
   </div>

@@ -121,3 +121,29 @@ describe('copy review of October 2026', () => {
     assert.equal(en['signup.accept.privacy'], 'Privacy Policy');
   });
 });
+
+describe('header and crumbs', () => {
+  it('lets the header scroll away with the page', () => {
+    const css = read('web/public/styles/app.css');
+    const header = css.slice(css.indexOf('.app-header {'), css.indexOf('}', css.indexOf('.app-header {')));
+    assert.doesNotMatch(header, /position:\s*sticky/);
+  });
+
+  it('puts the site and step crumbs inside main on every report page', () => {
+    for (const page of [
+      'web/src/pages/report/[domain]/history.astro',
+      'web/src/pages/report/[domain]/[runId]/index.astro',
+      'web/src/pages/report/[domain]/[runId]/coverage.astro',
+      'web/src/pages/report/[domain]/[runId]/sales.astro',
+      'web/src/pages/report/[domain]/[runId]/statement.astro',
+      'web/src/pages/loading.astro',
+    ]) {
+      assert.match(read(page), /<main id="main" class="app-main" tabindex="-1">\s*<ReportCrumbs /, page);
+    }
+    assert.doesNotMatch(read('web/src/components/AppHeader.astro'), /nav-crumbs/);
+  });
+
+  it('uses white where the cream used to be', () => {
+    assert.match(read('web/public/styles/tokens.css'), /--us-cream:\s+#FFFFFF;/);
+  });
+});

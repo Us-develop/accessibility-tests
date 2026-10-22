@@ -1,6 +1,7 @@
 ---
 import Layout from '../../../../layouts/Layout.astro';
 import AppHeader from '../../../../components/AppHeader.astro';
+import ReportCrumbs from '../../../../components/ReportCrumbs.astro';
 import WcagCoverage from '../../../../components/WcagCoverage.svelte';
 import ScanFailedPanel from '../../../../components/ScanFailedPanel.astro';
 import { readFileSync, existsSync } from 'node:fs';
@@ -35,8 +36,9 @@ const primaryHost = payload.primaryHost || domain.replace(/^www\./, '');
 
 <Layout title={tr('cov.title', { site: primaryHost })} description={tr('cov.description', { site: primaryHost })}>
   <div class="app-shell">
-    <AppHeader domain={domain} runId={runId} active="coverage" />
+    <AppHeader />
     <main id="main" class="app-main" tabindex="-1">
+      <ReportCrumbs domain={domain} runId={runId} active="coverage" />
       <div style="background: var(--us-cream); min-height: calc(100dvh - 65px);">
         {!pagesLoaded ? (
           <ScanFailedPanel

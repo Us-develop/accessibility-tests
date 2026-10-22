@@ -64,7 +64,7 @@
 
 :root {
   /* ─────────  PRIMARY (the only big-fill brand color besides B&W)  ───────── */
-  --us-cream:           #F5F4E5;   /* Soft off-white, the warm background */
+  --us-cream:           #FFFFFF;   /* was the warm off-white #F5F4E5; white since the 2026 designs */
   --us-ink:             #19191B;   /* Brand black, used for fills + text  */
   --us-white:           #FFFFFF;
 

@@ -51,8 +51,8 @@ body.is-staff {
 
 /* Floating dark bar (Figma "Nav header"): 1180px wide, 16px from the top. */
 .app-header {
-  position: sticky;
-  top: var(--staff-banner-height, 0px);
+  /* Scrolls away with the page; z-index keeps its menus above the content. */
+  position: relative;
   z-index: 50;
   padding: 16px calc(16px + env(safe-area-inset-right, 0px)) 0 calc(16px + env(safe-area-inset-left, 0px));
 }
@@ -210,10 +210,11 @@ body.is-staff {
   display: none !important;
 }
 
-/* Site and step of a report, under the bar. */
+/* Site and step of a report, at the top of main. */
 .nav-crumbs {
-  max-width: var(--page-max);
-  margin: 12px auto 0;
+  max-width: calc(var(--page-max) + 64px);
+  margin: 24px auto;
+  padding: 0 32px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1376,6 +1377,7 @@ button.linklike {
 }
 
 @media (max-width: 720px) {
+  .nav-crumbs { padding: 0 16px; }
   .page-wrap { padding: 40px 16px; }
   .panel { padding: 24px 16px; }
   .line-row { grid-template-columns: 1fr; }
