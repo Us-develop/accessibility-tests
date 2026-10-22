@@ -55,9 +55,10 @@ export function requestIdMiddleware(req, res, next) {
 export const APP_CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
-  "style-src 'self' 'unsafe-inline'",
+  // Adobe Fonts kit for Owners: the stylesheet, its usage ping, and the font files.
+  "style-src 'self' 'unsafe-inline' https://use.typekit.net https://p.typekit.net",
   "img-src 'self' data: blob:",
-  "font-src 'self'",
+  "font-src 'self' https://use.typekit.net",
   "connect-src 'self' https://challenges.cloudflare.com",
   "frame-src https://challenges.cloudflare.com",
   "frame-ancestors 'none'",
