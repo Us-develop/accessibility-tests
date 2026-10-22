@@ -104,6 +104,17 @@ describe('lead API', () => {
     assert.equal((await send({ name: 'X', email: 'not-an-email' })).status, 400);
   });
 
+  it('has no separate access-request route or form any more: every request is a lead', async () => {
+    const res = await fetch(`${origin}/api/access-request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Ann', email: 'ann@example.com' }),
+    });
+    assert.notEqual(res.status, 200);
+    const modal = read('web/src/components/LoginModal.astro');
+    assert.doesNotMatch(modal, /access-request|wcag-access-form|login\.request\./);
+  });
+
   it('does not send a guest to the login page for /contact', async () => {
     const res = await fetch(`${origin}/contact?source=footer`, { redirect: 'manual' });
     assert.notEqual(res.status, 302);

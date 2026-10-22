@@ -420,14 +420,6 @@ export default {
   'login.error.network':
     'We konden de server niet bereiken. Controleer uw verbinding en probeer het opnieuw.',
   'login.error.expired': 'Uw sessie is verlopen. Meld u opnieuw aan.',
-  'login.request.title': 'Toegang aanvragen',
-  'login.request.lead': 'Vertel ons wie u bent, dan nemen we contact met u op.',
-  'login.request.submit': 'Toegang aanvragen',
-  'login.request.back': 'Terug naar aanmelden',
-  'login.request.okEmailed': 'Dank u, we hebben uw aanvraag ontvangen en ons team verwittigd.',
-  'login.request.ok': 'Dank u, we hebben uw aanvraag ontvangen.',
-  'login.request.error': 'Er ging iets mis.',
-  'login.request.network': 'Netwerkfout. Probeer het zo meteen opnieuw.',
   'forgot.title': 'Wachtwoord vergeten · Us',
   'forgot.description':
     'Vraag een link aan om een nieuw wachtwoord in te stellen voor uw account bij de Us-toegankelijkheidsscanner.',

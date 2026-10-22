@@ -9,7 +9,7 @@ import { spawn } from 'child_process';
 import { createHash, timingSafeEqual } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { sendRunNotificationEmail, createSmtpTransport, sendAccessRequestEmail, sendLeadEmail, sendLeadConfirmationEmail, assertProductionMailFrom } from '../server-email.js';
+import { sendRunNotificationEmail, createSmtpTransport, sendLeadEmail, sendLeadConfirmationEmail, assertProductionMailFrom } from '../server-email.js';
 import { REPORTS_BASE } from './paths.js';
 import { dbPool, dbUpsertRun, dbGetRun, dbGetLatestRun, dbGetRunByGuestToken, dbInsertLead, dbListLeads } from './db.js';
 import { mergeReportData } from './report-data.js';
@@ -259,7 +259,7 @@ function isGuestOpenPath(req) {
     if (PUBLIC_GET_PREFIXES.some((prefix) => p.startsWith(prefix))) return true;
   }
   if (req.method === 'POST') {
-    if (p === '/api/run' || p === '/api/lead' || p === '/api/access-request' || p === '/api/stripe/webhook') {
+    if (p === '/api/run' || p === '/api/lead' || p === '/api/stripe/webhook') {
       return true;
     }
     if (p === '/lang') return true;
@@ -1450,26 +1450,6 @@ app.post('/api/auth/logout', (req, res) => {
   if (!AUTH_ENABLED) return res.json({ ok: true });
   clearAuthCookie(res);
   return res.json({ ok: true });
-});
-
-app.post('/api/access-request', leadIpLimit, async (req, res) => {
-  const name = String(req.body?.name ?? '').trim();
-  const company = String(req.body?.company ?? '').trim();
-  const email = String(req.body?.email ?? '').trim();
-  const message = String(req.body?.message ?? '').trim();
-  if (!name || !email) {
-    return res.status(400).json({ error: 'Name and email are required.' });
-  }
-  if (!isValidEmail(email)) {
-    return res.status(400).json({ error: 'Enter a valid email address.' });
-  }
-  try {
-    const { emailed } = await sendAccessRequestEmail({ name, company, email, message });
-    return res.json({ ok: true, emailed });
-  } catch (err) {
-    console.error('[access-request]', err?.message || err);
-    return res.status(500).json({ error: 'Could not submit your request. Try again later.' });
-  }
 });
 
 app.use(async (req, res, next) => {
