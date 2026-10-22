@@ -11,7 +11,8 @@ Processors that may handle personal data for the Us accessibility scanner. Conta
 | Cloudflare Turnstile | Bot challenge on guest scans when enabled | Global / US |
 | Anthropic | Optional WCAG coverage write-up when `ANTHROPIC_API_KEY` is set | US |
 | Atlassian | Optional Jira OAuth when a staff user connects a project | EU/US |
+| Adobe Fonts | Serves the Owners typeface; the visitor’s browser requests it, which shares the IP address and the page address with Adobe | US |
 
-We do not use a third-party webfont CDN. Typefaces are self-hosted.
+Public Sans is self-hosted. The Owners typeface comes from Adobe Fonts, whose licence does not allow self-hosting. Adobe Fonts sets no cookies.
 
 <!-- COUNSEL: confirm each processor’s DPA and transfer tool before go-live. -->
