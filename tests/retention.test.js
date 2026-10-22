@@ -21,7 +21,7 @@ const { createAccessibilityApp } = await import('../server/create-app.mjs');
 const { persistGuestToken, appendLeadFile, readLeadFileRows, hashGuestIp, turnstileSendIp } =
   await import('../server/guest.mjs');
 const { csvEscape } = await import('../server/account-routes.mjs');
-const { sendAccountEmail } = await import('../server-email.js');
+const { sendMail } = await import('../server-email.js');
 const { runRetention } = await import('../server/retention.mjs');
 const { setStripeClientForTests } = await import('../server/stripe.mjs');
 const { upsertSubscription, getSubscription } = await import('../server/billing.mjs');
@@ -119,11 +119,11 @@ describe('email logger hygiene', () => {
       lines.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
     };
     try {
-      await sendAccountEmail({
+      await sendMail({
         kind: 'verify',
         to: 'person@example.com',
-        subject: 'Verify',
-        text: 'Confirm your email:\nhttp://localhost/api/auth/verify?token=super-secret-token\n',
+        lang: 'en',
+        data: { firstName: 'Pat', email: 'person@example.com', link: 'http://localhost/api/auth/verify?token=super-secret-token' },
       });
     } finally {
       console.warn = orig;

@@ -9,12 +9,12 @@ import { spawn } from 'child_process';
 import { createHash, timingSafeEqual } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { sendRunNotificationEmail, createSmtpTransport, sendLeadEmail, sendLeadConfirmationEmail, assertProductionMailFrom } from '../server-email.js';
+import { sendMailSafely, teamInbox, assertProductionMailFrom } from '../server-email.js';
 import { REPORTS_BASE } from './paths.js';
 import { dbPool, dbUpsertRun, dbGetRun, dbGetLatestRun, dbGetRunByGuestToken, dbInsertLead, dbListLeads } from './db.js';
-import { mergeReportData } from './report-data.js';
+import { computeIssueCountFromResult, mergeReportData } from './report-data.js';
 import { readJsonIfExists, isValidReportId } from './fs-utils.js';
-import { listAuditEntries, listRunsForDomain, filterRunsForViewer } from './audit-list.js';
+import { listAuditEntries, listRunsForDomain, filterRunsForViewer, scoreFromResult } from './audit-list.js';
 import { getFtpConfig, ftpDownload, ftpUpload, persistReportArtifactsToFtp, assertProductionFtpSecure } from './ftp.js';
 import { normalizeManualProgress, resolvePersistedManualChecked } from '../manual-checklist.js';
 import { analysisCacheBody, anthropicConfigured, buildWcagAnalysisPayload } from '../anthropic-wcag-analysis.js';
@@ -428,6 +428,18 @@ function runStatePatch(domain, runId, patch) {
   void maybeSendRunEmail(domain, runId);
 }
 
+async function loadResultJson(domain, runId) {
+  if (dbPool) {
+    try {
+      const row = await dbGetRun(domain, runId);
+      if (row?.resultJson) return row.resultJson;
+    } catch (err) {
+      console.error(`[run ${domain}/${runId}] DB result read failed:`, err.message);
+    }
+  }
+  return readJsonIfExists(join(runDirOf(domain, runId), 'accessibility-results.json'));
+}
+
 async function maybeSendRunEmail(domain, runId) {
   const key = runKey(domain, runId);
   evictTerminalRunState();
@@ -436,25 +448,37 @@ async function maybeSendRunEmail(domain, runId) {
   if (!cur?.notifyRequested || !cur.notifyEmail) return;
   if (cur.status !== 'done' && cur.status !== 'error') return;
   notificationAttempted.set(key, Date.now());
-  const base = publicBaseUrl();
-  const reportUrl = `${base}/report/${domain}/${runId}/`;
-  if (!createSmtpTransport()) {
-    console.warn(
-      `[run ${domain}/${runId}] Notification requested for ${cur.notifyEmail} but SMTP is not configured (set SMTP_HOST and related env vars).`
-    );
-    return;
+  let score = null;
+  let pages = Array.isArray(cur.urls) ? cur.urls.length : Number(cur.processedUrls) || null;
+  let issues = null;
+  if (cur.status === 'done') {
+    try {
+      const resultJson = await loadResultJson(domain, runId);
+      if (resultJson) {
+        score = scoreFromResult(resultJson);
+        if (Array.isArray(resultJson.urls)) pages = resultJson.urls.length;
+        issues = computeIssueCountFromResult(resultJson);
+      }
+    } catch (err) {
+      console.error(`[run ${domain}/${runId}] notification summary failed:`, err?.message || err);
+    }
   }
-  try {
-    await sendRunNotificationEmail({
-      to: cur.notifyEmail,
-      reportId: `${domain}/${runId}`,
+  // In the language the scan was started in, like the report itself.
+  await sendMailSafely({
+    kind: 'run-notification',
+    to: cur.notifyEmail,
+    lang: cur.lang,
+    data: {
       status: cur.status,
-      error: cur.error || null,
-      reportUrl,
-    });
-  } catch (err) {
-    console.error(`[run ${domain}/${runId}] Notification email failed:`, err.message);
-  }
+      domain,
+      runId,
+      reportUrl: `${publicBaseUrl()}/report/${domain}/${runId}/`,
+      score,
+      pages,
+      issues,
+      errorMessage: cur.error || '',
+    },
+  });
 }
 
 // Uploads are buffered in memory and /api/run is open to guests, so every
@@ -1246,18 +1270,6 @@ function loginSuccessPath(req, fallback) {
 
 registerSeoRoutes(app);
 
-async function loadResultJson(domain, runId) {
-  if (dbPool) {
-    try {
-      const row = await dbGetRun(domain, runId);
-      if (row?.resultJson) return row.resultJson;
-    } catch (err) {
-      console.error(`[run ${domain}/${runId}] DB result read failed:`, err.message);
-    }
-  }
-  return readJsonIfExists(join(runDirOf(domain, runId), 'accessibility-results.json'));
-}
-
 app.get('/login', (req, res) => {
   if (!AUTH_ENABLED) return res.redirect('/');
   const nextPath = customerLoginNext(typeof req.query.next === 'string' ? req.query.next : '');
@@ -1781,10 +1793,13 @@ app.post('/api/run', uploadSingleFile, async (req, res) => {
       console.error('statement-meta write failed:', err.message);
     }
 
+    // The findings are written in the visitor's language and the report keeps it.
+    const scanLang = requestLang(req) || defaultLang();
     const initialState = {
       domain,
       runId,
       status: 'queued',
+      lang: scanLang,
       urls: processedUrls,
       requestedUrls,
       processedUrls,
@@ -1826,8 +1841,7 @@ app.post('/api/run', uploadSingleFile, async (req, res) => {
       tier: initialState.tier,
       guestIp: initialState.guestIp,
       hostResolverRules: hostResolverRulesFromTargets(filtered.targets),
-      // The findings are written in the visitor's language and the report keeps it.
-      lang: requestLang(req) || defaultLang(),
+      lang: scanLang,
     });
   } catch (err) {
     // Whatever the tier, do not leave a run "queued" that never reached the queue:
@@ -2042,12 +2056,16 @@ app.post('/api/lead', leadIpLimit, async (req, res) => {
   try {
     // Mail the team first so the stored row can say whether it went out, but a
     // mail failure must not lose the lead: it is saved either way.
-    let emailed = false;
-    try {
-      ({ emailed } = await sendLeadEmail(row));
-    } catch (err) {
-      console.error('[lead] team mail failed:', err?.message || err);
-    }
+    // Both mails speak the visitor's language: the team then knows how to answer.
+    const visitorLang = requestLang(req) || defaultLang();
+    const teaserUrl = token ? `${publicBaseUrl()}/teaser/${encodeURIComponent(token)}` : '';
+    const { emailed } = await sendMailSafely({
+      kind: 'lead',
+      to: teamInbox(),
+      lang: visitorLang,
+      replyTo: email,
+      data: { ...row, teaserUrl, visitorLang },
+    });
     row.emailed = emailed;
     if (dbPool) {
       try {
@@ -2073,12 +2091,13 @@ app.post('/api/lead', leadIpLimit, async (req, res) => {
       console.error('[lead] consent failed:', err?.message || err);
     }
     // Confirmation to the visitor. Best effort: the request is already saved.
-    let confirmationSent = false;
-    try {
-      ({ emailed: confirmationSent } = await sendLeadConfirmationEmail(row));
-    } catch (err) {
-      console.error('[lead] confirmation mail failed:', err?.message || err);
-    }
+    const { emailed: confirmationSent } = await sendMailSafely({
+      kind: 'lead-confirmation',
+      to: email,
+      lang: visitorLang,
+      replyTo: teamInbox(),
+      data: { name, scannedUrl, message, teaserUrl },
+    });
     return res.json({ ok: true, emailed, confirmationSent });
   } catch (err) {
     console.error('[lead]', err?.message || err);

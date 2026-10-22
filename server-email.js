@@ -1,10 +1,26 @@
 /**
- * Optional SMTP notifications when a test run finishes (configure SMTP_* env vars).
+ * Outgoing mail. Each mail is built in the recipient's language by
+ * server/mail-messages.mjs and sent through SMTP (configure SMTP_* env vars).
+ * Without SMTP_HOST the mail is skipped and the skip is logged.
  */
 import { randomBytes } from 'crypto';
 import nodemailer from 'nodemailer';
+import { buildMail } from './server/mail-messages.mjs';
+
+/** @type {null | (() => { sendMail: Function } | null)} */
+let smtpTransportFactory = null;
+
+/**
+ * Tests only: replace the SMTP transport, so a test can capture or fail mails
+ * without a mail server. Pass null to go back to the real one.
+ * @param {null | (() => { sendMail: Function } | null)} factory
+ */
+export function setSmtpTransportFactory(factory) {
+  smtpTransportFactory = typeof factory === 'function' ? factory : null;
+}
 
 export function createSmtpTransport() {
+  if (smtpTransportFactory) return smtpTransportFactory();
   const host = process.env.SMTP_HOST;
   if (!host || typeof host !== 'string') return null;
   return nodemailer.createTransport({
@@ -31,6 +47,11 @@ export function assertProductionMailFrom() {
   }
 }
 
+/** The Us team inbox: leads go here, and visitors' replies to their confirmation. */
+export function teamInbox() {
+  return String(process.env.ACCESS_REQUEST_TO || 'info@about-us.be').trim();
+}
+
 function recipientDomain(to) {
   const at = String(to || '').lastIndexOf('@');
   if (at === -1) return '';
@@ -41,193 +62,71 @@ function newMessageId() {
   return `<${randomBytes(12).toString('hex')}@us-accessibility>`;
 }
 
-function logSkippedMail({ kind, to, messageId }) {
-  console.warn('[email]', { kind, domain: recipientDomain(to), messageId });
+/** Logs say which mail and which domain, never the full address, the link or the text. */
+function logSkippedMail({ kind, lang, to, messageId }) {
+  console.warn('[email]', { kind, lang, domain: recipientDomain(to), messageId });
 }
 
-/**
- * @param {{ to: string; reportId: string; status: 'done' | 'error'; error?: string | null; reportUrl: string }} opts
- */
-export async function sendRunNotificationEmail(opts) {
-  const transport = createSmtpTransport();
-  const { to, reportId, status, error, reportUrl } = opts;
-  const messageId = newMessageId();
-  if (!transport) {
-    logSkippedMail({ kind: 'run-notification', to, messageId });
-    return { ok: false, skipped: true, messageId };
-  }
-  const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@localhost';
-  const ok = status === 'done';
-  const subject = ok
-    ? 'Your accessibility audit is ready'
-    : 'Your accessibility audit run finished with an error';
-  const text = ok
-    ? `Your accessibility tests have finished.\n\nOpen your report:\n${reportUrl}\n\nRun ID: ${reportId}\n`
-    : `Your accessibility tests have finished, but the run reported an error.\n\n${error || 'Unknown error'}\n\nIf a report was created, you can try opening:\n${reportUrl}\n\nRun ID: ${reportId}\n`;
-  const html = ok
-    ? `<p>Your accessibility tests have finished.</p><p><a href="${escapeAttr(reportUrl)}">Open your report</a></p><p style="color:#666;font-size:0.9em;">Run ID: ${escapeHtml(reportId)}</p>`
-    : `<p>Your accessibility tests finished, but the run reported an error.</p><pre style="background:#f5f5f5;padding:12px;border-radius:8px;">${escapeHtml(error || 'Unknown error')}</pre><p>If a report was created, try <a href="${escapeAttr(reportUrl)}">opening the report</a>.</p><p style="color:#666;font-size:0.9em;">Run ID: ${escapeHtml(reportId)}</p>`;
-
-  await transport.sendMail({
-    from,
-    to,
-    subject,
-    text,
-    html,
-    messageId,
+export function logMailFailure({ kind, lang, to }, err) {
+  console.warn('[email] failed', {
+    kind,
+    lang: lang || '',
+    domain: recipientDomain(to),
+    code: err && err.code ? String(err.code) : '',
   });
-  return { ok: true, messageId };
 }
 
-/**
- * @param {{ name: string; company?: string; email: string; phone?: string; message?: string; scannedUrl?: string; domain?: string; score?: number | null }} payload
- * @returns {Promise<{ emailed: boolean }>}
- */
-export async function sendLeadEmail(payload) {
-  const name = String(payload?.name || '').trim();
-  const company = String(payload?.company || '').trim();
-  const email = String(payload?.email || '').trim();
-  const phone = String(payload?.phone || '').trim();
-  const message = String(payload?.message || '').trim();
-  const scannedUrl = String(payload?.scannedUrl || '').trim();
-  const domain = String(payload?.domain || '').trim();
-  const score = payload?.score == null || payload?.score === '' ? '—' : String(payload.score);
-  const transport = createSmtpTransport();
-  const to = String(process.env.ACCESS_REQUEST_TO || 'info@about-us.be').trim();
-  const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@localhost';
-  const subject = `WCAG services lead — ${domain || scannedUrl || 'scan'} (score ${score})`;
-  const text = [
-    `Name: ${name}`,
-    `Company: ${company || '—'}`,
-    `Email: ${email}`,
-    `Phone: ${phone || '—'}`,
-    `Scanned URL: ${scannedUrl || '—'}`,
-    `Domain: ${domain || '—'}`,
-    `Score: ${score}`,
-    '',
-    'Message:',
-    message || '—',
-    '',
-  ].join('\n');
-  const html = `<p><strong>Name:</strong> ${escapeHtml(name)}</p>
-<p><strong>Company:</strong> ${escapeHtml(company || '—')}</p>
-<p><strong>Email:</strong> ${escapeHtml(email)}</p>
-<p><strong>Phone:</strong> ${escapeHtml(phone || '—')}</p>
-<p><strong>Scanned URL:</strong> ${escapeHtml(scannedUrl || '—')}</p>
-<p><strong>Domain:</strong> ${escapeHtml(domain || '—')}</p>
-<p><strong>Score:</strong> ${escapeHtml(score)}</p>
-<p><strong>Message:</strong></p><p>${escapeHtml(message || '—').replace(/\n/g, '<br/>')}</p>`;
-  const messageId = newMessageId();
-
-  if (!transport) {
-    logSkippedMail({ kind: 'lead', to, messageId });
-    return { emailed: false, messageId };
-  }
-
-  await transport.sendMail({
-    from,
-    to,
-    subject,
-    text,
-    html,
-    replyTo: email,
-    messageId,
-  });
-  return { emailed: true, messageId };
-}
-
-/**
- * @param {{ to: string; subject: string; text: string; kind?: string }} opts
- */
-export async function sendAccountEmail(opts) {
-  const transport = createSmtpTransport();
-  const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@localhost';
-  const to = String(opts?.to || '').trim();
-  const subject = String(opts?.subject || '').trim();
-  const text = String(opts?.text || '').trim();
-  const kind = String(opts?.kind || 'account');
-  const messageId = newMessageId();
-  if (!to || !subject) return { emailed: false, messageId };
-  if (!transport) {
-    logSkippedMail({ kind, to, messageId });
-    return { emailed: false, messageId };
-  }
-  // An optional action becomes a real link in the HTML part; the plain-text
-  // part already carries the address. Content only, no styling.
-  const action = opts?.action?.url && opts?.action?.label ? opts.action : null;
-  const html =
+/** HTML part: the same text, with the mail's main link as a labelled action. Content only, no styling. */
+function htmlFromText(text, action) {
+  return (
     `<p>${escapeHtml(text).replace(/\n/g, '<br/>')}</p>` +
-    (action ? `<p><a href="${escapeHtml(action.url)}">${escapeHtml(action.label)}</a></p>` : '');
-  await transport.sendMail({ from, to, subject, text, html, messageId });
-  return { emailed: true, messageId };
+    (action ? `<p><a href="${escapeAttr(action.url)}">${escapeHtml(action.label)}</a></p>` : '')
+  );
 }
 
 /**
- * Body of the "confirm your email address" mail: says what it is in the first
- * line, then the one thing to do. The HTML part adds the link as a labelled action.
- * @param {string} link
+ * Build one mail in the recipient's language and send it.
+ * Throws when the mail server refuses it; use sendMailSafely where a failed
+ * mail must not change the outcome of the request.
+ * @param {{ kind: string, to: string, lang?: string | null, data?: Record<string, unknown>, replyTo?: string }} opts
+ * @returns {Promise<{ emailed: boolean, skipped?: boolean, messageId: string, lang: string }>}
  */
-export function verifyEmailText(link) {
-  return [
-    'Welcome to the Us accessibility scanner. One step left: confirm that this email address is yours.',
-    '',
-    'Confirm my email address:',
-    link,
-    '',
-    'Open the link, then click "Confirm email" on the page. The link works for 48 hours.',
-    'Your free scan is added to your account as soon as you have confirmed.',
-    '',
-    'Did you not create an account? Then ignore this message; nothing will happen.',
-    '',
-  ].join('\n');
-}
-
-/**
- * Tell the visitor we received their request, so a sent form is not a leap of faith.
- * Plain text with real content: what they asked, and what happens next.
- * @param {{ name?: string, email?: string, message?: string, scannedUrl?: string }} payload
- */
-export function leadConfirmationText(payload) {
-  const name = String(payload?.name || '').trim();
-  const message = String(payload?.message || '').trim();
-  const scannedUrl = String(payload?.scannedUrl || '').trim();
-  return [
-    `Hello${name ? ` ${name}` : ''},`,
-    '',
-    'Thank you for getting in touch with Us about web accessibility. We received your request and one of our accessibility specialists will reply within two working days.',
-    '',
-    ...(scannedUrl ? [`Page you scanned: ${scannedUrl}`, ''] : []),
-    ...(message ? ['Your message:', message, ''] : []),
-    'You do not need to do anything else. If you want to add something, reply to this email.',
-    '',
-    'Us',
-    'https://about-us.be',
-    '',
-  ].join('\n');
-}
-
-export async function sendLeadConfirmationEmail(payload) {
-  const to = String(payload?.email || '').trim();
-  if (!to) return { emailed: false };
-  const replyTo = String(process.env.ACCESS_REQUEST_TO || 'info@about-us.be').trim();
-  const transport = createSmtpTransport();
+export async function sendMail({ kind, to, lang, data, replyTo }) {
+  const recipient = String(to || '').trim();
+  const mail = buildMail(kind, lang, data);
   const messageId = newMessageId();
+  if (!recipient) return { emailed: false, messageId, lang: mail.lang };
+  const transport = createSmtpTransport();
   if (!transport) {
-    logSkippedMail({ kind: 'lead-confirmation', to, messageId });
-    return { emailed: false, messageId };
+    logSkippedMail({ kind, lang: mail.lang, to: recipient, messageId });
+    return { emailed: false, skipped: true, messageId, lang: mail.lang };
   }
   const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@localhost';
-  const text = leadConfirmationText(payload);
   await transport.sendMail({
     from,
-    to,
-    replyTo,
-    subject: 'We received your request · Us accessibility',
-    text,
-    html: `<p>${escapeHtml(text).replace(/\n/g, '<br/>')}</p>`,
+    to: recipient,
+    ...(replyTo ? { replyTo } : {}),
+    subject: mail.subject,
+    text: mail.text,
+    html: htmlFromText(mail.text, mail.action),
     messageId,
   });
-  return { emailed: true, messageId };
+  return { emailed: true, messageId, lang: mail.lang };
+}
+
+/**
+ * Like sendMail, but never throws: a failure is logged (mail type, language,
+ * recipient domain, error code) and reported as `emailed: false`. By the time
+ * we send, the account, token or lead already exists; a mail error must not
+ * turn that into a failed request, and its text must not reach the visitor.
+ */
+export async function sendMailSafely(opts) {
+  try {
+    return await sendMail(opts);
+  } catch (err) {
+    logMailFailure(opts, err);
+    return { emailed: false };
+  }
 }
 
 function escapeHtml(s) {
