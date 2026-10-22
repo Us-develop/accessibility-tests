@@ -75,6 +75,12 @@ function issueAuthToken(email) {
   return { raw, stored: hashAuthToken(raw) };
 }
 
+/** How long the links in account mails work. The mails state these numbers. */
+export const VERIFY_LINK_HOURS = 48;
+export const RESET_LINK_HOURS = 2;
+export const EMAIL_CHANGE_LINK_HOURS = 48;
+const HOUR_MS = 60 * 60 * 1000;
+
 export const PASSWORD_RULE_ERROR = 'Use a password of at least 10 characters that is not your email.';
 
 /** Dummy scrypt hash so missing users still pay the verifyPassword cost. */
@@ -322,7 +328,7 @@ export async function createUser({
     passwordHash: await hashPassword(password),
     emailVerified: autoVerify,
     verifyToken: issued?.stored || null,
-    verifyExpiresAt: autoVerify ? null : new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+    verifyExpiresAt: autoVerify ? null : new Date(Date.now() + VERIFY_LINK_HOURS * HOUR_MS).toISOString(),
     resetToken: null,
     resetExpiresAt: null,
     pendingEmail: null,
@@ -452,7 +458,7 @@ export async function restartEmailVerification(email) {
   const issued = issueAuthToken(user.email);
   const saved = await updateUser(user.id, {
     verifyToken: issued.stored,
-    verifyExpiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+    verifyExpiresAt: new Date(Date.now() + VERIFY_LINK_HOURS * HOUR_MS).toISOString(),
   });
   return { user: publicUser(saved), token: issued.raw };
 }
@@ -478,7 +484,7 @@ export async function startPasswordReset(email) {
   const issued = issueAuthToken(user.email);
   await updateUser(user.id, {
     resetToken: issued.stored,
-    resetExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+    resetExpiresAt: new Date(Date.now() + RESET_LINK_HOURS * HOUR_MS).toISOString(),
   });
   return { user: publicUser(user), token: issued.raw };
 }
@@ -525,7 +531,7 @@ export async function startEmailChange(userId, nextEmail, password) {
   const saved = await updateUser(user.id, {
     pendingEmail: normalized,
     pendingEmailToken: token,
-    pendingEmailExpiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+    pendingEmailExpiresAt: new Date(Date.now() + EMAIL_CHANGE_LINK_HOURS * HOUR_MS).toISOString(),
   });
   return { user: publicUser(saved), token, previousEmail: user.email, pendingEmail: normalized };
 }

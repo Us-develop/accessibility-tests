@@ -28,21 +28,23 @@ import nlChecks from './checks.nl.mjs';
 import enChecks from './checks.en.mjs';
 import nlDocs from './docs.nl.mjs';
 import enDocs from './docs.en.mjs';
+import nlMail from './mail.nl.mjs';
+import enMail from './mail.en.mjs';
 
 /**
  * Each language is split by area so a reviewer can read one part at a time:
  * `nl.mjs` / `en.mjs` for the site and account, `report.*.mjs` for the report
  * pages, `server.*.mjs` for messages the server sends, `checks.*.mjs` for the
- * findings of our own checks, `docs.*.mjs` for the downloadable documents.
+ * findings of our own checks, `docs.*.mjs` for the downloadable documents, `mail.*.mjs` for the e-mails.
  * A key lives in exactly one file
  * (tests/i18n.test.js checks that).
  */
 export const DICTIONARY_PARTS = Object.freeze({
-  nl: Object.freeze({ app: nlApp, report: nlReport, server: nlServer, checks: nlChecks, docs: nlDocs }),
-  en: Object.freeze({ app: enApp, report: enReport, server: enServer, checks: enChecks, docs: enDocs }),
+  nl: Object.freeze({ app: nlApp, report: nlReport, server: nlServer, checks: nlChecks, docs: nlDocs, mail: nlMail }),
+  en: Object.freeze({ app: enApp, report: enReport, server: enServer, checks: enChecks, docs: enDocs, mail: enMail }),
 });
-const nl = { ...nlApp, ...nlReport, ...nlServer, ...nlChecks, ...nlDocs };
-const en = { ...enApp, ...enReport, ...enServer, ...enChecks, ...enDocs };
+const nl = { ...nlApp, ...nlReport, ...nlServer, ...nlChecks, ...nlDocs, ...nlMail };
+const en = { ...enApp, ...enReport, ...enServer, ...enChecks, ...enDocs, ...enMail };
 
 export const LANGS = Object.freeze(['nl', 'en']);
 export const LANG_COOKIE = 'wcag_lang';

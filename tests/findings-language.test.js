@@ -29,7 +29,9 @@ describe('findings in the language of the scan', () => {
   it('records the scan language in the report and starts the scanner with it', () => {
     assert.match(read('run-tests.js'), /lang: SCAN_LANG,/);
     const app = read('server/create-app.mjs');
-    assert.match(app, /lang: requestLang\(req\) \|\| defaultLang\(\),/);
+    assert.match(app, /const scanLang = requestLang\(req\) \|\| defaultLang\(\);/);
+    // The run keeps it too (its notification mail uses it), and the scanner job gets it.
+    assert.equal(app.match(/\n {6}lang: scanLang,\n/g)?.length, 2);
     assert.match(app, /WCAG_SCAN_LANG: normalizeLang\(job\.lang\)/);
   });
 

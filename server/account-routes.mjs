@@ -4,6 +4,7 @@ import {
   deleteAccount,
   exportUserData,
   getPublicUserById,
+  getUserByEmail,
   getUserById,
   setPassword,
   startPasswordReset,
@@ -21,7 +22,7 @@ import {
 import { attachRunToUser, listProjectsForUser } from './projects.mjs';
 import { clearSessionCookies, cookieFlags, isHtmlFormPost, parseCookies, setSessionCookies } from './session.mjs';
 import { isValidGuestToken, guestFreebieClaimed, clientIp, deleteGuestTokenFile } from './guest.mjs';
-import { sendAccountEmail, verifyEmailText } from '../server-email.js';
+import { sendMailSafely } from '../server-email.js';
 import { asyncHandler } from './http-utils.mjs';
 import { clientKey, rateLimit } from './rate-limit.mjs';
 import {
@@ -217,18 +218,16 @@ export function registerAccountRoutes(app, ctx) {
   });
 
   /**
-   * Send an account mail without letting a mail failure change the outcome.
-   * The account or reset token already exists by the time we send; turning an
-   * SMTP error into a failed request would leave the visitor with an account
-   * they cannot confirm and would leak the mail server's error text.
+   * Language of a mail to an account: the one stored on it (set at signup,
+   * updated on a language switch), else the visitor's, else the default.
    */
-  async function sendAccountEmailSafely(message) {
-    try {
-      return await sendAccountEmail(message);
-    } catch (err) {
-      console.error(`[mail] ${message.kind} mail could not be sent:`, err?.message || err);
-      return { emailed: false };
-    }
+  function accountMailLang(user, req) {
+    return user?.lang || requestLang(req) || defaultLang();
+  }
+
+  /** Link that confirms a new account or a new e-mail address. */
+  function verifyLink(token) {
+    return `${publicBase()}/api/auth/verify?token=${encodeURIComponent(token)}`;
   }
 
   app.post('/api/auth/signup', signupIpLimit, asyncHandler(async (req, res) => {
@@ -291,13 +290,11 @@ export function registerAccountRoutes(app, ctx) {
         if (guestUsed) {
           await ensureFreebieLot(user.id, { guestFreebieUsed: true });
         }
-        const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(verifyToken)}`;
-        await sendAccountEmailSafely({
+        await sendMailSafely({
           kind: 'verify',
           to: user.email,
-          subject: 'Confirm your email address · Us accessibility',
-          text: verifyEmailText(link),
-          action: { label: 'Confirm my email address', url: link },
+          lang: accountMailLang(user, req),
+          data: { firstName: user.firstName, email: user.email, link: verifyLink(verifyToken) },
         });
       } else {
         await ensureFreebieLot(user.id, {
@@ -322,16 +319,18 @@ export function registerAccountRoutes(app, ctx) {
       if (status === 409 && err.field === 'email' && emailVerificationRequired()) {
         if (typeof req.recordRateLimitHit === 'function') req.recordRateLimitHit();
         const email = String(req.body?.email || '').trim().toLowerCase();
-        void sendAccountEmailSafely({
-          kind: 'signup-existing',
-          to: email,
-          subject: 'You already have a Us accessibility account',
-          text:
-            `Someone, probably you, tried to create an account with this email address, but it already has one.\n\n` +
-            `Sign in: ${publicBase()}/login\n` +
-            `Forgot your password? Reset it: ${publicBase()}/forgot\n\n` +
-            `If this was not you, you can ignore this message. Nothing has changed.\n`,
-        });
+        // In the background, like the mail itself, so the answer takes as long
+        // as for a new address. The mail speaks the existing account's language.
+        void getUserByEmail(email)
+          .catch(() => null)
+          .then((existing) =>
+            sendMailSafely({
+              kind: 'signup-existing',
+              to: email,
+              lang: accountMailLang(existing, req),
+              data: { firstName: existing?.firstName },
+            })
+          );
         const pendingNext = rememberPendingNext(req, res);
         const guestToken = String(req.body?.guestToken || '').trim();
         return formOrJson(req, res, signupCheckEmailPath(pendingNext, guestToken), 200, {
@@ -385,13 +384,11 @@ export function registerAccountRoutes(app, ctx) {
   app.post('/api/auth/verify/resend', resendIpLimit, resendEmailLimit, asyncHandler(async (req, res) => {
     const started = await restartEmailVerification(req.body?.email);
     if (started) {
-      const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(started.token)}`;
-      await sendAccountEmailSafely({
+      await sendMailSafely({
         kind: 'verify',
         to: started.user.email,
-        subject: 'Confirm your email address · Us accessibility',
-        text: verifyEmailText(link),
-        action: { label: 'Confirm my email address', url: link },
+        lang: accountMailLang(started.user, req),
+        data: { firstName: started.user.firstName, email: started.user.email, link: verifyLink(started.token) },
       });
     }
     return formOrJson(req, res, '/verify?sent=1', 200, { ok: true });
@@ -403,11 +400,11 @@ export function registerAccountRoutes(app, ctx) {
       const link = `${publicBase()}/reset?token=${encodeURIComponent(started.token)}`;
       // Not awaited: waiting for the mail server only when the account exists
       // would let response time reveal which addresses are registered.
-      void sendAccountEmailSafely({
+      void sendMailSafely({
         kind: 'reset',
         to: started.user.email,
-        subject: 'Reset your Us accessibility password',
-        text: `Reset your password:\n${link}\nThis link expires in 2 hours.\n`,
+        lang: accountMailLang(started.user, req),
+        data: { firstName: started.user.firstName, link },
       });
     }
     return formOrJson(req, res, '/forgot?sent=1', 200, { ok: true });
@@ -557,18 +554,20 @@ export function registerAccountRoutes(app, ctx) {
     try {
       const started = await startEmailChange(userId, nextEmail, password);
       if (!started) return res.status(401).json({ error: 'Sign in first.' });
-      const link = `${publicBase()}/api/auth/verify?token=${encodeURIComponent(started.token)}`;
-      await sendAccountEmail({
+      // The change is saved by now: a mail failure is logged, not answered as an error.
+      const lang = accountMailLang(started.user, req);
+      const firstName = started.user.firstName;
+      await sendMailSafely({
         kind: 'email-change',
         to: started.pendingEmail,
-        subject: 'Confirm your new Us accessibility email',
-        text: `Confirm your new email address:\n${link}\nThis link expires in 48 hours.\n`,
+        lang,
+        data: { firstName, newEmail: started.pendingEmail, link: verifyLink(started.token) },
       });
-      await sendAccountEmail({
+      await sendMailSafely({
         kind: 'email-change-notice',
         to: started.previousEmail,
-        subject: 'Your Us accessibility email is changing',
-        text: 'Someone requested a change to the email on this account. If that was not you, reset your password. The current address stays active until the new one is confirmed.\n',
+        lang,
+        data: { firstName, newEmail: started.pendingEmail },
       });
       return res.json({ ok: true, pendingEmail: started.pendingEmail });
     } catch (err) {

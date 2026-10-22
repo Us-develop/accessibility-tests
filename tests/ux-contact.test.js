@@ -22,7 +22,7 @@ process.env.MAIL_FROM = 'noreply@example.com';
 
 const { createAccessibilityApp } = await import('../server/create-app.mjs');
 const { commercialCtas, contactHref, LEAD_SOURCES } = await import('../server/plan-catalog.mjs');
-const { leadConfirmationText, verifyEmailText } = await import('../server-email.js');
+const { buildMail } = await import('../server/mail-messages.mjs');
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFileSync(join(repoRoot, path), 'utf8');
@@ -128,7 +128,11 @@ describe('lead API', () => {
 
 describe('mail content', () => {
   it('confirms a request with real content', () => {
-    const text = leadConfirmationText({ name: 'Ann', message: 'Audit please', scannedUrl: 'https://example.com/' });
+    const { text } = buildMail('lead-confirmation', 'en', {
+      name: 'Ann',
+      message: 'Audit please',
+      scannedUrl: 'https://example.com/',
+    });
     assert.match(text, /^Hello Ann,/);
     assert.match(text, /We received your request/);
     assert.match(text, /two working days/);
@@ -137,11 +141,12 @@ describe('mail content', () => {
   });
 
   it('opens the verification mail with what it is and labels the link', () => {
-    const text = verifyEmailText('https://wcag.example/api/auth/verify?token=abc');
-    assert.match(text.split('\n')[0], /confirm that this email address is yours/);
-    assert.match(text, /Confirm my email address:\nhttps:\/\/wcag\.example\/api\/auth\/verify\?token=abc/);
-    assert.match(text, /48 hours/);
-    assert.match(read('server/account-routes.mjs'), /action: \{ label: 'Confirm my email address', url: link \}/);
+    const link = 'https://wcag.example/api/auth/verify?token=abc';
+    const mail = buildMail('verify', 'en', { firstName: 'Ann', link });
+    assert.match(mail.text.split('\n')[2], /confirm that this email address is yours/);
+    assert.match(mail.text, /Confirm my email address:\nhttps:\/\/wcag\.example\/api\/auth\/verify\?token=abc/);
+    assert.match(mail.text, /48 hours/);
+    assert.deepEqual(mail.action, { label: 'Confirm my email address', url: link });
   });
 });
 
