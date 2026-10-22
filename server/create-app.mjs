@@ -75,6 +75,7 @@ import {
   authenticateUser,
   getUserById,
   GENERIC_CREDENTIALS_ERROR,
+  setUserLang,
   UNVERIFIED_EMAIL_CODE,
   UNVERIFIED_EMAIL_ERROR,
 } from './users.mjs';
@@ -2125,10 +2126,18 @@ app.get('/api/admin/leads', async (req, res) => {
  * the page the visitor came from. A form post, so it works without JavaScript
  * and is never triggered by a link prefetch or a crawler, as a GET would be.
  */
-app.post('/lang', (req, res) => {
+app.post('/lang', async (req, res) => {
   const lang = normalizeLang(req.body?.lang);
   const next = typeof req.body?.next === 'string' && isSafeRelativePath(req.body.next) ? req.body.next : '/';
   if (lang) res.append('Set-Cookie', langSetCookie(lang, { secure: process.env.NODE_ENV === 'production' }));
+  // A signed-in customer keeps the choice on the account too, for the mails we send later.
+  if (lang && req.access?.role === 'customer' && req.access.userId) {
+    try {
+      await setUserLang(req.access.userId, lang);
+    } catch (err) {
+      console.error('[lang] could not store the language on the account:', err?.message || err);
+    }
+  }
   res.set('Cache-Control', 'no-store');
   return res.redirect(303, next);
 });

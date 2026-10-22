@@ -28,6 +28,7 @@ import {
 import { deleteConsentsForAccount, listConsents, recordDeletionTombstone } from './consents.mjs';
 import { deleteProjectsForUser, deleteRunDirectory, listRunRefsForUser } from './projects.mjs';
 import { ensureFreebieLot } from './tokens.mjs';
+import { normalizeLang } from '../i18n/index.mjs';
 
 export const GENERIC_CREDENTIALS_ERROR = 'Invalid username or password.';
 export const UNVERIFIED_EMAIL_ERROR = 'Verify your email before signing in.';
@@ -295,6 +296,7 @@ export async function createUser({
   company = '',
   vatNumber = '',
   customerType = 'consumer',
+  lang = null,
 } = {}) {
   const normalized = String(email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
@@ -333,6 +335,8 @@ export async function createUser({
     company: companyName,
     vatNumber: vat,
     customerType: type,
+    // Language for mails to this account: the one the visitor used to sign up.
+    lang: normalizeLang(lang),
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };
@@ -362,6 +366,20 @@ export async function updateUser(id, patch) {
   const saved = await persistUser(next);
   invalidateSessionUserCache(id);
   return saved;
+}
+
+/**
+ * Remember the language a signed-in customer switched to, so mails sent later
+ * (verification again, password reset, e-mail change) arrive in that language.
+ * @returns {Promise<boolean>} true when the stored language changed
+ */
+export async function setUserLang(userId, lang) {
+  const next = normalizeLang(lang);
+  if (!userId || !next) return false;
+  const current = await getUserById(userId);
+  if (!current || current.lang === next) return false;
+  await updateUser(userId, { lang: next });
+  return true;
 }
 
 export async function updateContactDetails(userId, patch) {
