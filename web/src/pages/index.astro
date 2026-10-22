@@ -1,6 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
+import WideWord from '../components/WideWord.astro';
 import { companyIdentity } from '../../../server/company.mjs';
 import { usePageLang } from '../lib/page-lang.js';
 
@@ -46,41 +47,37 @@ export const prerender = false;
   <div class="app-shell">
     <AppHeader crumb={ssrStaff ? tr('header.crumb.newScan') : ssrCustomer ? tr('home.crumb.customer') : tr('home.crumb.guest')} />
     <main id="main" class="app-main" tabindex="-1">
-      <div class="container-narrow run-audit-page" style="position: relative; overflow: hidden; padding-block: clamp(32px, 5vw, 56px) clamp(48px, 8vw, 96px);">
-        <div
-          aria-hidden="true"
-          class="motion-drift"
-          style="position: absolute; top: -120px; right: -100px; width: 460px; height: 460px; border-radius: 50%; background: var(--us-grad-iridescent); opacity: 0.5; filter: blur(40px); pointer-events: none; animation: drift 22s ease-in-out infinite;"
-        >
-        </div>
-        <div class="fade-up guest-only" hidden={ssrSignedIn} style="text-align: left; margin-bottom: 40px;">
-          <span class="eyebrow"><span class="dot"></span>{tr('home.guest.eyebrow')}</span>
-          <h1 class="run-hero-title">{tr('home.guest.h1')}</h1>
-          <p class="p-large muted" style="max-width: 620px;">{tr('home.guest.lead')}</p>
+      <div class="page-wrap run-audit-page">
+        <div class="page-intro guest-only" hidden={ssrSignedIn}>
+          <h1 class="page-title"><WideWord text={tr('home.guest.h1')} word={tr('home.guest.h1.wide')} /></h1>
+          <p class="page-lead">{tr('home.guest.lead')}</p>
         </div>
 
         <form
           id="guest-run-form"
-          class="card guest-only"
+          class="scan-card guest-only"
           method="post"
           action="/api/run"
           data-astro-reload
           hidden={ssrSignedIn}
-          style="padding: 0; overflow: hidden;"
         >
-          <div style="padding: 32px 32px 28px;">
-            <label class="field-label" for="guest-url">{tr('home.guest.label')}</label>
-            <input
-              id="guest-url"
-              name="url"
-              class="input"
-              type="url"
-              inputmode="url"
-              autocomplete="url"
-              placeholder="https://example.com"
-              required
-            />
-            <div id="guest-freebie-used" class="guest-freebie-used" role="alert" tabindex="-1" hidden style="margin-top: 14px;">
+          <div class="scan-card-body">
+            <label class="card-title" for="guest-url">{tr('home.guest.label')}</label>
+            <div class="scan-input">
+              <input
+                id="guest-url"
+                name="url"
+                type="url"
+                inputmode="url"
+                autocomplete="url"
+                placeholder="https://example.com"
+                required
+              />
+              <button type="submit" class="btn btn-primary" id="guest-submit-btn">
+                {tr('home.guest.submit')}
+              </button>
+            </div>
+            <div id="guest-freebie-used" class="guest-freebie-used" role="alert" tabindex="-1" hidden>
               <p style="font-weight: 600; margin-bottom: 6px;">{tr('home.guest.used.title')}</p>
               <p class="muted" style="font-size: 14px; margin-bottom: 12px;">{tr('home.guest.used.body')}</p>
               <div class="guest-cta-row">
@@ -89,39 +86,29 @@ export const prerender = false;
                 <button type="button" class="btn btn-ghost btn-sm" data-open-login>{tr('cta.signIn')}</button>
               </div>
             </div>
-            <div id="guest-turnstile" style="margin-top: 18px;"></div>
+            <div id="guest-turnstile"></div>
+            <p class="scan-note"><img src="/assets/icons/info.svg" width="16" height="16" alt="" />{tr('home.guest.note')}</p>
+            <a class="scan-limits" href="/limitations">{tr('home.limitations')}</a>
           </div>
-          <div
-            style="background: var(--us-ink); color: var(--us-cream); padding: 24px 32px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;"
-          >
-            <div>
-              <div style="opacity: 0.85; font-size: 14px; max-width: 420px;">{tr('home.guest.note')}</div>
-              <a class="link" href="/limitations" style="color: inherit; font-size: 13px;">{tr('home.limitations')}</a>
-            </div>
-            <button type="submit" class="btn btn-grad btn-lg" style="min-width: 200px;" id="guest-submit-btn">
-              {tr('home.guest.submit')}
-            </button>
+          <div class="scan-card-band">
+            <p>{tr('home.help')}</p>
+            <a class="btn-text" href="/contact?source=home"><img src="/assets/icons/mail.svg" width="20" height="20" alt="" />{tr('cta.expert')}</a>
           </div>
         </form>
 
-        <div class="guest-only" hidden={ssrSignedIn} style="margin-top: 24px; text-align: center;">
-          <p class="muted" style="font-size: 14px; margin-bottom: 12px;">{tr('home.more')}</p>
-          <div class="guest-cta-row" style="justify-content: center;">
+        <div class="scan-more guest-only" hidden={ssrSignedIn}>
+          <p>{tr('home.more')}</p>
+          <div class="guest-cta-row">
             <a class="btn btn-secondary" href="/pricing#tokens">{tr('cta.buyTokens')}</a>
             <a class="btn btn-secondary" href="/pricing#pro">{tr('cta.subscribePro')}</a>
           </div>
-          <p class="muted" style="font-size: 14px; margin: 24px 0 12px;">{tr('home.help')}</p>
-          <div class="guest-cta-row" style="justify-content: center;">
-            <a class="btn btn-ghost" href="/contact?source=home">{tr('cta.expert')}</a>
-          </div>
         </div>
 
-        <div class="fade-up customer-only" hidden={!ssrCustomer} style="text-align: left; margin-bottom: 40px;">
-          <span class="eyebrow"><span class="dot"></span>{tr('home.customer.eyebrow')}</span>
-          <h1 class="run-hero-title">{tr('home.customer.h1')}</h1>
-          <p class="p-large muted" style="max-width: 620px;">{tr('home.customer.lead')}</p>
-          <p id="customer-usage" class="muted" style="max-width: 620px; margin-top: 8px;"></p>
-          <p class="muted" style="font-size: 13px; margin-top: 8px;">
+        <div class="page-intro customer-only" hidden={!ssrCustomer}>
+          <h1 class="page-title">{tr('home.customer.h1')}</h1>
+          <p class="page-lead">{tr('home.customer.lead')}</p>
+          <p id="customer-usage" class="muted"></p>
+          <p class="text-small">
             <a class="link" href="/pricing">{tr('home.customer.pricing')}</a>
             ·
             <a class="link" href="/account#tokens">{tr('home.customer.buyTokens')}</a>
@@ -132,42 +119,36 @@ export const prerender = false;
 
         <form
           id="customer-run-form"
-          class="card customer-only"
+          class="scan-card customer-only"
           method="post"
           action="/api/run"
           data-astro-reload
           hidden={!ssrCustomer}
-          style="padding: 0; overflow: hidden;"
         >
-          <div style="padding: 32px 32px 28px;">
-            <label class="field-label" for="customer-url">{tr('home.customer.label')}</label>
+          <div class="scan-card-body">
+            <label class="card-title" for="customer-url">{tr('home.customer.label')}</label>
             <textarea
               id="customer-url"
               name="urls"
-              class="textarea"
+              class="scan-textarea"
               placeholder="https://example.com"
               required
-              style="min-height: 96px;"
             ></textarea>
-            <p class="muted" style="font-size: 13px; margin-top: 12px;">{tr('home.customer.hint')}</p>
+            <p class="scan-note"><img src="/assets/icons/info.svg" width="16" height="16" alt="" />{tr('home.customer.hint')}</p>
             <input type="hidden" name="csrfToken" class="wcag-csrf-field" value="" />
           </div>
-          <div
-            style="background: var(--us-ink); color: var(--us-cream); padding: 24px 32px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;"
-          >
+          <div class="scan-card-band">
             <div>
-              <div style="font-family: var(--font-display); font-size: 20px; font-weight: 700; letter-spacing: -0.01em;">
-                {tr('home.customer.barTitle')}
-              </div>
-              <div style="opacity: 0.7; font-size: 13px; margin-top: 4px;">{tr('home.customer.barBody')}</div>
+              <p>{tr('home.customer.barTitle')}</p>
+              <p class="scan-band-sub">{tr('home.customer.barBody')}</p>
             </div>
-            <button type="submit" class="btn btn-grad btn-lg" style="min-width: 200px;" id="customer-submit-btn">
+            <button type="submit" class="btn btn-primary" id="customer-submit-btn">
               {tr('home.customer.submit')}
             </button>
           </div>
         </form>
 
-        <p class="muted customer-only" hidden={!ssrCustomer} style="font-size: 12px; margin-top: 14px; text-align: center;">
+        <p class="text-small customer-only scan-links" hidden={!ssrCustomer}>
           <a href="/account" class="link">{tr('home.customer.account')}</a>
           ·
           <a href="/pricing" class="link">{tr('home.customer.pricing')}</a>
@@ -319,7 +300,7 @@ export const prerender = false;
 
         <p id="form-err" class="muted" role="alert" hidden style="font-size: 14px; margin-top: 14px; color: var(--status-error);"></p>
 
-        <p class="muted" hidden={!ssrSignedIn} style="font-size: 12px; margin-top: 14px; text-align: center;">
+        <p class="text-small scan-links" hidden={!ssrSignedIn}>
           <a href="/limitations" class="link">{tr('home.limitations')}</a>
         </p>
 

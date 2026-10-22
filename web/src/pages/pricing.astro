@@ -4,7 +4,7 @@ import AppHeader from '../components/AppHeader.astro';
 import { MAX_PAGES_PER_CUSTOMER_RUN, NONE_PLAN_ID, PRO_PAGES_PER_MONTH, PRO_PLAN_ID, TOKEN_PACKS, planFeatureList } from '../../../server/plan-catalog.mjs';
 import { billingPublicConfig } from '../../../server/stripe.mjs';
 import { usePageLang } from '../lib/page-lang.js';
-import { formatVatInclusivePrice } from '../../../server/vat-display.mjs';
+import { packDiscountPercent, vatParts } from '../../../server/vat-display.mjs';
 import { WITHDRAWAL_WAIVER_TEXT } from '../../../server/legal-versions.mjs';
 
 export const prerender = false;
@@ -13,15 +13,17 @@ const tr = usePageLang(Astro);
 // the English sentence plus a note with a translation.
 const waiverNote = tr.lang === 'en' ? '' : tr('checkout.waiver.note');
 const canceled = Astro.url.searchParams.get('billing') === 'cancel';
-const pack10 = TOKEN_PACKS.find((p) => p.id === 'pack_10');
-const pack50 = TOKEN_PACKS.find((p) => p.id === 'pack_50');
-const pack100 = TOKEN_PACKS.find((p) => p.id === 'pack_100');
-const unitPrice = formatVatInclusivePrice(100);
-const pack10Price = formatVatInclusivePrice(pack10?.priceCents || 1000);
-const pack50Price = formatVatInclusivePrice(pack50?.priceCents || 4500);
-const pack100Price = formatVatInclusivePrice(pack100?.priceCents || 8000);
-const proMonth = formatVatInclusivePrice(4900);
-const proYear = formatVatInclusivePrice(49000);
+// Prices as in the catalog, incl. VAT, each with the amount without VAT under it.
+const UNIT_CENTS = 100;
+const unitPrice = vatParts(UNIT_CENTS);
+const packs = TOKEN_PACKS.map((pack) => ({
+  ...pack,
+  price: vatParts(pack.priceCents),
+  discount: packDiscountPercent(pack, UNIT_CENTS),
+}));
+const proMonth = vatParts(4900);
+const proYear = vatParts(49000);
+const inclVat = (price: { excl: string }) => tr('price.inclVat', { excl: price.excl });
 const siteOrigin = String(Astro.site ?? 'https://wcag.about-us.be').replace(/\/$/, '');
 const tokenFeatures = planFeatureList(NONE_PLAN_ID);
 const proFeatures = planFeatureList(PRO_PLAN_ID);
@@ -91,47 +93,58 @@ const jsonLd = {
   <div class="app-shell">
     <AppHeader crumb={tr('pricing.crumb')} />
     <main id="main" class="app-main" tabindex="-1">
-      <article class="container-narrow page-article">
-        <span class="eyebrow"><span class="dot"></span>{tr('pricing.eyebrow')}</span>
-        <h1>{tr('pricing.h1')}</h1>
-        <p class="muted p-large prose-width prose-lead">{tr('pricing.lead')}</p>
-        <p id="pricing-msg" class="muted" role="status" aria-live="polite">{canceled ? tr('pricing.canceled') : ''}</p>
+      <article class="page-wrap">
+        <div class="page-intro">
+          <h1 class="page-title">{tr('pricing.h1')}</h1>
+          <p class="page-lead">{tr('pricing.lead')}</p>
+          <p id="pricing-msg" class="muted" role="status" aria-live="polite">{canceled ? tr('pricing.canceled') : ''}</p>
+        </div>
 
         <div id="pricing-grid" class="pricing-grid">
-          <section class="card pricing-card" id="gratis">
-            <h2>{tr('pricing.free.h2')}</h2>
-            <p class="pricing-price">€ 0</p>
-            <p class="muted">{tr('pricing.free.body')}</p>
+          <section class="pricing-card" id="gratis">
+            <div class="pricing-head">
+              <h2 class="pricing-label">{tr('pricing.free.h2')}</h2>
+              <p class="pricing-price">€ 0</p>
+            </div>
+            <p>{tr('pricing.free.body')}</p>
             <div class="pricing-cta">
-              <a class="btn btn-ghost" href="/">{tr('pricing.free.cta')}</a>
+              <a class="btn btn-primary" href="/">{tr('pricing.free.cta')}</a>
             </div>
           </section>
 
-          <section class="card pricing-card" id="tokens" data-checkout-scope>
-            <h2>{tr('pricing.tokens.h2')}</h2>
-            <p class="pricing-price">{unitPrice} <span>{tr('pricing.tokens.unit')}</span></p>
-            <p class="muted">{tr('pricing.tokens.body')}</p>
+          <section class="pricing-card" id="tokens" data-checkout-scope>
+            <div class="pricing-head">
+              <h2 class="pricing-label">{tr('pricing.tokens.h2')}</h2>
+              <div>
+                <p class="pricing-price">{unitPrice.incl} <span>{tr('pricing.tokens.unit')}</span></p>
+                <p class="pricing-note">{inclVat(unitPrice)}</p>
+              </div>
+            </div>
+            <p>{tr('pricing.tokens.body')}</p>
             <ul class="pricing-packs">
-              <li>{tr('pricing.tokens.pack', { n: 10, price: pack10Price })}</li>
-              <li>{tr('pricing.tokens.pack', { n: 50, price: pack50Price })}</li>
-              <li>{tr('pricing.tokens.pack', { n: 100, price: pack100Price })}</li>
+              {packs.map((pack) => (
+                <li>
+                  {tr('pricing.tokens.pack', { n: pack.tokens, price: pack.price.incl })}
+                  <span class="pricing-note">{inclVat(pack.price)}{pack.discount ? <span class="pricing-discount">-{pack.discount}%</span> : null}</span>
+                </li>
+              ))}
             </ul>
-            <h3 style="font-size: 16px; margin: 16px 0 8px;">{tr('pricing.includes')}</h3>
-            <ul class="pricing-packs" style="list-style: none; padding-left: 0;">
+            <h3 class="pricing-sub">{tr('pricing.includes')}</h3>
+            <ul class="pricing-checks">
               {tokenFeatures.map((feature) => (
-                <li class={feature.included ? undefined : 'muted'}>
-                  <span aria-hidden="true">{feature.included ? '✓' : '–'}</span>
+                <li class={feature.included ? undefined : 'is-excluded'}>
                   {feature.included ? tr(`feature.${feature.key}`) : tr('pricing.proOnly', { feature: tr(`feature.${feature.key}`) })}
                 </li>
               ))}
             </ul>
             {anyPackReady ? (
               <Fragment>
-                <label class="legal-check" style="margin-top: 16px;">
+                <label class="selector pricing-waiver">
                   <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver-tokens" name="withdrawalWaiver" value="true" aria-describedby={waiverNote ? 'waiver-note-tokens' : undefined} />
+                  <span class="selector-box" aria-hidden="true"></span>
                   <span lang={tr.lang === 'en' ? undefined : 'en'}>{WITHDRAWAL_WAIVER_TEXT}</span>
                 </label>
-                {waiverNote ? <p id="waiver-note-tokens" class="muted" style="font-size: 12px;">{waiverNote}</p> : null}
+                {waiverNote ? <p id="waiver-note-tokens" class="pricing-note">{waiverNote}</p> : null}
                 <p class="checkout-msg muted" role="status" aria-live="polite"></p>
                 <div class="pricing-cta pricing-pack-actions">
                   {packReady.pack_10 ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pack" data-pack="pack_10">{tr('pricing.tokens.buy', { n: 10 })}</button> : null}
@@ -146,32 +159,35 @@ const jsonLd = {
             )}
           </section>
 
-          <section class="card pricing-card" id="pro" data-checkout-scope>
-            <h2>{tr('pricing.pro.h2')}</h2>
-            <p class="pricing-price">{proMonth} <span>{tr('pricing.pro.perMonth')}</span></p>
-            <p class="muted">{tr('pricing.pro.yearlyNote', { yearly: proYear })}</p>
-            <ul class="pricing-packs" style="list-style: none; padding-left: 0;">
+          <section class="pricing-card" id="pro" data-checkout-scope>
+            <div class="pricing-head">
+              <h2 class="pricing-label">{tr('pricing.pro.h2')}</h2>
+              <div>
+                <p class="pricing-price">{proMonth.incl} <span>{tr('pricing.pro.perMonth')}</span></p>
+                <p class="pricing-note">{inclVat(proMonth)}</p>
+              </div>
+            </div>
+            <p>{tr('pricing.pro.yearlyNote', { yearly: `${proYear.incl} ${inclVat(proYear)}` })}</p>
+            <ul class="pricing-checks">
               {proLimits.map((label) => (
-                <li><span aria-hidden="true">✓</span> {label}</li>
+                <li>{label}</li>
               ))}
               {proFeatures.map((feature) => (
-                <li class={feature.included ? undefined : 'muted'}>
-                  <span aria-hidden="true">{feature.included ? '✓' : '–'}</span>
-                  {tr(`feature.${feature.key}`)}
-                </li>
+                <li class={feature.included ? undefined : 'is-excluded'}>{tr(`feature.${feature.key}`)}</li>
               ))}
             </ul>
             {proReady ? (
               <Fragment>
-                <label class="legal-check" style="margin-top: 16px;">
+                <label class="selector pricing-waiver">
                   <input type="checkbox" class="checkout-waiver" id="withdrawal-waiver-pro" name="withdrawalWaiver" value="true" aria-describedby={waiverNote ? 'waiver-note-pro' : undefined} />
+                  <span class="selector-box" aria-hidden="true"></span>
                   <span lang={tr.lang === 'en' ? undefined : 'en'}>{WITHDRAWAL_WAIVER_TEXT}</span>
                 </label>
-                {waiverNote ? <p id="waiver-note-pro" class="muted" style="font-size: 12px;">{waiverNote}</p> : null}
+                {waiverNote ? <p id="waiver-note-pro" class="pricing-note">{waiverNote}</p> : null}
                 <p class="checkout-msg muted" role="status" aria-live="polite"></p>
                 <div class="pricing-cta">
                   {proMonthlyReady ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="monthly">{tr('pricing.pro.monthly')}</button> : null}
-                  {proYearlyReady ? <button type="button" class="btn btn-ghost pricing-checkout" data-kind="pro" data-interval="yearly">{tr('pricing.pro.yearly')}</button> : null}
+                  {proYearlyReady ? <button type="button" class="btn btn-primary pricing-checkout" data-kind="pro" data-interval="yearly">{tr('pricing.pro.yearly')}</button> : null}
                 </div>
               </Fragment>
             ) : (
@@ -181,16 +197,16 @@ const jsonLd = {
             )}
           </section>
 
-          <section class="card pricing-card" id="us-diensten">
-            <h2>{tr('pricing.services.h2')}</h2>
-            <p class="muted">{tr('pricing.services.body')}</p>
+          <section class="pricing-card pricing-card-wide" id="us-diensten">
+            <h2 class="pricing-label">{tr('pricing.services.h2')}</h2>
+            <p>{tr('pricing.services.body')}</p>
             <div class="pricing-cta">
-              <a class="btn btn-secondary" href="/contact?source=pricing">{tr('cta.expert')}</a>
+              <a class="btn-text" href="/contact?source=pricing"><img src="/assets/icons/mail.svg" width="20" height="20" alt="" />{tr('cta.expert')}</a>
             </div>
           </section>
         </div>
 
-        <p class="muted" style="font-size: 13px; max-width: 640px; margin-top: 24px;">{tr('pricing.vatNote')}</p>
+        <p class="pricing-note pricing-vat">{tr('pricing.vatNote')}</p>
       </article>
     </main>
   </div>

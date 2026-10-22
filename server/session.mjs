@@ -181,6 +181,8 @@ export async function readAccessFromCookies(req) {
     role: session.role,
     userId: session.sub,
     email: session.email || user.email || '',
+    // For the greeting in the header ("Hi Astrid").
+    firstName: user.firstName || '',
     csrf,
     ver: session.ver,
   };

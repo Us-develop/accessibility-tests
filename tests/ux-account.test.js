@@ -34,12 +34,14 @@ describe('account page layout', () => {
   });
 
   it('has a sidebar with the balance and a link to every section', () => {
-    const nav = account.slice(account.indexOf('<nav class="account-nav'), account.indexOf('</nav>'));
+    const side = account.slice(account.indexOf('<div class="account-side">'), account.indexOf('</nav>'));
+    const nav = side.slice(side.indexOf('<nav class="account-nav'));
     assert.match(nav, /aria-label=\{tr\('acct\.nav\.aria'\)\}/);
-    assert.match(nav, /id="account-nav-balance"/);
+    // The balance sits above the links, as in the design.
+    assert.ok(side.indexOf('id="account-nav-balance"') >= 0 && side.indexOf('id="account-nav-balance"') < side.indexOf('<nav'));
     for (const id of ['projects', 'scan-history', 'subscription', 'tokens', 'payments', 'personal']) {
       assert.match(nav, new RegExp(`href="#${id}"`), `sidebar links to #${id}`);
-      assert.match(account, new RegExp(`<h2 id="${id}" tabindex="-1">`), `#${id} is a focusable heading`);
+      assert.match(account, new RegExp(`<h2 id="${id}" class="card-title" tabindex="-1">`), `#${id} is a focusable heading`);
     }
     assert.match(account, /balanceLong\(balance\)/);
   });
@@ -56,8 +58,8 @@ describe('account page layout', () => {
   });
 
   it('makes deleting a small link with a confirm step', () => {
-    assert.match(account, /<button type="button" class="linklike" id="delete-open" aria-expanded="false" aria-controls="delete-card">\{tr\('acct\.delete\.open'\)\}<\/button>/);
-    assert.match(account, /<section id="delete-card" class="card stack-form account-section" hidden>/);
+    assert.match(account, /<button type="button" class="link-icon account-delete-open" id="delete-open" aria-expanded="false" aria-controls="delete-card"><img src="\/assets\/icons\/delete-large\.svg" width="20" height="20" alt="" \/>\{tr\('acct\.delete\.open'\)\}<\/button>/);
+    assert.match(account, /<section id="delete-card" class="panel account-section" hidden>/);
     assert.match(account, /tr\('acct\.delete\.confirm'\)/);
     assert.match(account, /id="delete-cancel">\{tr\('acct\.delete\.keep'\)\}/);
     assert.match(account, /function openDeleteConfirm/);
@@ -67,7 +69,7 @@ describe('account page layout', () => {
 
   it('really hides sections marked hidden', () => {
     // .stack-form sets display: grid, which beats the hidden attribute on its own.
-    assert.match(account, /\.account-section\[hidden\] \{\s*display: none;/);
+    assert.match(account, /\.account-section\[hidden\][^{]*\{\s*display: none;/);
   });
 
   it('shows each message next to the form that caused it', () => {
@@ -105,7 +107,7 @@ describe('all scans page', () => {
   });
 
   it('is linked from the header for every signed-in user', () => {
-    assert.match(header, /class="btn btn-sm btn-secondary btn-all-scans wcag-header-account"\s+href="\/audits"/);
+    assert.match(header, /class="nav-menu-item btn-all-scans wcag-header-account"\s+href="\/audits"/);
     // Hidden for guests by the existing rule for .wcag-header-account.
     assert.match(header, /body:not\(\.is-staff\):not\(\.is-customer\)\) \.wcag-header-account/);
   });

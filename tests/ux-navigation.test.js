@@ -95,7 +95,7 @@ describe('getting around', () => {
   const home = read('web/src/pages/index.astro');
 
   it('has a Start new scan link and a balance link in the header', () => {
-    assert.match(header, /href="\/"[^>]*>\{tr\('header\.startScan'\)\}<\/a>/);
+    assert.match(header, /class="nav-cta" href="\/"[^>]*><img src="\/assets\/icons\/plus\.svg"[^>]*\/>\{tr\('header\.startScan'\)\}<\/a>/);
     assert.match(header, /id="wcag-header-balance"/);
     assert.match(header, /href="\/account#tokens"/);
     assert.match(header, /globalThis\.__wcagHeaderLoginBound/);

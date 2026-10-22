@@ -14,12 +14,13 @@ interface Props {
   runId?: string | null;
   /** Which step is currently active. Pass null for the new-audit / loading screens. */
   active?: Step['key'] | null;
-  /** Crumb shown when no audit is loaded. Defaults to "New scan". */
+  /** Not shown since the floating header; kept so pages can still pass it. */
   crumb?: string;
 }
 
 const tr = chromeTranslator(Astro);
-const { domain = null, runId = null, active = null, crumb = tr('header.crumb.newScan') } = Astro.props;
+// `crumb` is no longer shown: the floating bar has no crumb for pages without a site.
+const { domain = null, runId = null, active = null } = Astro.props;
 
 const STEPS: Step[] = [
   { key: 'history', label: tr('header.step.history') },
@@ -51,39 +52,15 @@ const access = Astro.locals?.access;
 const sessionHint = access?.role === 'staff' || access?.role === 'customer';
 const isCustomer = access?.role === 'customer';
 const onHome = Astro.url.pathname === '/';
+const firstName = String(access?.firstName || '').trim();
+const greeting = firstName ? tr('header.greeting', { name: firstName }) : tr('header.account');
 ---
 
 <header class="app-header" data-screen-label="App header">
   <div class="app-header-inner">
     <a class="brand" href="/" aria-label={tr('header.home')}>
-      <span class="brand-marks" aria-hidden="true">
-        <img src="/assets/logo-u-dark.svg" width="28" height="28" alt="" />
-        <img src="/assets/logo-s-dark.svg" width="28" height="28" alt="" />
-      </span>
+      <img src="/assets/icons/logo-us-light.svg" width="66" height="32" alt="" />
     </a>
-
-    {domain ? (
-      <nav class="nav-crumbs" aria-label={tr('header.progress')} style="font-family: var(--font-mono);">
-        {(() => {
-          const href = stepHref('history');
-          return href ? (
-            <a class={`step ${active === 'history' ? 'active' : ''}`} href={href}>{domain}</a>
-          ) : (
-            <span class="step">{domain}</span>
-          );
-        })()}
-        {active && active !== 'history' ? (
-          <>
-            <span class="sep">/</span>
-            <span class="step active">{activeLabel}</span>
-          </>
-        ) : null}
-      </nav>
-    ) : (
-      <nav class="nav-crumbs" aria-label={tr('header.setup')}>
-        <span class="step active">{crumb}</span>
-      </nav>
-    )}
 
     <details class="app-header-nav">
       <summary class="app-header-menu-toggle" aria-label={tr('header.menu')}>
@@ -92,31 +69,42 @@ const onHome = Astro.url.pathname === '/';
         </svg>
       </summary>
       <div class="app-header-chrome">
-        {/* Every scan of the signed-in account. The site name in the crumbs leads to that site's history. */}
-        <a
-          class="btn btn-sm btn-secondary btn-all-scans wcag-header-account"
-          href="/audits"
-          aria-current={Astro.url.pathname === '/audits' ? 'page' : undefined}
-        >
-          {tr('header.allScans')}
-        </a>
-        <a class="btn btn-primary btn-sm" href="/" aria-current={onHome ? 'page' : undefined}>{tr('header.startScan')}</a>
-        <a
-          class="btn btn-ghost btn-sm wcag-header-balance"
-          id="wcag-header-balance"
-          href="/account#tokens"
-          data-customer={isCustomer ? '1' : undefined}
-          hidden
-        ></a>
-        <a class="btn btn-ghost btn-sm wcag-header-account" href="/account">{tr('header.account')}</a>
-        <a class="btn btn-ghost btn-sm" href="/pricing">{tr('header.pricing')}</a>
-        <span class="muted" style="font-size: 13px;">{tr('header.aligned')}</span>
+        <a class="nav-cta" href="/" aria-current={onHome ? 'page' : undefined}><img src="/assets/icons/plus.svg" width="24" height="24" alt="" />{tr('header.startScan')}</a>
+        <a class="nav-link" href="/pricing" aria-current={Astro.url.pathname === '/pricing' ? 'page' : undefined}>{tr('header.pricing')}</a>
+        <span class="nav-divider" aria-hidden="true"></span>
+        <a class="nav-link wcag-header-signup" href="/signup" aria-current={Astro.url.pathname === '/signup' ? 'page' : undefined}>{tr('header.signup')}</a>
+        <button type="button" class="nav-link wcag-header-login" id="wcag-header-login">
+          {tr('header.login')}
+        </button>
+        {/* Signed in: the greeting opens the account menu. */}
+        <details class="nav-account wcag-header-account">
+          <summary class="nav-link">
+            {greeting}
+            <img src="/assets/icons/chevron-down-light.svg" width="20" height="20" alt="" />
+          </summary>
+          <div class="nav-account-menu">
+            {/* Every scan of the signed-in account. The site name in the crumbs leads to that site's history. */}
+            <a
+              class="nav-menu-item btn-all-scans wcag-header-account"
+              href="/audits"
+              aria-current={Astro.url.pathname === '/audits' ? 'page' : undefined}
+            >
+              {tr('header.allScans')}
+            </a>
+            <a class="nav-menu-item" href="/account" aria-current={Astro.url.pathname === '/account' ? 'page' : undefined}>{tr('header.account')}</a>
+            <div id="wcag-session-bar" class="wcag-session-bar" hidden={!sessionHint}>
+              <button type="button" id="wcag-logout-btn" class="nav-menu-item wcag-session-logout">
+                {tr('header.logout')}
+              </button>
+            </div>
+          </div>
+        </details>
         <form class="wcag-lang-switch" method="post" action="/lang" role="group" aria-label={tr('header.lang.label')} data-astro-reload>
           <input type="hidden" name="next" value={backTo} />
           {LANGS.map((code) => (
             <button
               type="submit"
-              class="btn btn-ghost btn-sm"
+              class="nav-link"
               name="lang"
               value={code}
               lang={code}
@@ -127,18 +115,35 @@ const onHome = Astro.url.pathname === '/';
             </button>
           ))}
         </form>
-        <a class="btn btn-ghost wcag-header-signup" href="/signup">{tr('header.signup')}</a>
-        <button type="button" class="btn btn-ghost wcag-header-login" id="wcag-header-login">
-          {tr('header.login')}
-        </button>
-        <div id="wcag-session-bar" class="wcag-session-bar" hidden={!sessionHint}>
-          <button type="button" id="wcag-logout-btn" class="wcag-session-logout" aria-label={tr('header.logout')}>
-            {tr('header.logout')}
-          </button>
-        </div>
       </div>
     </details>
+    <a
+      class="nav-balance wcag-header-balance"
+      id="wcag-header-balance"
+      href="/account#tokens"
+      data-customer={isCustomer ? '1' : undefined}
+      hidden
+    ><span class="nav-balance-value"></span><img src="/assets/icons/star-pink.svg" width="16" height="16" alt="" /></a>
   </div>
+
+  {domain ? (
+    <nav class="nav-crumbs" aria-label={tr('header.progress')}>
+      {(() => {
+        const href = stepHref('history');
+        return href ? (
+          <a class={`step ${active === 'history' ? 'active' : ''}`} href={href}>{domain}</a>
+        ) : (
+          <span class="step">{domain}</span>
+        );
+      })()}
+      {active && active !== 'history' ? (
+        <>
+          <span class="sep" aria-hidden="true">/</span>
+          <span class="step active">{activeLabel}</span>
+        </>
+      ) : null}
+    </nav>
+  ) : null}
 </header>
 
 <script>
@@ -159,7 +164,9 @@ const onHome = Astro.url.pathname === '/';
       return;
     }
     el.dataset.customer = '1';
-    el.textContent = balanceShort(balance);
+    // The number of tokens with a star; Pro adds the pages left this month.
+    const value = el.querySelector('.nav-balance-value');
+    if (value) value.textContent = balance.pro ? balanceShort(balance) : String(balance.tokens);
     el.setAttribute('aria-label', t(pageLang(), 'header.balance.label', { balance: balanceLong(balance) }));
     el.hidden = false;
   }
@@ -167,7 +174,16 @@ const onHome = Astro.url.pathname === '/';
   function syncHeaderNav() {
     document.querySelectorAll('details.app-header-nav').forEach((el) => {
       if (!(el instanceof HTMLDetailsElement)) return;
-      if (window.matchMedia('(min-width: 481px)').matches) el.open = true;
+      if (window.matchMedia('(min-width: 961px)').matches) el.open = true;
+    });
+  }
+
+  /** Close the open header menus, except the one that holds `keep`. */
+  function closeHeaderMenus(keep = null) {
+    document.querySelectorAll('.app-header details[open]').forEach((el) => {
+      if (keep && el.contains(keep)) return;
+      if (el.classList.contains('app-header-nav') && window.matchMedia('(min-width: 961px)').matches) return;
+      el.open = false;
     });
   }
   if (!globalThis.__wcagHeaderLoginBound) {
@@ -179,6 +195,14 @@ const onHome = Astro.url.pathname === '/';
       if (target.closest('#wcag-header-login, [data-open-login]')) {
         document.dispatchEvent(new CustomEvent('wcag:open-login'));
       }
+      closeHeaderMenus(target);
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      const open = document.querySelector('.app-header .nav-account[open]');
+      if (!open) return;
+      open.open = false;
+      open.querySelector('summary')?.focus();
     });
     window.addEventListener('resize', syncHeaderNav);
     document.addEventListener('astro:page-load', () => {
@@ -203,28 +227,16 @@ const onHome = Astro.url.pathname === '/';
   :global(body:not(.is-staff):not(.is-customer)) .wcag-header-account {
     display: none;
   }
-  /* .btn sets display, which would otherwise beat the hidden attribute. */
+  /* Display rules below would otherwise beat the hidden attribute. */
   .wcag-header-balance[hidden] {
     display: none;
   }
-  .wcag-lang-switch {
-    display: inline-flex;
-    gap: 2px;
-  }
-  .wcag-lang-switch button[aria-pressed='true'] {
-    text-decoration: underline;
-    font-weight: 600;
-  }
-  .btn-all-scans {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 600;
-  }
-  .app-header-nav > summary {
+  .app-header-nav > summary,
+  .nav-account > summary {
     list-style: none;
   }
-  .app-header-nav > summary::-webkit-details-marker {
+  .app-header-nav > summary::-webkit-details-marker,
+  .nav-account > summary::-webkit-details-marker {
     display: none;
   }
 </style>
