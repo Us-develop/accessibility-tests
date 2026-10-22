@@ -179,6 +179,7 @@ export default {
     'Betaal per scan met flexibele tokenpakketten. 1 token geeft u een volledig toegankelijkheidsrapport voor 1 URL. Pakketten beginnen bij 10 tokens, en ongebruikte tokens blijven 12 maanden geldig.',
   'pricing.tokens.pack': '{n} tokens: {price}',
   'price.inclVat': 'incl. btw ({excl} excl.)',
+  'price.incl': '{price} incl. btw',
   'pricing.tokens.buy': '{n} kopen',
   'pricing.tokens.unavailable': 'Tokenpakketten kunnen nog niet online worden gekocht.',
   'pricing.includes': 'Elke scan omvat',
@@ -200,13 +201,13 @@ export default {
     'Onze toegankelijkheidsexperts helpen met handmatige WCAG-tests, ondersteuning bij het herstellen, toegankelijkheidsverklaringen en opleidingen. We stemmen de aanpak af op uw website, uw team en wat u wilt verbeteren.',
   'pricing.vatNote':
     'Prijzen zijn inclusief Belgische btw. Belgische bedrijven betalen 21 % btw. EU-bedrijven met een geldig btw-nummer betalen geen btw, volgens de verleggingsregeling. Voor consumenten in de EU wordt bij het afrekenen het juiste lokale btw-tarief toegepast.',
-  'feature.fullReport': 'Toegang tot het dashboard: elk probleem, waar het zit en hoe u het oplost',
-  'feature.developerGuide': 'Gids voor ontwikkelaars: een herstellijst voor uw ontwikkelaars',
-  'feature.statement': 'Toegankelijkheidsverklaring: een ontwerp om aan te vullen en te publiceren',
-  'feature.manualChecklist': 'Checklist voor handmatige tests: de controles die alleen een mens kan doen',
-  'feature.history': 'Scangeschiedenis: uw eerdere scans en hoe uw score evolueert',
-  'feature.salesReport': 'Verkooprapport: een pdf-samenvatting voor management of klanten',
-  'feature.jira': 'Jira-integratie: herstelpunten als issues naar Jira sturen',
+  'feature.fullReport': 'Toegang tot het dashboard',
+  'feature.developerGuide': 'Gids voor ontwikkelaars',
+  'feature.statement': 'Toegankelijkheidsverklaring',
+  'feature.manualChecklist': 'Checklist voor handmatige tests',
+  'feature.history': 'Scangeschiedenis',
+  'feature.salesReport': 'Verkooprapport',
+  'feature.jira': 'Jira-integratie',
 
   // ── Account ───────────────────────────────────────────────────────
   'acct.title': 'Account · Us',

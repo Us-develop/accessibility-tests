@@ -99,3 +99,25 @@ describe('header', () => {
     assert.match(read('server/session.mjs'), /firstName: user\.firstName \|\| ''/);
   });
 });
+
+describe('copy review of October 2026', () => {
+  it('lists the Pro features by their short names', () => {
+    assert.equal(en['feature.fullReport'], 'Dashboard access');
+    assert.equal(en['feature.salesReport'], 'Sales deck');
+    assert.equal(en['feature.jira'], 'Jira integration');
+  });
+
+  it('shows "€ 10 incl. VAT" under the token buttons on the account page', () => {
+    const account = read('web/src/pages/account.astro');
+    assert.match(account, /tr\('price\.incl', \{ price: pack\.price\.incl \}\)/);
+    assert.equal(en['price.incl'], '{price} incl. VAT');
+  });
+
+  it('gives the yearly Pro price without the amount excluding VAT', () => {
+    assert.match(read('web/src/pages/pricing.astro'), /tr\('pricing\.pro\.yearlyNote', \{ yearly: proYear\.incl \}\)/);
+  });
+
+  it('links the Privacy Policy from the sign-up terms box', () => {
+    assert.equal(en['signup.accept.privacy'], 'Privacy Policy');
+  });
+});

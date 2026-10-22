@@ -3,7 +3,7 @@ import Layout from '../layouts/Layout.astro';
 import AppHeader from '../components/AppHeader.astro';
 import { WITHDRAWAL_WAIVER_TEXT } from '../../../server/legal-versions.mjs';
 import { TOKEN_PACKS } from '../../../server/plan-catalog.mjs';
-import { packDiscountPercent, vatParts } from '../../../server/vat-display.mjs';
+import { vatParts } from '../../../server/vat-display.mjs';
 import { usePageLang } from '../lib/page-lang.js';
 import WideWord from '../components/WideWord.astro';
 
@@ -12,10 +12,7 @@ const tr = usePageLang(Astro);
 // The waiver is recorded in English, the binding language (as on pricing).
 const waiverLang = tr.lang === 'en' ? undefined : 'en';
 const waiverNote = tr.lang === 'en' ? '' : tr('checkout.waiver.note');
-const packs = TOKEN_PACKS.map((pack) => {
-  const price = vatParts(pack.priceCents);
-  return { id: pack.id, n: pack.tokens, price, discount: packDiscountPercent(pack, 100) };
-});
+const packs = TOKEN_PACKS.map((pack) => ({ id: pack.id, n: pack.tokens, price: vatParts(pack.priceCents) }));
 // "Hi Astrid" when we know the first name, as in the header.
 const firstName = String(Astro.locals?.access?.firstName || '').trim();
 const heading = firstName ? tr('header.greeting', { name: firstName }) : tr('acct.h1');
@@ -143,7 +140,7 @@ const heading = firstName ? tr('header.greeting', { name: firstName }) : tr('acc
                   <li>
                     <button type="button" class="btn btn-primary token-buy" data-pack={pack.id} aria-describedby={`pack-price-${pack.id}`}>{tr('acct.tokens.buy', { n: pack.n })}</button>
                     <span class="text-small text-grey" id={`pack-price-${pack.id}`}>
-                      {pack.price.incl} {tr('price.inclVat', { excl: pack.price.excl })}{pack.discount ? ` -${pack.discount}%` : ''}
+                      {tr('price.incl', { price: pack.price.incl })}
                     </span>
                   </li>
                 ))}
