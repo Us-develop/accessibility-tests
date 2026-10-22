@@ -1,6 +1,7 @@
 ---
 import Layout from '../../../layouts/Layout.astro';
 import AppHeader from '../../../components/AppHeader.astro';
+import ReportCrumbs from '../../../components/ReportCrumbs.astro';
 import ScoreDonut from '../../../components/ScoreDonut.svelte';
 import TrendChart from '../../../components/TrendChart.svelte';
 import { listVisibleRunsForDomain, viewerFromAstro } from '../../../../../server/audit-viewer.mjs';
@@ -54,8 +55,9 @@ function formatRunId(runId: string): string {
 
 <Layout title={tr('hist.title', { site: domain })} description={tr('hist.description', { site: domain })}>
   <div class="app-shell">
-    <AppHeader domain={domain} runId={null} active="history" />
+    <AppHeader />
     <main id="main" class="app-main" tabindex="-1">
+      <ReportCrumbs domain={domain} runId={null} active="history" />
       <div data-screen-label="Domain history" style="background: var(--us-cream); min-height: calc(100dvh - 65px); min-height: calc(100vh - 65px); position: relative; overflow: hidden;">
         <div aria-hidden="true" class="motion-drift" style="position: absolute; top: -140px; right: -100px; width: 480px; height: 480px; border-radius: 50%; background: var(--us-grad-iridescent); opacity: 0.4; filter: blur(50px); animation: drift 22s ease-in-out infinite; pointer-events: none;"></div>
 

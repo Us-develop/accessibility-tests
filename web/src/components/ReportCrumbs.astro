@@ -1,0 +1,61 @@
+---
+import { chromeTranslator } from '../lib/page-lang.js';
+
+interface Step {
+  key: 'history' | 'results' | 'coverage' | 'sales' | 'statement' | 'developer';
+  label: string;
+}
+
+interface Props {
+  /** Domain (eg. "about-us.be") of the loaded audit. Nothing is shown without one. */
+  domain?: string | null;
+  /** Run id under the domain, used to build links. */
+  runId?: string | null;
+  /** Which step is currently active. Pass null for the loading screen. */
+  active?: Step['key'] | null;
+}
+
+/** Site and step of a report, at the top of the page content (inside main). */
+const tr = chromeTranslator(Astro);
+const { domain = null, runId = null, active = null } = Astro.props;
+
+const STEPS: Step[] = [
+  { key: 'history', label: tr('header.step.history') },
+  { key: 'results', label: tr('header.step.results') },
+  { key: 'coverage', label: tr('header.step.coverage') },
+  { key: 'sales', label: tr('header.step.sales') },
+  { key: 'statement', label: tr('header.step.statement') },
+  { key: 'developer', label: tr('header.step.developer') },
+];
+
+function stepHref(stepKey: Step['key']): string | null {
+  if (!domain) return null;
+  if (stepKey === 'history') return `/report/${encodeURIComponent(domain)}/history`;
+  if (!runId) return null;
+  if (stepKey === 'results') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`;
+  if (stepKey === 'coverage') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/coverage`;
+  if (stepKey === 'sales') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/sales`;
+  if (stepKey === 'statement') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/statement`;
+  if (stepKey === 'developer') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/accessibility-developers.html`;
+  const _exhaustive: never = stepKey;
+  return _exhaustive;
+}
+
+const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
+const historyHref = stepHref('history');
+---
+{domain ? (
+  <nav class="nav-crumbs" aria-label={tr('header.progress')}>
+    {historyHref ? (
+      <a class={`step ${active === 'history' ? 'active' : ''}`} href={historyHref}>{domain}</a>
+    ) : (
+      <span class="step">{domain}</span>
+    )}
+    {active && active !== 'history' ? (
+      <>
+        <span class="sep" aria-hidden="true">/</span>
+        <span class="step active">{activeLabel}</span>
+      </>
+    ) : null}
+  </nav>
+) : null}

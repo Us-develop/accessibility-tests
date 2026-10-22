@@ -2,52 +2,16 @@
 import { chromeTranslator } from '../lib/page-lang.js';
 import { LANGS } from '../../../i18n/index.mjs';
 
-interface Step {
-  key: 'history' | 'results' | 'coverage' | 'sales' | 'statement' | 'developer';
-  label: string;
-}
-
 interface Props {
-  /** Domain (eg. "about-us.be") if an audit is loaded; null on the home/run-form page. */
-  domain?: string | null;
-  /** Run id under the domain, used to build links. */
-  runId?: string | null;
-  /** Which step is currently active. Pass null for the new-audit / loading screens. */
-  active?: Step['key'] | null;
   /** Not shown since the floating header; kept so pages can still pass it. */
   crumb?: string;
 }
 
 const tr = chromeTranslator(Astro);
-// `crumb` is no longer shown: the floating bar has no crumb for pages without a site.
-const { domain = null, runId = null, active = null } = Astro.props;
-
-const STEPS: Step[] = [
-  { key: 'history', label: tr('header.step.history') },
-  { key: 'results', label: tr('header.step.results') },
-  { key: 'coverage', label: tr('header.step.coverage') },
-  { key: 'sales', label: tr('header.step.sales') },
-  { key: 'statement', label: tr('header.step.statement') },
-  { key: 'developer', label: tr('header.step.developer') },
-];
 // Language switch: a small form, so it works without JavaScript and is not a GET.
 const backTo = `${Astro.url.pathname}${Astro.url.search}`;
 const LANG_NAMES: Record<string, string> = { nl: 'Nederlands', en: 'English' };
 
-function stepHref(stepKey: Step['key']): string | null {
-  if (!domain) return null;
-  if (stepKey === 'history') return `/report/${encodeURIComponent(domain)}/history`;
-  if (!runId) return null;
-  if (stepKey === 'results') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/`;
-  if (stepKey === 'coverage') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/coverage`;
-  if (stepKey === 'sales') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/sales`;
-  if (stepKey === 'statement') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/statement`;
-  if (stepKey === 'developer') return `/report/${encodeURIComponent(domain)}/${encodeURIComponent(runId)}/accessibility-developers.html`;
-  const _exhaustive: never = stepKey;
-  return _exhaustive;
-}
-
-const activeLabel = STEPS.find((s) => s.key === active)?.label || '';
 const access = Astro.locals?.access;
 const sessionHint = access?.role === 'staff' || access?.role === 'customer';
 const isCustomer = access?.role === 'customer';
@@ -126,24 +90,6 @@ const greeting = firstName ? tr('header.greeting', { name: firstName }) : tr('he
     ><span class="nav-balance-value"></span><img src="/assets/icons/star-pink.svg" width="16" height="16" alt="" /></a>
   </div>
 
-  {domain ? (
-    <nav class="nav-crumbs" aria-label={tr('header.progress')}>
-      {(() => {
-        const href = stepHref('history');
-        return href ? (
-          <a class={`step ${active === 'history' ? 'active' : ''}`} href={href}>{domain}</a>
-        ) : (
-          <span class="step">{domain}</span>
-        );
-      })()}
-      {active && active !== 'history' ? (
-        <>
-          <span class="sep" aria-hidden="true">/</span>
-          <span class="step active">{activeLabel}</span>
-        </>
-      ) : null}
-    </nav>
-  ) : null}
 </header>
 
 <script>

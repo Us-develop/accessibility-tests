@@ -1,6 +1,7 @@
 ---
 import Layout from '../../../../layouts/Layout.astro';
 import AppHeader from '../../../../components/AppHeader.astro';
+import ReportCrumbs from '../../../../components/ReportCrumbs.astro';
 import ScoreDonut from '../../../../components/ScoreDonut.svelte';
 import ScanFailedPanel from '../../../../components/ScanFailedPanel.astro';
 import { readFileSync, existsSync } from 'node:fs';
@@ -91,8 +92,9 @@ const docLangs = [
 
 <Layout title={tr('stmtui.title', { company })} description={tr('stmtui.description', { company })}>
   <div class="app-shell">
-    <AppHeader domain={domain} runId={runId} active="statement" />
+    <AppHeader />
     <main id="main" class="app-main" tabindex="-1">
+      <ReportCrumbs domain={domain} runId={runId} active="statement" />
       {!pagesLoaded ? (
         <ScanFailedPanel
           domain={domain}
